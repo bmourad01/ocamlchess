@@ -1,0 +1,4 @@
+(tests
+ (names test_fen)
+ (flags -w -33)
+ (libraries ounit2 chess))

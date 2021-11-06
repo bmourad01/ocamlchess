@@ -1,0 +1,8 @@
+(library
+ (name chess)
+ (public_name chess)
+ (libraries core)
+ (ocamlopt_flags -O2)
+ (preprocess (pps ppx_compare
+                  ppx_hash
+                  ppx_sexp_conv)))
