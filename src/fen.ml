@@ -116,9 +116,9 @@ let string_of_castle queenside_castle kingside_castle =
   let acc = "" in
   let acc = if Set.mem kingside_castle Piece.White then acc ^ "K" else acc in
   let acc =
-    if Set.mem queenside_castle Piece.Black then acc ^ "Q" else acc
+    if Set.mem queenside_castle Piece.White then acc ^ "Q" else acc
   in
-  let acc = if Set.mem kingside_castle Piece.White then acc ^ "k" else acc in
+  let acc = if Set.mem kingside_castle Piece.Black then acc ^ "k" else acc in
   let acc =
     if Set.mem queenside_castle Piece.Black then acc ^ "q" else acc
   in
