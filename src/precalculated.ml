@@ -238,89 +238,39 @@ end
 
 (* Compute the bitboard of attacking squares for a diagonal move, given the
    set of occupied squares. *)
-let diagonal_attacks i occupied =
+let diagonal_attacks =
   let open Mask in
-  let occupied = Bitboard.of_int64 occupied in
-  let ne = northeast.(i) in
-  let nw = northwest.(i) in
-  let se = southeast.(i) in
-  let sw = southwest.(i) in
-  let result = ne in
-  let result =
-    match Bitboard.((ne & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = Int64.ctz b in
-        Bitboard.(result - northeast.(j))
-  in
-  let result = Bitboard.(result + nw) in
-  let result =
-    match Bitboard.((nw & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = Int64.ctz b in
-        Bitboard.(result - northwest.(j))
-  in
-  let result = Bitboard.(result + se) in
-  let result =
-    match Bitboard.((se & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = 63 - Int64.clz b in
-        Bitboard.(result - southeast.(j))
-  in
-  let result = Bitboard.(result + sw) in
-  let result =
-    match Bitboard.((sw & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = 63 - Int64.clz b in
-        Bitboard.(result - southwest.(j))
-  in
-  result
+  let arr = [|northeast; northwest; southeast; southwest|] in
+  fun i occupied ->
+    let occupied = Bitboard.of_int64 occupied in
+    Array.map arr ~f:(fun tbl ->
+        let b = tbl.(i) in
+        (b, Bitboard.((b & occupied) |> to_int64)) )
+    |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, b') ->
+           let acc = Bitboard.(acc + b) in
+           if Int64.(b' = zero) then acc
+           else
+             let j = if i < 2 then Int64.ctz b' else 63 - Int64.clz b' in
+             Bitboard.(acc - arr.(i).(j)) )
 
 (* Compute the bitboard of attacking squares for a straight move, given the
    set of occupied squares. *)
-let straight_attacks i occupied =
+let straight_attacks =
   let open Mask in
-  let occupied = Bitboard.of_int64 occupied in
-  let e = east.(i) in
-  let w = west.(i) in
-  let n = north.(i) in
-  let s = south.(i) in
-  let result = e in
-  let result =
-    match Bitboard.((e & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = Int64.ctz b in
-        Bitboard.(result - east.(j))
-  in
-  let result = Bitboard.(result + w) in
-  let result =
-    match Bitboard.((w & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = 63 - Int64.clz b in
-        Bitboard.(result - west.(j))
-  in
-  let result = Bitboard.(result + n) in
-  let result =
-    match Bitboard.((n & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = Int64.ctz b in
-        Bitboard.(result - north.(j))
-  in
-  let result = Bitboard.(result + s) in
-  let result =
-    match Bitboard.((s & occupied) |> to_int64) with
-    | 0L -> result
-    | b ->
-        let j = 63 - Int64.clz b in
-        Bitboard.(result - south.(j))
-  in
-  result
+  let arr = [|east; west; north; south|] in
+  fun i occupied ->
+    let occupied = Bitboard.of_int64 occupied in
+    Array.map arr ~f:(fun tbl ->
+        let b = tbl.(i) in
+        (b, Bitboard.((b & occupied) |> to_int64)) )
+    |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, b') ->
+           let acc = Bitboard.(acc + b) in
+           if Int64.(b' = zero) then acc
+           else
+             let j =
+               if i mod 2 = 0 then Int64.ctz b' else 63 - Int64.clz b'
+             in
+             Bitboard.(acc - arr.(i).(j)) )
 
 (* Generate the occupied squares for a particular mask and index. *)
 let blockers idx mask =
