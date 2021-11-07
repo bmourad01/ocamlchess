@@ -167,13 +167,13 @@ end
 
 include Bits
 
-let ranks = "12345678"
+let rank_char =
+  let ranks = "12345678" in
+  fun sq -> ranks.[rank sq]
 
-let rank_char sq = ranks.[rank sq]
-
-let files = "abcdefgh"
-
-let file_char sq = files.[file sq]
+let file_char =
+  let files = "abcdefgh" in
+  fun sq -> files.[file sq]
 
 let of_string_exn = function
   | "a1" -> a1
