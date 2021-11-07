@@ -11,7 +11,7 @@ let cmp_castle = Base.Set.equal
 let cmp_en_passant = Option.equal Square.equal
 
 let test_starting_position () =
-  let fen = Fen.(of_string_exn start) in
+  let fen = Fen.create () in
   assert_equal fen.placement
     (Map.of_alist_exn
        (module Square)

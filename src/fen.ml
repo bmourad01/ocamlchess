@@ -92,6 +92,8 @@ let of_string_exn s =
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
 
+let create () = of_string_exn start
+
 let string_of_placement placement =
   let rec aux rank file skip acc =
     if rank < 0 then acc

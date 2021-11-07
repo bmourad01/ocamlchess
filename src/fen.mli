@@ -42,5 +42,8 @@ val of_string_exn : string -> t
     representation. Returns [None] if [s] is not a valid FEN string. *)
 val of_string : string -> t option
 
+(** [create ()] constructs the starting position. *)
+val create : unit -> t
+
 (** [to_string fen] returns a string representation of [fen]. *)
 val to_string : t -> string
