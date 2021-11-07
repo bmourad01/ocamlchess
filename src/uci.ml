@@ -200,8 +200,8 @@ module Send = struct
     | Uciok
     | Readyok
     | Bestmove of {move: Move.t; ponder: Move.t option}
-    | Copyprotection of [`ok | `error]
-    | Registration of [`ok | `error]
+    | Copyprotection of [`checking | `ok | `error]
+    | Registration of [`checking | `ok | `error]
     | Info of Info.t
     | Option of Option.t
 
@@ -213,8 +213,10 @@ module Send = struct
     | Bestmove {move; ponder= None} -> "bestmove " ^ Move.to_string move
     | Bestmove {move; ponder= Some move'} ->
         "bestmove " ^ Move.to_string move ^ " ponder " ^ Move.to_string move'
+    | Copyprotection `checking -> "copyprotection checking"
     | Copyprotection `ok -> "copyprotection ok"
     | Copyprotection `error -> "copyprotection error"
+    | Registration `checking -> "registration checking"
     | Registration `ok -> "registration ok"
     | Registration `error -> "registration error"
     | Info info -> "info " ^ Info.to_string info

@@ -109,8 +109,8 @@ module Send : sig
     | Uciok
     | Readyok
     | Bestmove of {move: Move.t; ponder: Move.t option}
-    | Copyprotection of [`ok | `error]
-    | Registration of [`ok | `error]
+    | Copyprotection of [`checking | `ok | `error]
+    | Registration of [`checking | `ok | `error]
     | Info of Info.t
     | Option of Option.t
 
