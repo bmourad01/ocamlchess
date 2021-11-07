@@ -1,5 +1,17 @@
 open Base
 
+(** Number of bits needed to store the color. *)
+
+val color_bits : int
+
+(** Number of bits needed to store the kind. *)
+
+val kind_bits : int
+
+(** Number of bits to store the entire piece. *)
+
+val bits : int
+
 (** The color of a piece. *)
 type color = White | Black [@@deriving compare, equal, hash, sexp]
 
@@ -7,6 +19,9 @@ module Color : sig
   type t = color [@@deriving compare, equal, hash, sexp]
 
   include Comparable.S with type t := t
+
+  val of_int : int -> t option
+  val to_int : t -> int
 end
 
 (** The kind of a piece *)
@@ -17,6 +32,9 @@ module Kind : sig
   type t = kind [@@deriving compare, equal, hash, sexp]
 
   include Comparable.S with type t := t
+
+  val of_int : int -> t option
+  val to_int : t -> int
 end
 
 (** Representation of a Chess piece as an unboxed integer, which includes its

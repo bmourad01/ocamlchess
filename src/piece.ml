@@ -1,29 +1,10 @@
 open Core_kernel
 
-type color = White | Black [@@deriving compare, equal, hash, sexp]
+let color_bits = 1
 
-module Color = struct
-  module T = struct
-    type t = color [@@deriving compare, equal, hash, sexp]
-  end
+let kind_bits = 3
 
-  include T
-  include Comparable.Make (T)
-end
-
-type kind = Pawn | Knight | Bishop | Rook | Queen | King
-[@@deriving compare, equal, hash, sexp]
-
-module Kind = struct
-  module T = struct
-    type t = kind [@@deriving compare, equal, hash, sexp]
-  end
-
-  include T
-  include Comparable.Make (T)
-end
-
-type t = int [@@deriving compare, equal, hash, sexp]
+let bits = color_bits + kind_bits
 
 module Bits = struct
   (* Valid colors *)
@@ -81,17 +62,62 @@ module Bits = struct
   let kind p = p land 0b111
 end
 
+type color = White | Black [@@deriving compare, equal, hash, sexp]
+
+let colors = [|White; Black|]
+
+module Color = struct
+  module T = struct
+    type t = color [@@deriving compare, equal, hash, sexp]
+  end
+
+  include T
+  include Comparable.Make (T)
+
+  let of_int_exn i = colors.(i)
+
+  let of_int i = Option.try_with (fun () -> of_int_exn i)
+
+  let to_int = function
+    | White -> Bits.white
+    | Black -> Bits.black
+end
+
+type kind = Pawn | Knight | Bishop | Rook | Queen | King
+[@@deriving compare, equal, hash, sexp]
+
+let kinds = [|Pawn; Knight; Bishop; Rook; Queen; King|]
+
+module Kind = struct
+  module T = struct
+    type t = kind [@@deriving compare, equal, hash, sexp]
+  end
+
+  include T
+  include Comparable.Make (T)
+
+  let of_int_exn i = kinds.(i)
+
+  let of_int i = Option.try_with (fun () -> of_int_exn i)
+
+  let to_int = function
+    | Pawn -> Bits.pawn
+    | Knight -> Bits.knight
+    | Bishop -> Bits.bishop
+    | Rook -> Bits.rook
+    | Queen -> Bits.queen
+    | King -> Bits.king
+end
+
+type t = int [@@deriving compare, equal, hash, sexp]
+
 include Bits.Pieces
 
 (* Converting to/from the ADTs *)
 
-let color =
-  let colors = [|White; Black|] in
-  fun p -> colors.(Bits.color p)
+let color p = Color.of_int_exn @@ Bits.color p
 
-let kind =
-  let kinds = [|Pawn; Knight; Bishop; Rook; Queen; King|] in
-  fun p -> kinds.(Bits.kind p)
+let kind p = Kind.of_int_exn @@ Bits.kind p
 
 let create color kind =
   let color =

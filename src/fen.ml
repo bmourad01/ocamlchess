@@ -117,16 +117,18 @@ let string_of_active = function
   | Piece.Black -> "b"
 
 let string_of_castle queenside_castle kingside_castle =
-  let acc = "" in
-  let acc = if Set.mem kingside_castle Piece.White then acc ^ "K" else acc in
-  let acc =
-    if Set.mem queenside_castle Piece.White then acc ^ "Q" else acc
+  let king_white = if Set.mem kingside_castle Piece.White then "K" else "" in
+  let queen_white =
+    if Set.mem queenside_castle Piece.White then "Q" else ""
   in
-  let acc = if Set.mem kingside_castle Piece.Black then acc ^ "k" else acc in
-  let acc =
-    if Set.mem queenside_castle Piece.Black then acc ^ "q" else acc
+  let king_black = if Set.mem kingside_castle Piece.Black then "k" else "" in
+  let queen_black =
+    if Set.mem queenside_castle Piece.Black then "q" else ""
   in
-  if String.is_empty acc then "-" else acc
+  let result =
+    String.concat ~sep:"" [king_white; queen_white; king_black; queen_black]
+  in
+  if String.is_empty result then "-" else result
 
 let string_of_en_passant = Option.value_map ~default:"-" ~f:Square.to_string
 

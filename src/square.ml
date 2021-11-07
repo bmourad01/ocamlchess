@@ -1,6 +1,8 @@
 open Core
 open Base
 
+let bits = 6
+
 module T = struct
   type t = int [@@deriving compare, equal, hash, sexp]
 end

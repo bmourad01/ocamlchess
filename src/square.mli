@@ -1,5 +1,8 @@
 open Base
 
+(** Number of bits needed to store the square. *)
+val bits : int
+
 (** Represents a square on the board as an unboxed integer. Must be within
     the range [\[0, 63\]]. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
