@@ -1,7 +1,7 @@
 open Base
 
 (** Representation of the board as a 64-bit number. Each set bit represents
-    an occupied square. The MSB represents the a1 square, while the LSB
+    an occupied square. The LSB represents the a1 square, while the MSB
     represents the h8 square. *)
 type t = private Int64.t [@@deriving compare, equal, hash, sexp]
 
