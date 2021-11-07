@@ -1,5 +1,7 @@
 open Core_kernel
 
+let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
 type t =
   { placement: Piece.t Map.M(Square).t
   ; active: Piece.color

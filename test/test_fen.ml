@@ -11,8 +11,7 @@ let cmp_castle = Base.Set.equal
 let cmp_en_passant = Option.equal Square.equal
 
 let test_starting_position () =
-  let s = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" in
-  let fen = Fen.of_string_exn s in
+  let fen = Fen.(of_string_exn start) in
   assert_equal fen.placement
     (Map.of_alist_exn
        (module Square)
@@ -59,7 +58,7 @@ let test_starting_position () =
   assert_equal fen.en_passant None ~cmp:cmp_en_passant;
   assert_equal fen.halfmove 0;
   assert_equal fen.fullmove 1;
-  assert_equal (Fen.to_string fen) s ~cmp:String.equal
+  assert_equal (Fen.to_string fen) Fen.start ~cmp:String.equal
 
 let suite =
   "Test FEN"

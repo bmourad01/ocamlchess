@@ -1,5 +1,8 @@
 open Base
 
+(** FEN string representation of the starting Chess position. *)
+val start : string
+
 (** Representation of a FEN configuration.
 
     [placement] represents the piece placement as a mapping from squares to
