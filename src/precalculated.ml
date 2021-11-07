@@ -1,5 +1,7 @@
 open Core_kernel
 
+(* Magic shift constants. *)
+
 module Shift = struct
   let diagonal =
     [| 6; 5; 5; 5; 5; 5; 5; 6; 5; 5; 5; 5; 5; 5; 5; 5; 5; 5; 7; 7; 7; 7; 5; 5
@@ -71,8 +73,10 @@ module Magic = struct
      ; 0x0026002114058042L |]
 end
 
-let ncoord = 1 lsl 7
+(* Total number of possible squares. *)
+let ncoord = 1 lsl Square.bits
 
+(* Construct a simple table which maps squares to bitboards. *)
 let make_simple () =
   let tbl = Array.create ~len:ncoord Bitboard.empty in
   let add i rank file =
@@ -80,6 +84,9 @@ let make_simple () =
     |> Option.iter ~f:(fun sq -> tbl.(i) <- Bitboard.(tbl.(i) <-- sq))
   in
   (tbl, add)
+
+(* Pawns, knights, and kings have simple movement patterns, which we can
+   store the entirety of. *)
 
 let white_pawn_moves =
   let tbl, add = make_simple () in
@@ -137,29 +144,35 @@ let king_moves =
   done;
   tbl
 
+(* Masks for various movement directions. *)
+
 module Mask = struct
-  let rank_1 =
-    List.init 8 ~f:ident
-    |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
-           Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:0 ~file:i) )
+  (* The edges of the board. *)
+  module Edge = struct
+    let rank_1 =
+      List.init 8 ~f:ident
+      |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
+             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:0 ~file:i) )
 
-  let rank_8 =
-    List.init 8 ~f:ident
-    |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
-           Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:7 ~file:i) )
+    let rank_8 =
+      List.init 8 ~f:ident
+      |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
+             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:7 ~file:i) )
 
-  let file_a =
-    List.init 8 ~f:ident
-    |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
-           Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:i ~file:0) )
+    let file_a =
+      List.init 8 ~f:ident
+      |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
+             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:i ~file:0) )
 
-  let file_h =
-    List.init 8 ~f:ident
-    |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
-           Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:i ~file:7) )
+    let file_h =
+      List.init 8 ~f:ident
+      |> List.fold ~init:Bitboard.empty ~f:(fun b i ->
+             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:i ~file:7) )
 
-  let edges = Bitboard.(rank_1 + rank_8 + file_a + file_h)
+    let edges = Bitboard.(rank_1 + rank_8 + file_a + file_h)
+  end
 
+  (* Direction to move in when starting from a particular square. *)
   let dir r f =
     let tbl, add = make_simple () in
     for rank = 0 to 7 do
@@ -171,6 +184,8 @@ module Mask = struct
       done
     done;
     tbl
+
+  (* All 8 directions. *)
 
   let east = dir const ( + )
 
@@ -188,6 +203,7 @@ module Mask = struct
 
   let southwest = dir ( - ) ( - )
 
+  (* Combine all diagonal directions, minus the edges. *)
   let diagonal =
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     for rank = 0 to 7 do
@@ -197,11 +213,12 @@ module Mask = struct
         let nw = northwest.(i) in
         let se = southeast.(i) in
         let sw = southwest.(i) in
-        tbl.(i) <- Bitboard.(ne + nw + se + sw - edges)
+        tbl.(i) <- Bitboard.(ne + nw + se + sw - Edge.edges)
       done
     done;
     tbl
 
+  (* Combine all straight directions, minus the edges. *)
   let straight =
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     for rank = 0 to 7 do
@@ -212,12 +229,16 @@ module Mask = struct
         let n = north.(i) in
         let s = south.(i) in
         tbl.(i) <-
-          Bitboard.(e - file_h + (w - file_a) + (n - rank_8) + (s - rank_1))
+          Bitboard.(
+            e - Edge.file_h + (w - Edge.file_a) + (n - Edge.rank_8)
+            + (s - Edge.rank_1))
       done
     done;
     tbl
 end
 
+(* Compute the bitboard of attacking squares for a diagonal move, given the
+   set of occupied squares. *)
 let diagonal_attacks i occupied =
   let open Mask in
   let occupied = Bitboard.of_int64 occupied in
@@ -233,6 +254,7 @@ let diagonal_attacks i occupied =
         let j = Int64.ctz b in
         Bitboard.(result - northeast.(j))
   in
+  let result = Bitboard.(result + nw) in
   let result =
     match Bitboard.((nw & occupied) |> to_int64) with
     | 0L -> result
@@ -240,6 +262,7 @@ let diagonal_attacks i occupied =
         let j = Int64.ctz b in
         Bitboard.(result - northwest.(j))
   in
+  let result = Bitboard.(result + se) in
   let result =
     match Bitboard.((se & occupied) |> to_int64) with
     | 0L -> result
@@ -247,6 +270,7 @@ let diagonal_attacks i occupied =
         let j = 63 - Int64.clz b in
         Bitboard.(result - southeast.(j))
   in
+  let result = Bitboard.(result + sw) in
   let result =
     match Bitboard.((sw & occupied) |> to_int64) with
     | 0L -> result
@@ -256,6 +280,8 @@ let diagonal_attacks i occupied =
   in
   result
 
+(* Compute the bitboard of attacking squares for a straight move, given the
+   set of occupied squares. *)
 let straight_attacks i occupied =
   let open Mask in
   let occupied = Bitboard.of_int64 occupied in
@@ -271,6 +297,7 @@ let straight_attacks i occupied =
         let j = Int64.ctz b in
         Bitboard.(result - east.(j))
   in
+  let result = Bitboard.(result + w) in
   let result =
     match Bitboard.((w & occupied) |> to_int64) with
     | 0L -> result
@@ -278,6 +305,7 @@ let straight_attacks i occupied =
         let j = 63 - Int64.clz b in
         Bitboard.(result - west.(j))
   in
+  let result = Bitboard.(result + n) in
   let result =
     match Bitboard.((n & occupied) |> to_int64) with
     | 0L -> result
@@ -285,6 +313,7 @@ let straight_attacks i occupied =
         let j = Int64.ctz b in
         Bitboard.(result - north.(j))
   in
+  let result = Bitboard.(result + s) in
   let result =
     match Bitboard.((s & occupied) |> to_int64) with
     | 0L -> result
@@ -294,6 +323,7 @@ let straight_attacks i occupied =
   in
   result
 
+(* Generate the occupied squares for a particular mask and index. *)
 let blockers idx mask =
   let mask = Bitboard.to_int64 mask in
   Int64.popcount mask |> List.init ~f:ident
@@ -307,10 +337,12 @@ let blockers idx mask =
          (blockers, mask) )
   |> fst
 
+(* Compute the index into the magic hash table. *)
 let hash_key occupied magic shift =
   let shift = 64 - shift in
   Int64.((occupied * magic) lsr shift |> to_int_exn)
 
+(* Generate the magic hash table for bishop moves. *)
 let bishop_moves =
   let tbl =
     Array.init ncoord ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
@@ -330,6 +362,7 @@ let bishop_moves =
   done;
   tbl
 
+(* Generate the magic hash table for rook moves. *)
 let rook_moves =
   let tbl =
     Array.init ncoord ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
