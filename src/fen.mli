@@ -17,7 +17,7 @@ val start : string
     If it exists, then a pawn has just made a two-square move, and it is thus
     the square "behind" the pawn.
 
-    [halfmove] is the number of halfmoves since the last capture of pawn
+    [halfmove] is the number of halfmoves since the last capture or pawn
     advance, used for the fifty-move rule.
 
     [fullmove] is the number of full moves that have been completed.
