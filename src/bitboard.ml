@@ -32,9 +32,7 @@ let fold ?(rev = false) b ~init ~f =
       let sq =
         Square.of_int_exn @@ if rev then 63 - Int64.clz b else Int64.ctz b
       in
-      let acc = f acc sq in
-      let b = Int64.(b land lnot (one lsl Square.to_int sq)) in
-      aux b acc
+      aux (clear b sq) @@ f acc sq
   in
   aux b init
 
@@ -48,9 +46,7 @@ let fold_until ?(rev = false) b ~init ~f ~finish =
       in
       match f acc sq with
       | Stop x -> x
-      | Continue acc ->
-          let b = Int64.(b land lnot (one lsl Square.to_int sq)) in
-          aux b acc
+      | Continue acc -> aux (clear b sq) acc
   in
   aux b init
 
