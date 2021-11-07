@@ -17,29 +17,19 @@ let of_int i = Option.try_with (fun () -> of_int_exn i)
 
 let to_int = ident
 
-let of_rank_and_file_idx_exn ~rank ~file =
+let of_rank_and_file_exn ~rank ~file =
   if rank < 0 || rank > 7 then
     invalid_arg (sprintf "Invalid rank index '%d'" rank)
   else if file < 0 || file > 7 then
     invalid_arg (sprintf "Invalid file index '%d'" file)
   else (rank lsl 3) lor file
 
-let of_rank_and_file_idx ~rank ~file =
-  Option.try_with (fun () -> of_rank_and_file_idx_exn ~rank ~file)
-
-let rank_idx sq = sq lsr 3
-
-let ranks = "12345678"
-
-let rank_char sq = ranks.[rank_idx sq]
-
-let file_idx sq = sq land 0b111
-
-let files = "abcdefgh"
-
-let file_char sq = files.[file_idx sq]
+let of_rank_and_file ~rank ~file =
+  Option.try_with (fun () -> of_rank_and_file_exn ~rank ~file)
 
 module Bits = struct
+  (* Valid squares *)
+
   let a1 = 0b000_000
 
   let b1 = 0b000_001
@@ -167,9 +157,23 @@ module Bits = struct
   let g8 = 0b111_110
 
   let h8 = 0b111_111
+
+  (* Extract the bits *)
+
+  let rank sq = sq lsr 3
+
+  let file sq = sq land 0b111
 end
 
 include Bits
+
+let ranks = "12345678"
+
+let rank_char sq = ranks.[rank sq]
+
+let files = "abcdefgh"
+
+let file_char sq = files.[file sq]
 
 let of_string_exn = function
   | "a1" -> a1

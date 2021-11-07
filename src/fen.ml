@@ -20,7 +20,7 @@ let parse_placement s =
       else if Char.is_digit sym then
         (rank, file + (Char.to_int sym - Char.to_int '0'), placement)
       else if Char.is_alpha sym then
-        let key = Square.of_rank_and_file_idx_exn ~rank ~file in
+        let key = Square.of_rank_and_file_exn ~rank ~file in
         let data = Piece.of_fen_exn sym in
         (rank, file + 1, Map.set placement ~key ~data)
       else
@@ -102,7 +102,7 @@ let string_of_placement placement =
       let acc = if rank > 0 then acc ^ "/" else acc in
       aux (rank - 1) 0 0 acc
     else
-      let sq = Square.of_rank_and_file_idx_exn ~rank ~file in
+      let sq = Square.of_rank_and_file_exn ~rank ~file in
       match Map.find placement sq with
       | None -> aux rank (file + 1) (skip + 1) acc
       | Some p ->

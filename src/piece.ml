@@ -128,30 +128,6 @@ let is_queen p = Bits.(kind p = queen)
 
 let is_king p = Bits.(kind p = king)
 
-let is_white_pawn = equal white_pawn
-
-let is_white_knight = equal white_knight
-
-let is_white_bishop = equal white_bishop
-
-let is_white_rook = equal white_rook
-
-let is_white_queen = equal white_queen
-
-let is_white_king = equal white_king
-
-let is_black_pawn = equal black_pawn
-
-let is_black_knight = equal black_knight
-
-let is_black_bishop = equal black_bishop
-
-let is_black_rook = equal black_rook
-
-let is_black_queen = equal black_queen
-
-let is_black_king = equal black_king
-
 (* Integer representation *)
 
 let of_int_exn i =
