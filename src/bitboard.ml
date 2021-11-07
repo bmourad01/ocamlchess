@@ -26,24 +26,22 @@ let clear b sq = inter b @@ compl @@ singleton sq
 let mem b sq = empty <> inter b @@ singleton sq
 
 let fold ?(rev = false) b ~init ~f =
+  let next = if rev then fun b -> 63 - Int64.clz b else Int64.ctz in
   let rec aux b acc =
     if b = empty then acc
     else
-      let sq =
-        Square.of_int_exn @@ if rev then 63 - Int64.clz b else Int64.ctz b
-      in
+      let sq = Square.of_int_exn @@ next b in
       aux (clear b sq) @@ f acc sq
   in
   aux b init
 
 let fold_until ?(rev = false) b ~init ~f ~finish =
   let open Continue_or_stop in
+  let next = if rev then fun b -> 63 - Int64.clz b else Int64.ctz in
   let rec aux b acc =
     if b = empty then finish acc
     else
-      let sq =
-        Square.of_int_exn @@ if rev then 63 - Int64.clz b else Int64.ctz b
-      in
+      let sq = Square.of_int_exn @@ next b in
       match f acc sq with
       | Stop x -> x
       | Continue acc -> aux (clear b sq) acc
