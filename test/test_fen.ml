@@ -2,6 +2,14 @@ open Core_kernel
 open OUnit2
 open Chess
 
+let cmp_placement = Base.Map.equal Piece.equal
+
+let cmp_active = Piece.Color.equal
+
+let cmp_castle = Base.Set.equal
+
+let cmp_en_passant = Option.equal Square.equal
+
 let test_starting_position () =
   let s = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" in
   let fen = Fen.of_string_exn s in
@@ -40,17 +48,17 @@ let test_starting_position () =
        ; (Square.f8, Piece.black_bishop)
        ; (Square.g8, Piece.black_knight)
        ; (Square.h8, Piece.black_rook) ] )
-    ~cmp:(Base.Map.equal Piece.equal);
+    ~cmp:cmp_placement;
   assert_equal fen.active Piece.White ~cmp:Piece.Color.equal;
   assert_equal fen.queenside_castle
     (Set.of_list (module Piece.Color) [White; Black])
-    ~cmp:Base.Set.equal;
+    ~cmp:cmp_castle;
   assert_equal fen.kingside_castle
     (Set.of_list (module Piece.Color) [White; Black])
-    ~cmp:Base.Set.equal;
-  assert_equal fen.en_passant None ~cmp:(Option.equal Square.equal);
-  assert_equal fen.halfmove 0 ~cmp:Int.equal;
-  assert_equal fen.fullmove 1 ~cmp:Int.equal;
+    ~cmp:cmp_castle;
+  assert_equal fen.en_passant None ~cmp:cmp_en_passant;
+  assert_equal fen.halfmove 0;
+  assert_equal fen.fullmove 1;
   assert_equal (Fen.to_string fen) s ~cmp:String.equal
 
 let suite =
