@@ -1,5 +1,6 @@
 (tests
  (names test_fen
-        test_bitboard)
+        test_bitboard
+        test_move)
  (flags -w -33)
  (libraries ounit2 chess))
