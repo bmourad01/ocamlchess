@@ -55,6 +55,6 @@ let test_starting_position () =
 
 let suite =
   "Test FEN"
-  >::: [("test_starting_position" >:: fun _ -> test_starting_position ())]
+  >::: [("Starting position" >:: fun _ -> test_starting_position ())]
 
 let () = run_test_tt_main suite

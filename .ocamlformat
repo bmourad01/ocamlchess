@@ -4,3 +4,4 @@ margin = 77
 parse-docstrings = true
 wrap-comments = true
 sequence-style = terminator
+doc-comments = before
