@@ -41,10 +41,13 @@ let of_string_exn s =
     let dst = String.subo s ~pos:2 ~len:2 |> Square.of_string_exn in
     let promote =
       if String.length s = 4 then None
-      else Some (Piece.of_fen_exn @@ s.[4] |> Piece.kind)
+      else
+        let s = String.subo s ~pos:4 in
+        assert (String.length s = 1);
+        Some (s.[0] |> Piece.of_fen_exn |> Piece.kind)
     in
     create src dst ~promote
-  with Invalid_argument _ ->
+  with Invalid_argument _ | Assert_failure _ ->
     invalid_arg (sprintf "Invalid move string '%s'" s)
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
