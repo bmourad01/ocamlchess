@@ -39,9 +39,28 @@ val mem : t -> Square.t -> bool
     from a1. *)
 val fold : ?rev:bool -> t -> init:'a -> f:('a -> Square.t -> 'a) -> 'a
 
+(** [fold_until b ~init ~f ~finish ~rev] is a short-circuiting version of
+    [fold]. If [f] returns [Stop x], the result of the computation is [x]. If
+    [f] returns [Continue y], then the computation continues with [y] as the
+    new accumulated value. If [f] never returns [Stop _], then the final
+    result is computed by [finish]. If [rev] is [true], then iteration starts
+    from square h8, otherwise from a1. *)
+val fold_until :
+     ?rev:bool
+  -> t
+  -> init:'a
+  -> f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t)
+  -> finish:('a -> 'b)
+  -> 'b
+
 (** [iter b ~f ~rev] applies [f] to each occupied square in [b]. If [rev] is
     [true], then iteration starts from square h8, otherwise from a1. *)
 val iter : ?rev:bool -> t -> f:(Square.t -> unit) -> unit
+
+(** [iter_until b ~f ~rev] applies [f] to each occupied square in [b] until
+    its result is [true]. If [rev] is [true], then iteration starts from
+    square h8, otherwise from a1. *)
+val iter_until : ?rev:bool -> t -> f:(Square.t -> bool) -> unit
 
 (** [count b] returns the number of occupied squares in [b]. *)
 val count : t -> int

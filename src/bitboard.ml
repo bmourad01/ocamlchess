@@ -38,7 +38,28 @@ let fold ?(rev = false) b ~init ~f =
   in
   aux b init
 
+let fold_until ?(rev = false) b ~init ~f ~finish =
+  let open Continue_or_stop in
+  let rec aux b acc =
+    if b = empty then finish acc
+    else
+      let sq =
+        Square.of_int_exn @@ if rev then 63 - Int64.clz b else Int64.ctz b
+      in
+      match f acc sq with
+      | Stop x -> x
+      | Continue acc ->
+          let b = Int64.(b land lnot (one lsl Square.to_int sq)) in
+          aux b acc
+  in
+  aux b init
+
 let iter ?(rev = false) b ~f = fold b ~init:() ~f:(fun () sq -> f sq) ~rev
+
+let iter_until ?(rev = false) b ~f =
+  fold_until b ~init:()
+    ~f:(fun () sq -> if f sq then Stop () else Continue ())
+    ~finish:ident ~rev
 
 let count = Int64.popcount
 
