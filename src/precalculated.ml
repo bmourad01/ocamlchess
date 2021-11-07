@@ -160,101 +160,33 @@ module Mask = struct
 
   let edges = Bitboard.(rank_1 + rank_8 + file_a + file_h)
 
-  let east =
+  let dir r f =
     let tbl, add = make_simple () in
     for rank = 0 to 7 do
       for file = 0 to 7 do
         let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
         for j = 1 to 7 do
-          add i file (rank + j)
+          add i (r rank j) (f file j)
         done
       done
     done;
     tbl
 
-  let west =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i file (rank - j)
-        done
-      done
-    done;
-    tbl
+  let east = dir const ( + )
 
-  let north =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (file + j) rank
-        done
-      done
-    done;
-    tbl
+  let west = dir const ( - )
 
-  let south =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (file - j) rank
-        done
-      done
-    done;
-    tbl
+  let north = dir ( + ) const
 
-  let northeast =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (file + j) (rank + j)
-        done
-      done
-    done;
-    tbl
+  let south = dir ( - ) const
 
-  let northwest =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (file + j) (rank - j)
-        done
-      done
-    done;
-    tbl
+  let northeast = dir ( + ) ( + )
 
-  let southeast =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (file - j) (rank + j)
-        done
-      done
-    done;
-    tbl
+  let northwest = dir ( + ) ( - )
 
-  let southwest =
-    let tbl, add = make_simple () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (file - j) (rank - j)
-        done
-      done
-    done;
-    tbl
+  let southeast = dir ( - ) ( + )
+
+  let southwest = dir ( - ) ( - )
 
   let diagonal =
     let tbl = Array.create ~len:ncoord Bitboard.empty in
