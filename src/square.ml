@@ -165,17 +165,17 @@ module Bits = struct
   let file sq = sq land 0b111
 end
 
-include Bits
-
 let rank_char =
   let ranks = "12345678" in
-  fun sq -> ranks.[rank sq]
+  fun sq -> ranks.[Bits.rank sq]
 
 let file_char =
   let files = "abcdefgh" in
-  fun sq -> files.[file sq]
+  fun sq -> files.[Bits.file sq]
 
-let of_string_exn = function
+let of_string_exn s =
+  let open Bits in
+  match s with
   | "a1" -> a1
   | "b1" -> b1
   | "c1" -> c1
@@ -240,8 +240,10 @@ let of_string_exn = function
   | "f8" -> f8
   | "g8" -> g8
   | "h8" -> h8
-  | s -> invalid_arg (sprintf "Invalid square string '%s'" s)
+  | _ -> invalid_arg (sprintf "Invalid square string '%s'" s)
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
 
 let to_string sq = sprintf "%c%c" (file_char sq) (rank_char sq)
+
+include Bits
