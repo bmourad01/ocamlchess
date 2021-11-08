@@ -3,5 +3,5 @@
         test_bitboard
         test_move
         test_precalculated)
- (flags -w -33)
+ (ocamlopt_flags -O3)
  (libraries ounit2 chess))
