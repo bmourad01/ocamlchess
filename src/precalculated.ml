@@ -194,13 +194,13 @@ module Mask = struct
 
   let south = dir ( - ) const
 
-  let northeast = dir ( + ) ( + )
+  let neast = dir ( + ) ( + )
 
-  let northwest = dir ( + ) ( - )
+  let nwest = dir ( + ) ( - )
 
-  let southeast = dir ( - ) ( + )
+  let seast = dir ( - ) ( + )
 
-  let southwest = dir ( - ) ( - )
+  let swest = dir ( - ) ( - )
 
   (* Combine all diagonal directions, minus the edges. *)
   let diagonal =
@@ -208,10 +208,10 @@ module Mask = struct
     for rank = 0 to 7 do
       for file = 0 to 7 do
         let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        let ne = northeast.(i) in
-        let nw = northwest.(i) in
-        let se = southeast.(i) in
-        let sw = southwest.(i) in
+        let ne = neast.(i) in
+        let nw = nwest.(i) in
+        let se = seast.(i) in
+        let sw = swest.(i) in
         tbl.(i) <- Bitboard.(ne + nw + se + sw - Edge.edges)
       done
     done;
@@ -236,41 +236,33 @@ module Mask = struct
     tbl
 end
 
-(* Compute the bitboard of attacking squares for a diagonal move, given the
-   set of occupied squares. *)
-let diagonal_attacks =
-  let open Mask in
-  let arr = [|northeast; northwest; southeast; southwest|] in
-  fun i occupied ->
-    let occupied = Bitboard.of_int64 occupied in
-    Array.map arr ~f:(fun tbl ->
-        let b = tbl.(i) in
-        (b, Bitboard.((b & occupied) |> to_int64)) )
-    |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, b') ->
-           let acc = Bitboard.(acc + b) in
-           if Int64.(b' = zero) then acc
-           else
-             let j = if i < 2 then Int64.ctz b' else 63 - Int64.clz b' in
-             Bitboard.(acc - arr.(i).(j)) )
+module Attack = struct
+  let ctz = Int64.ctz
 
-(* Compute the bitboard of attacking squares for a straight move, given the
-   set of occupied squares. *)
-let straight_attacks =
-  let open Mask in
-  let arr = [|east; west; north; south|] in
-  fun i occupied ->
+  let clz b = 63 - Int64.clz b
+
+  let gen arr i occupied =
     let occupied = Bitboard.of_int64 occupied in
-    Array.map arr ~f:(fun tbl ->
+    Array.map arr ~f:(fun (tbl, f) ->
         let b = tbl.(i) in
-        (b, Bitboard.((b & occupied) |> to_int64)) )
-    |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, b') ->
+        let b' = Bitboard.((b & occupied) |> to_int64) in
+        let j = if Int64.(b' = zero) then None else Some (f b') in
+        (b, j) )
+    |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, j) ->
            let acc = Bitboard.(acc + b) in
-           if Int64.(b' = zero) then acc
-           else
-             let j =
-               if i mod 2 = 0 then Int64.ctz b' else 63 - Int64.clz b'
-             in
-             Bitboard.(acc - arr.(i).(j)) )
+           Option.value_map j ~default:acc ~f:(fun j ->
+               Bitboard.(acc - (fst arr.(i)).(j)) ) )
+
+  (* Compute the bitboard of attacking squares for a diagonal move, given the
+     set of occupied squares. *)
+  let diagonal =
+    gen Mask.[|(neast, ctz); (nwest, ctz); (seast, clz); (swest, clz)|]
+
+  (* Compute the bitboard of attacking squares for a straight move, given the
+     set of occupied squares. *)
+  let straight =
+    gen Mask.[|(east, ctz); (west, clz); (north, ctz); (south, clz)|]
+end
 
 (* Generate the occupied squares for a particular mask and index. *)
 let blockers idx mask =
@@ -305,7 +297,7 @@ let bishop_moves =
       let t = tbl.(i) in
       for idx = 0 to 1 lsl shift do
         let occupied = blockers idx mask in
-        t.(hash_key occupied magic shift) <- diagonal_attacks i occupied
+        t.(hash_key occupied magic shift) <- Attack.diagonal i occupied
       done
     done
   done;
@@ -325,7 +317,7 @@ let rook_moves =
       let t = tbl.(i) in
       for idx = 0 to 1 lsl shift do
         let occupied = blockers idx mask in
-        t.(hash_key occupied magic shift) <- straight_attacks i occupied
+        t.(hash_key occupied magic shift) <- Attack.straight i occupied
       done
     done
   done;
