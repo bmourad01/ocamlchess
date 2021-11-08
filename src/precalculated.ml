@@ -171,25 +171,13 @@ module Mask = struct
   module Edge = struct
     open Bitboard.Syntax
 
-    let rank_1 =
-      Array.init 8 ~f:ident
-      |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             b <-- Square.of_rank_and_file_exn ~rank:0 ~file:i )
+    let rank_1 = Bitboard.of_int64 0x00000000000000FFL
 
-    let rank_8 =
-      Array.init 8 ~f:ident
-      |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             b <-- Square.of_rank_and_file_exn ~rank:7 ~file:i )
+    let rank_8 = Bitboard.of_int64 0xFF00000000000000L
 
-    let file_a =
-      Array.init 8 ~f:ident
-      |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             b <-- Square.of_rank_and_file_exn ~rank:i ~file:0 )
+    let file_a = Bitboard.of_int64 0x0101010101010101L
 
-    let file_h =
-      Array.init 8 ~f:ident
-      |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             b <-- Square.of_rank_and_file_exn ~rank:i ~file:7 )
+    let file_h = Bitboard.of_int64 0x8080808080808080L
 
     let edges = rank_1 + rank_8 + file_a + file_h
   end
@@ -228,34 +216,27 @@ module Mask = struct
   (* Combine all diagonal directions, minus the edges. *)
   let diagonal =
     let tbl = Array.create ~len:ncoord Bitboard.empty in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let open Bitboard.Syntax in
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        let ne = neast.(i) in
-        let nw = nwest.(i) in
-        let se = seast.(i) in
-        let sw = swest.(i) in
-        tbl.(i) <- ne + nw + se + sw - Edge.edges
-      done
+    for i = 0 to ncoord - 1 do
+      let open Bitboard.Syntax in
+      let ne = neast.(i) in
+      let nw = nwest.(i) in
+      let se = seast.(i) in
+      let sw = swest.(i) in
+      tbl.(i) <- ne + nw + se + sw - Edge.edges
     done;
     tbl
 
   (* Combine all straight directions, minus the edges. *)
   let straight =
     let tbl = Array.create ~len:ncoord Bitboard.empty in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let open Bitboard.Syntax in
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        let e = east.(i) in
-        let w = west.(i) in
-        let n = north.(i) in
-        let s = south.(i) in
-        tbl.(i) <-
-          e - Edge.file_h + (w - Edge.file_a) + (n - Edge.rank_8)
-          + (s - Edge.rank_1)
-      done
+    for i = 0 to ncoord - 1 do
+      let open Bitboard.Syntax in
+      let e = east.(i) in
+      let w = west.(i) in
+      let n = north.(i) in
+      let s = south.(i) in
+      tbl.(i) <-
+        Edge.(e - file_h + (w - file_a) + (n - rank_8) + (s - rank_1))
     done;
     tbl
 end
@@ -263,7 +244,7 @@ end
 module Attack = struct
   let ctz = Int64.ctz
 
-  let clz b = 63 - Int64.clz b
+  let clz b = ncoord - 1 - Int64.clz b
 
   let gen arr i occupied =
     let open Bitboard.Syntax in
@@ -313,17 +294,14 @@ let bishop_moves =
   let tbl =
     Array.init ncoord ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
   in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      let shift = Shift.diagonal.(i) in
-      let mask = Mask.diagonal.(i) in
-      let magic = Magic.bishop.(i) in
-      let t = tbl.(i) in
-      for idx = 0 to 1 lsl shift do
-        let occupied = blockers idx mask in
-        t.(hash_key occupied magic shift) <- Attack.diagonal i occupied
-      done
+  for i = 0 to ncoord - 1 do
+    let shift = Shift.diagonal.(i) in
+    let mask = Mask.diagonal.(i) in
+    let magic = Magic.bishop.(i) in
+    let t = tbl.(i) in
+    for j = 0 to 1 lsl shift do
+      let occupied = blockers j mask in
+      t.(hash_key occupied magic shift) <- Attack.diagonal i occupied
     done
   done;
   tbl
@@ -333,17 +311,14 @@ let rook_moves =
   let tbl =
     Array.init ncoord ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
   in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      let shift = Shift.straight.(i) in
-      let mask = Mask.straight.(i) in
-      let magic = Magic.rook.(i) in
-      let t = tbl.(i) in
-      for idx = 0 to 1 lsl shift do
-        let occupied = blockers idx mask in
-        t.(hash_key occupied magic shift) <- Attack.straight i occupied
-      done
+  for i = 0 to ncoord - 1 do
+    let shift = Shift.straight.(i) in
+    let mask = Mask.straight.(i) in
+    let magic = Magic.rook.(i) in
+    let t = tbl.(i) in
+    for j = 0 to 1 lsl shift do
+      let occupied = blockers j mask in
+      t.(hash_key occupied magic shift) <- Attack.straight i occupied
     done
   done;
   tbl
