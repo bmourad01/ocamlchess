@@ -2,7 +2,7 @@
  (name chess)
  (public_name chess)
  (libraries core)
- (ocamlopt_flags -O2)
+ (ocamlopt_flags -O3)
  (preprocess (pps ppx_compare
                   ppx_hash
                   ppx_sexp_conv)))

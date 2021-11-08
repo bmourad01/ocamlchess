@@ -218,11 +218,7 @@ module Mask = struct
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     for i = 0 to ncoord - 1 do
       let open Bitboard.Syntax in
-      let ne = neast.(i) in
-      let nw = nwest.(i) in
-      let se = seast.(i) in
-      let sw = swest.(i) in
-      tbl.(i) <- ne + nw + se + sw - Edge.edges
+      tbl.(i) <- neast.(i) + nwest.(i) + seast.(i) + swest.(i) - Edge.edges
     done;
     tbl
 
@@ -231,12 +227,12 @@ module Mask = struct
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     for i = 0 to ncoord - 1 do
       let open Bitboard.Syntax in
-      let e = east.(i) in
-      let w = west.(i) in
-      let n = north.(i) in
-      let s = south.(i) in
+      let open Edge in
       tbl.(i) <-
-        Edge.(e - file_h + (w - file_a) + (n - rank_8) + (s - rank_1))
+        east.(i) - file_h
+        + (west.(i) - file_a)
+        + (north.(i) - rank_8)
+        + (south.(i) - rank_1)
     done;
     tbl
 end
@@ -244,7 +240,7 @@ end
 module Attack = struct
   let ctz = Int64.ctz
 
-  let clz b = ncoord - 1 - Int64.clz b
+  let clz b = 63 - Int64.clz b
 
   let gen arr i occupied =
     let open Bitboard.Syntax in
