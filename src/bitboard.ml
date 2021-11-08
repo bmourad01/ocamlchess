@@ -73,20 +73,24 @@ let iter_until ?(rev = false) b ~f =
 
 (* Infix operators. *)
 
-let ( & ) = inter
+module Syntax = struct
+  let ( & ) = inter
 
-let ( + ) = union
+  let ( + ) = union
 
-let ( ~~ ) = compl
+  let ( ~~ ) = compl
 
-let ( - ) = diff
+  let ( - ) = diff
 
-let ( ! ) = singleton
+  let ( ! ) = singleton
 
-let ( <-- ) = set
+  let ( <-- ) = set
 
-let ( --> ) = clear
+  let ( --> ) = clear
 
-let ( @ ) sq b = mem b sq
+  let ( @ ) sq b = mem b sq
 
-let ( $ ) = count
+  let ( $ ) = count
+end
+
+include Syntax

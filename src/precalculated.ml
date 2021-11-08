@@ -77,10 +77,11 @@ let ncoord = 1 lsl Square.bits
 
 (* Construct a simple table which maps squares to bitboards. *)
 let make_simple () =
+  let open Bitboard.Syntax in
   let tbl = Array.create ~len:ncoord Bitboard.empty in
   let add i rank file =
     Square.of_rank_and_file ~rank ~file
-    |> Option.iter ~f:(fun sq -> tbl.(i) <- Bitboard.(tbl.(i) <-- sq))
+    |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq)
   in
   (tbl, add)
 
@@ -148,27 +149,29 @@ let king_moves =
 module Mask = struct
   (* The edges of the board. *)
   module Edge = struct
+    open Bitboard.Syntax
+
     let rank_1 =
       Array.init 8 ~f:ident
       |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:0 ~file:i) )
+             b <-- Square.of_rank_and_file_exn ~rank:0 ~file:i )
 
     let rank_8 =
       Array.init 8 ~f:ident
       |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:7 ~file:i) )
+             b <-- Square.of_rank_and_file_exn ~rank:7 ~file:i )
 
     let file_a =
       Array.init 8 ~f:ident
       |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:i ~file:0) )
+             b <-- Square.of_rank_and_file_exn ~rank:i ~file:0 )
 
     let file_h =
       Array.init 8 ~f:ident
       |> Array.fold ~init:Bitboard.empty ~f:(fun b i ->
-             Bitboard.(b <-- Square.of_rank_and_file_exn ~rank:i ~file:7) )
+             b <-- Square.of_rank_and_file_exn ~rank:i ~file:7 )
 
-    let edges = Bitboard.(rank_1 + rank_8 + file_a + file_h)
+    let edges = rank_1 + rank_8 + file_a + file_h
   end
 
   (* Direction to move in when starting from a particular square. *)
@@ -207,12 +210,13 @@ module Mask = struct
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     for rank = 0 to 7 do
       for file = 0 to 7 do
+        let open Bitboard.Syntax in
         let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
         let ne = neast.(i) in
         let nw = nwest.(i) in
         let se = seast.(i) in
         let sw = swest.(i) in
-        tbl.(i) <- Bitboard.(ne + nw + se + sw - Edge.edges)
+        tbl.(i) <- ne + nw + se + sw - Edge.edges
       done
     done;
     tbl
@@ -222,15 +226,15 @@ module Mask = struct
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     for rank = 0 to 7 do
       for file = 0 to 7 do
+        let open Bitboard.Syntax in
         let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
         let e = east.(i) in
         let w = west.(i) in
         let n = north.(i) in
         let s = south.(i) in
         tbl.(i) <-
-          Bitboard.(
-            e - Edge.file_h + (w - Edge.file_a) + (n - Edge.rank_8)
-            + (s - Edge.rank_1))
+          e - Edge.file_h + (w - Edge.file_a) + (n - Edge.rank_8)
+          + (s - Edge.rank_1)
       done
     done;
     tbl
@@ -242,16 +246,17 @@ module Attack = struct
   let clz b = 63 - Int64.clz b
 
   let gen arr i occupied =
+    let open Bitboard.Syntax in
     let occupied = Bitboard.of_int64 occupied in
     Array.map arr ~f:(fun (tbl, f) ->
         let b = tbl.(i) in
-        let b' = Bitboard.((b & occupied) |> to_int64) in
+        let b' = (b & occupied) |> Bitboard.to_int64 in
         let j = if Int64.(b' = zero) then None else Some (f b') in
         (b, j) )
     |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, j) ->
-           let acc = Bitboard.(acc + b) in
+           let acc = acc + b in
            Option.value_map j ~default:acc ~f:(fun j ->
-               Bitboard.(acc - (fst arr.(i)).(j)) ) )
+               acc - (fst arr.(i)).(j) ) )
 
   (* Compute the bitboard of attacking squares for a diagonal move, given the
      set of occupied squares. *)
@@ -273,7 +278,7 @@ let blockers idx mask =
          let mask = Int64.(mask land pred mask) in
          let blockers =
            if idx land (1 lsl i) = 0 then blockers
-           else Int64.(blockers lor (1L lsl j))
+           else Int64.(blockers lor (one lsl j))
          in
          (blockers, mask) )
   |> fst
