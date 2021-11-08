@@ -109,8 +109,12 @@ module Kind = struct
     | King -> Bits.king
 end
 
-type t = int [@@deriving compare, equal, hash, sexp]
+module T = struct
+  type t = int [@@deriving compare, equal, hash, sexp]
+end
 
+include T
+include Comparable.Make (T)
 include Bits.Pieces
 
 (* Converting to/from the ADTs *)

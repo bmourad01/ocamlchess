@@ -43,6 +43,8 @@ end
     color and kind. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
 
+include Comparable.S with type t := t
+
 (** The white pawn. *)
 val white_pawn : t
 
