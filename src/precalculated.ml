@@ -271,13 +271,13 @@ let blockers idx mask =
   let mask = Bitboard.to_int64 mask in
   Int64.popcount mask |> Array.init ~f:ident
   |> Array.fold ~init:(0L, mask) ~f:(fun (blockers, mask) i ->
-         let j = Int64.ctz mask in
-         let mask = Int64.(mask land pred mask) in
          let blockers =
            if idx land (1 lsl i) = 0 then blockers
-           else Int64.(blockers lor (one lsl j))
+           else
+             let j = Int64.ctz mask in
+             Int64.(blockers lor (one lsl j))
          in
-         (blockers, mask) )
+         (blockers, Int64.(mask land pred mask)) )
   |> fst
 
 (* Compute the index into the magic hash table. *)
