@@ -1,6 +1,10 @@
-(** [pawn sq color] returns a bitboard of potentially valid squares for a
-    pawn of color [color] at square [sq]. *)
-val pawn : Square.t -> Piece.color -> Bitboard.t
+(** [pawn_fwd sq color] returns a bitboard of potentially valid squares for a
+    pawn of color [color] at square [sq] to move forward. *)
+val pawn_fwd : Square.t -> Piece.color -> Bitboard.t
+
+(** [pawn_attack sq color] returns a bitboard of potentially valid squares
+    for a pawn of color [color] at square [sq] to attack. *)
+val pawn_attack : Square.t -> Piece.color -> Bitboard.t
 
 (** [knight sq] returns a bitboard of potentially valid squares for a knight
     at square [sq]. *)

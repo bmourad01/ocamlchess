@@ -93,13 +93,33 @@ let white_pawn_moves =
   for rank = 0 to 7 do
     for file = 0 to 7 do
       let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+      add i (rank + 1) file
+    done
+  done;
+  tbl
+
+let white_pawn_attacks =
+  let tbl, add = make_simple () in
+  for rank = 0 to 7 do
+    for file = 0 to 7 do
+      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
       add i (rank + 1) (file + 1);
-      add i (rank + 1) (file + 1)
+      add i (rank + 1) (file - 1)
     done
   done;
   tbl
 
 let black_pawn_moves =
+  let tbl, add = make_simple () in
+  for rank = 0 to 7 do
+    for file = 0 to 7 do
+      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+      add i (rank - 1) file
+    done
+  done;
+  tbl
+
+let black_pawn_attacks =
   let tbl, add = make_simple () in
   for rank = 0 to 7 do
     for file = 0 to 7 do
@@ -328,10 +348,15 @@ let rook_moves =
   done;
   tbl
 
-let pawn sq (color : Piece.color) =
+let pawn_fwd sq (color : Piece.color) =
   match color with
   | White -> white_pawn_moves.(Square.to_int sq)
   | Black -> black_pawn_moves.(Square.to_int sq)
+
+let pawn_attack sq (color : Piece.color) =
+  match color with
+  | White -> white_pawn_attacks.(Square.to_int sq)
+  | Black -> black_pawn_attacks.(Square.to_int sq)
 
 let knight sq = knight_moves.(Square.to_int sq)
 
