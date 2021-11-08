@@ -13,16 +13,14 @@ val start : string
     [queenside_castle] and [kingside_castle] represent castling rights for
     queenside and kingside, respectively, for each color.
 
-    [en_passant] is the square, if any, of the en passant target square.
-    If it exists, then a pawn has just made a two-square move, and it is thus
+    [en_passant] is the square, if any, of the en passant target square. If
+    it exists, then a pawn has just made a two-square move, and it is thus
     the square "behind" the pawn.
 
     [halfmove] is the number of halfmoves since the last capture or pawn
     advance, used for the fifty-move rule.
 
-    [fullmove] is the number of full moves that have been completed.
-
-*)[@@ocamlformat "disable"]
+    [fullmove] is the number of full moves that have been completed. *)
 type t =
   { placement: Piece.t Map.M(Square).t
   ; active: Piece.color
@@ -34,8 +32,8 @@ type t =
 [@@deriving compare, equal, hash, sexp]
 
 (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
-    representation. Raises [Invalid_argument] if [s] is not a valid
-    FEN string. *)
+    representation. Raises [Invalid_argument] if [s] is not a valid FEN
+    string. *)
 val of_string_exn : string -> t
 
 (** [of_string_exn s] attempts to parse a FEN string [s] into a valid

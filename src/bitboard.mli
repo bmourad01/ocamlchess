@@ -21,6 +21,7 @@ val full : t
 
 (** [inter x y] is the intersection of bitboards [x] and [y]. *)
 val inter : t -> t -> t
+
 (** [union x y] is the union of bitboards [x] and [y]. *)
 val union : t -> t -> t
 
@@ -76,28 +77,28 @@ val iter_until : ?rev:bool -> t -> f:(Square.t -> bool) -> unit
 module Syntax : sig
   (** [x & y] is equivalent to [inter x y]. *)
   val ( & ) : t -> t -> t
-  
+
   (** [x + y] is equivalent to [union x y]. *)
   val ( + ) : t -> t -> t
-  
+
   (** [x - y] is equivalent to [diff x y]. *)
   val ( - ) : t -> t -> t
-  
+
   (** [$b] is equivalent to [count b]. *)
   val ( $ ) : t -> int
-  
+
   (** [~~b] is equivalent to [compl b]. *)
   val ( ~~ ) : t -> t
-  
+
   (** [!sq] is equivalent to [singleton sq]. *)
   val ( ! ) : Square.t -> t
-  
+
   (** [b <-- sq] is equivalent to [set b sq]. *)
   val ( <-- ) : t -> Square.t -> t
-  
+
   (** [b --> sq] is equivalent to [clear b sq]. *)
   val ( --> ) : t -> Square.t -> t
-  
+
   (** [sq @ b] is equivalent to [mem b sq]. *)
   val ( @ ) : Square.t -> t -> bool
 end

@@ -21,6 +21,7 @@ module Color : sig
   include Comparable.S with type t := t
 
   val of_int : int -> t option
+
   val to_int : t -> int
 end
 
@@ -34,6 +35,7 @@ module Kind : sig
   include Comparable.S with type t := t
 
   val of_int : int -> t option
+
   val to_int : t -> int
 end
 
@@ -130,19 +132,19 @@ val to_int : t -> int
 (** [of_fen_exn c] returns the corresponding piece given a character [c]. [c]
     is expected to follow from FEN notation, shown as regex below:
 
-    [(P|N|B|R|Q|K)] represents the white pieces
-    [(p|n|b|r|q|k)] represents the black pieces
+    [(P|N|B|R|Q|K)] represents the white pieces, while [(p|n|b|r|q|k)]
+    represents the black pieces
 
-    All other inputs will raise [Invalid_argument]. *) [@@ocamlformat "disable"]
+    All other inputs will raise [Invalid_argument]. *)
 val of_fen_exn : char -> t
 
-(** [of_fen c] returns the corresponding piece given a character [c]. [c]
-    is expected to follow from FEN notation, shown as regex below:
+(** [of_fen c] returns the corresponding piece given a character [c]. [c] is
+    expected to follow from FEN notation, shown as regex below:
 
-    [(P|N|B|R|Q|K)] represents the white pieces
-    [(p|n|b|r|q|k)] represents the black pieces
+    [(P|N|B|R|Q|K)] represents the white pieces, while [(p|n|b|r|q|k)]
+    represents the black pieces
 
-    All other inputs will return [None]. *) [@@ocamlformat "disable"]
+    All other inputs will return [None]. *)
 val of_fen : char -> t option
 
 (** [to_fen p] returns the corresponding FEN notation of piece [p]. *)
