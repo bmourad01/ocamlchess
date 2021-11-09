@@ -16,13 +16,32 @@ let parse_placement s =
   String.fold s
     ~init:(7, 0, Map.empty (module Square))
     ~f:(fun (rank, file, placement) sym ->
-      if Char.equal sym '/' then (rank - 1, 0, placement)
+      if rank < 0 then
+        invalid_arg (sprintf "Invalid number of ranks %d" (8 - rank))
+      else if Char.equal sym '/' then
+        if file <> 8 then
+          invalid_arg
+            (sprintf "Invalid separation at rank %d with %d files remaining"
+               (rank + 1) (8 - file) )
+        else (rank - 1, 0, placement)
       else if Char.is_digit sym then
-        (rank, file + (Char.to_int sym - Char.to_int '0'), placement)
+        let inc = Char.(to_int sym - to_int '0') in
+        let file' = file + inc in
+        if file' > 8 then
+          invalid_arg (sprintf "Invalid increment %d at file %d" inc file)
+        else (rank, file', placement)
       else if Char.is_alpha sym then
-        let key = Square.of_rank_and_file_exn ~rank ~file in
-        let data = Piece.of_fen_exn sym in
-        (rank, file + 1, Map.set placement ~key ~data)
+        if file > 7 then
+          invalid_arg
+            (sprintf "Invalid piece placement on full rank %d" (rank + 1))
+        else
+          let key = Square.of_rank_and_file_exn ~rank ~file in
+          match Piece.of_fen sym with
+          | None ->
+            invalid_arg
+              (sprintf "Invalid piece '%c' placed at square '%s'" sym
+                 (Square.to_string key) )
+          | Some data -> (rank, file + 1, Map.set placement ~key ~data)
       else
         invalid_arg
           (sprintf "Unexpected symbol '%c' in piece placement string '%s'"
