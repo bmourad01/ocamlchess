@@ -21,7 +21,6 @@ module Color : sig
   include Comparable.S with type t := t
 
   val of_int : int -> t option
-
   val to_int : t -> int
 end
 
@@ -35,7 +34,6 @@ module Kind : sig
   include Comparable.S with type t := t
 
   val of_int : int -> t option
-
   val to_int : t -> int
 end
 

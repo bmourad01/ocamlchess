@@ -1,4 +1,4 @@
-profile = ocamlformat
+profile = compact
 break-cases = fit-or-vertical
 break-collection-expressions = wrap
 margin = 77
@@ -6,3 +6,5 @@ parse-docstrings = true
 wrap-comments = true
 sequence-style = terminator
 doc-comments = before
+cases-exp-indent = 2
+max-indent = 2

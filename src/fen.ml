@@ -41,16 +41,15 @@ let parse_castle s =
   else
     String.fold s ~init:(queenside_castle, kingside_castle)
       ~f:(fun (queenside_castle, kingside_castle) sym ->
-        match sym with
-        | 'K' -> (queenside_castle, Set.add kingside_castle Piece.White)
-        | 'Q' -> (Set.add queenside_castle Piece.White, kingside_castle)
-        | 'k' -> (queenside_castle, Set.add kingside_castle Piece.Black)
-        | 'q' -> (Set.add queenside_castle Piece.Black, kingside_castle)
-        | _ ->
-            invalid_arg
-              (sprintf
-                 "Unexpected symbol '%c' in castling rights string '%s'" sym
-                 s ) )
+      match sym with
+      | 'K' -> (queenside_castle, Set.add kingside_castle Piece.White)
+      | 'Q' -> (Set.add queenside_castle Piece.White, kingside_castle)
+      | 'k' -> (queenside_castle, Set.add kingside_castle Piece.Black)
+      | 'q' -> (Set.add queenside_castle Piece.Black, kingside_castle)
+      | _ ->
+        invalid_arg
+          (sprintf "Unexpected symbol '%c' in castling rights string '%s'"
+             sym s ) )
 
 let parse_en_passant s =
   if String.equal s "-" then None else Some (Square.of_string_exn s)
@@ -91,7 +90,6 @@ let of_string_exn s =
     ; fullmove }
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
-
 let create () = of_string_exn start
 
 let string_of_placement placement =
@@ -106,10 +104,9 @@ let string_of_placement placement =
       match Map.find placement sq with
       | None -> aux rank (file + 1) (skip + 1) acc
       | Some p ->
-          let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
-          let acc = acc ^ String.of_char @@ Piece.to_fen p in
-          aux rank (file + 1) 0 acc
-  in
+        let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
+        let acc = acc ^ String.of_char @@ Piece.to_fen p in
+        aux rank (file + 1) 0 acc in
   aux 7 0 0 ""
 
 let string_of_active = function
@@ -119,12 +116,10 @@ let string_of_active = function
 let string_of_castle queenside_castle kingside_castle =
   let king_white = if Set.mem kingside_castle Piece.White then "K" else "" in
   let queen_white =
-    if Set.mem queenside_castle Piece.White then "Q" else ""
-  in
+    if Set.mem queenside_castle Piece.White then "Q" else "" in
   let king_black = if Set.mem kingside_castle Piece.Black then "k" else "" in
   let queen_black =
-    if Set.mem queenside_castle Piece.Black then "q" else ""
-  in
+    if Set.mem queenside_castle Piece.Black then "q" else "" in
   let result =
     String.concat ~sep:"" [king_white; queen_white; king_black; queen_black]
   in

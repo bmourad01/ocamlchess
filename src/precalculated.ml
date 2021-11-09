@@ -85,8 +85,7 @@ module Simple = struct
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     let add i rank file =
       Square.of_rank_and_file ~rank ~file
-      |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq)
-    in
+      |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq) in
     (tbl, add)
 
   (* Pawns, knights, and kings have simple movement patterns, which we can
@@ -177,13 +176,9 @@ module Mask = struct
     open Bitboard.Syntax
 
     let rank_1 = Bitboard.of_int64 0x00000000000000FFL
-
     let rank_8 = Bitboard.of_int64 0xFF00000000000000L
-
     let file_a = Bitboard.of_int64 0x0101010101010101L
-
     let file_h = Bitboard.of_int64 0x8080808080808080L
-
     let edges = rank_1 + rank_8 + file_a + file_h
   end
 
@@ -203,19 +198,12 @@ module Mask = struct
   (* All 8 directions. *)
 
   let east = dir const ( + )
-
   let west = dir const ( - )
-
   let north = dir ( + ) const
-
   let south = dir ( - ) const
-
   let neast = dir ( + ) ( + )
-
   let nwest = dir ( + ) ( - )
-
   let seast = dir ( - ) ( + )
-
   let swest = dir ( - ) ( - )
 
   (* Combine all diagonal directions, minus the edges. *)
@@ -246,21 +234,22 @@ end
 
 module Sliding = struct
   let ctz = Int64.ctz
-
   let clz b = 63 - Int64.clz b
 
   let gen arr i occupied =
-    let open Bitboard.Syntax in
-    let occupied = Bitboard.of_int64 occupied in
+    let open Bitboard in
+    let occupied = of_int64 occupied in
     Array.map arr ~f:(fun (tbl, f) ->
-        let b = tbl.(i) in
-        let b' = (b & occupied) |> Bitboard.to_int64 in
-        let j = if Int64.(b' = zero) then None else Some (f b') in
-        (b, j) )
-    |> Array.foldi ~init:Bitboard.empty ~f:(fun i acc (b, j) ->
-           let acc = acc + b in
-           Option.value_map j ~default:acc ~f:(fun j ->
-               acc - (fst arr.(i)).(j) ) )
+      let b = tbl.(i) in
+      let j =
+        match to_int64 @@ (b & occupied) with
+        | 0L -> None
+        | b' -> Some (f b') in
+      (b, j) )
+    |> Array.foldi ~init:empty ~f:(fun i acc (b, j) ->
+         let acc = acc + b in
+         Option.value_map j ~default:acc ~f:(fun j ->
+           acc - (fst arr.(i)).(j) ) )
 
   (* Compute the bitboard of attacking squares for a diagonal move, given the
      set of occupied squares. *)
@@ -277,13 +266,12 @@ module Sliding = struct
     let mask = Bitboard.to_int64 mask in
     Int64.popcount mask |> Array.init ~f:ident
     |> Array.fold ~init:(0L, mask) ~f:(fun (blockers, mask) i ->
-           let blockers =
-             if idx land (1 lsl i) = 0 then blockers
-             else
-               let j = Int64.ctz mask in
-               Int64.(blockers lor (one lsl j))
-           in
-           (blockers, Int64.(mask land pred mask)) )
+         let blockers =
+           if idx land (1 lsl i) = 0 then blockers
+           else
+             let j = Int64.ctz mask in
+             Int64.(blockers lor (one lsl j)) in
+         (blockers, Int64.(mask land pred mask)) )
     |> fst
 
   (* Compute the index into the magic hash table. *)
@@ -351,7 +339,6 @@ let rook sq occupied =
   Sliding.(rook.(i).(hash occupied Magic.rook.(i) Shift.straight.(i)))
 
 let queen sq occupied = Bitboard.(bishop sq occupied + rook sq occupied)
-
 let king sq = Simple.king.(Square.to_int sq)
 
 let castle =

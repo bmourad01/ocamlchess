@@ -61,10 +61,10 @@ module Info = struct
     | Pv moves -> "pv " ^ string_of_moves moves
     | Multipv n -> sprintf "multipv %d" n
     | Score {cp; mate; bound} ->
-        sprintf "score cp %f mate %d %s" cp mate
-          ( match bound with
-          | `lower -> "lowerbound"
-          | `upper -> "upperbound" )
+      sprintf "score cp %f mate %d %s" cp mate
+        ( match bound with
+        | `lower -> "lowerbound"
+        | `upper -> "upperbound" )
     | Currmove move -> "currmove " ^ Move.to_string move
     | Currmovenumber n -> sprintf "currmovenumber %d" n
     | Hashfull n -> sprintf "hashfull %d" n
@@ -75,7 +75,7 @@ module Info = struct
     | String s -> "string " ^ s
     | Refutation moves -> "refutation " ^ string_of_moves moves
     | Currline {cpunr; moves} ->
-        sprintf "currline %d %s" cpunr (string_of_moves moves)
+      sprintf "currline %d %s" cpunr (string_of_moves moves)
 end
 
 let string_of_string = function
@@ -139,21 +139,21 @@ module Option = struct
     | OwnBook check -> "name OwnBook " ^ Check.to_string check
     | MultiPV spin -> "name MultiPV " ^ Spin.to_string spin
     | UCI_ShowCurrLine check ->
-        "name UCI_ShowCurrLine " ^ Check.to_string check
+      "name UCI_ShowCurrLine " ^ Check.to_string check
     | UCI_ShowRefutations check ->
-        "name UCI_ShowRefutations " ^ Check.to_string check
+      "name UCI_ShowRefutations " ^ Check.to_string check
     | UCI_LimitStrength check ->
-        "name UCI_LimitStrength " ^ Check.to_string check
+      "name UCI_LimitStrength " ^ Check.to_string check
     | UCI_Elo spin -> "name UCI_Elo " ^ Spin.to_string spin
     | UCI_AnalyseMode check ->
-        "name UCI_AnalyseMode " ^ Check.to_string check
+      "name UCI_AnalyseMode " ^ Check.to_string check
     | UCI_Opponent string -> "name UCI_Opponent " ^ String.to_string string
     | UCI_EngineAbout string ->
-        "name UCI_EngineAbout " ^ String.to_string string
+      "name UCI_EngineAbout " ^ String.to_string string
     | UCI_ShredderbasesPath string ->
-        "name UCI_ShredderbasesPath " ^ String.to_string string
+      "name UCI_ShredderbasesPath " ^ String.to_string string
     | UCI_SetPositionValue string ->
-        "name UCI_SetPositionValue " ^ String.to_string string
+      "name UCI_SetPositionValue " ^ String.to_string string
 end
 
 module Recv = struct
@@ -181,13 +181,13 @@ module Recv = struct
     | Register (`code code) -> "register code " ^ code
     | Ucinewgame -> "ucinewgame"
     | Position (`fen fen, moves) ->
-        let moves = string_of_moves moves in
-        let moves = if String.is_empty moves then moves else " " ^ moves in
-        "position fen " ^ fen ^ moves
+      let moves = string_of_moves moves in
+      let moves = if String.is_empty moves then moves else " " ^ moves in
+      "position fen " ^ fen ^ moves
     | Position (`startpos, moves) ->
-        let moves = string_of_moves moves in
-        let moves = if String.is_empty moves then moves else " " ^ moves in
-        "position startpos" ^ moves
+      let moves = string_of_moves moves in
+      let moves = if String.is_empty moves then moves else " " ^ moves in
+      "position startpos" ^ moves
     | Go go -> "go " ^ Go.to_string go
     | Stop -> "stop"
     | Ponderhit -> "ponderhit"
@@ -212,7 +212,7 @@ module Send = struct
     | Readyok -> "readyok"
     | Bestmove {move; ponder= None} -> "bestmove " ^ Move.to_string move
     | Bestmove {move; ponder= Some move'} ->
-        "bestmove " ^ Move.to_string move ^ " ponder " ^ Move.to_string move'
+      "bestmove " ^ Move.to_string move ^ " ponder " ^ Move.to_string move'
     | Copyprotection `checking -> "copyprotection checking"
     | Copyprotection `ok -> "copyprotection ok"
     | Copyprotection `error -> "copyprotection error"

@@ -1,64 +1,44 @@
 open Core_kernel
 
 let color_bits = 1
-
 let kind_bits = 3
-
 let bits = color_bits + kind_bits
 
 module Bits = struct
   (* Valid colors *)
 
   let white = 0b0
-
   let black = 0b1
 
   (* Valid kinds *)
 
   let pawn = 0b000
-
   let knight = 0b001
-
   let bishop = 0b010
-
   let rook = 0b011
-
   let queen = 0b100
-
   let king = 0b101
 
   (* Valid encodings *)
 
   module Pieces = struct
     let white_pawn = (white lsl 3) lor pawn
-
     let white_knight = (white lsl 3) lor knight
-
     let white_bishop = (white lsl 3) lor bishop
-
     let white_rook = (white lsl 3) lor rook
-
     let white_queen = (white lsl 3) lor queen
-
     let white_king = (white lsl 3) lor king
-
     let black_pawn = (black lsl 3) lor pawn
-
     let black_knight = (black lsl 3) lor knight
-
     let black_bishop = (black lsl 3) lor bishop
-
     let black_rook = (black lsl 3) lor rook
-
     let black_queen = (black lsl 3) lor queen
-
     let black_king = (black lsl 3) lor king
   end
 
   (* Extract the bits *)
 
   let color p = p lsr 3
-
   let kind p = p land 0b111
 end
 
@@ -75,7 +55,6 @@ module Color = struct
   include Comparable.Make (T)
 
   let of_int_exn i = colors.(i)
-
   let of_int i = Option.try_with (fun () -> of_int_exn i)
 
   let to_int = function
@@ -89,15 +68,11 @@ type kind = Pawn | Knight | Bishop | Rook | Queen | King
 let kinds = [|Pawn; Knight; Bishop; Rook; Queen; King|]
 
 module Kind = struct
-  module T = struct
-    type t = kind [@@deriving compare, equal, hash, sexp]
-  end
-
+  module T = struct type t = kind [@@deriving compare, equal, hash, sexp] end
   include T
   include Comparable.Make (T)
 
   let of_int_exn i = kinds.(i)
-
   let of_int i = Option.try_with (fun () -> of_int_exn i)
 
   let to_int = function
@@ -109,10 +84,7 @@ module Kind = struct
     | King -> Bits.king
 end
 
-module T = struct
-  type t = int [@@deriving compare, equal, hash, sexp]
-end
-
+module T = struct type t = int [@@deriving compare, equal, hash, sexp] end
 include T
 include Comparable.Make (T)
 include Bits.Pieces
@@ -120,15 +92,13 @@ include Bits.Pieces
 (* Converting to/from the ADTs *)
 
 let color p = Color.of_int_exn @@ Bits.color p
-
 let kind p = Kind.of_int_exn @@ Bits.kind p
 
 let create color kind =
   let color =
     match color with
     | White -> Bits.white
-    | Black -> Bits.black
-  in
+    | Black -> Bits.black in
   let kind =
     match kind with
     | Pawn -> Bits.pawn
@@ -136,26 +106,18 @@ let create color kind =
     | Bishop -> Bits.bishop
     | Rook -> Bits.rook
     | Queen -> Bits.queen
-    | King -> Bits.king
-  in
+    | King -> Bits.king in
   (color lsl 3) lor kind
 
 (* Testing membership *)
 
 let is_white p = Bits.(color p = white)
-
 let is_black p = Bits.(color p = black)
-
 let is_pawn p = Bits.(kind p = pawn)
-
 let is_knight p = Bits.(kind p = knight)
-
 let is_bishop p = Bits.(kind p = bishop)
-
 let is_rook p = Bits.(kind p = rook)
-
 let is_queen p = Bits.(kind p = queen)
-
 let is_king p = Bits.(kind p = king)
 
 (* Integer representation *)
@@ -171,7 +133,6 @@ let of_int_exn i =
     else i
 
 let of_int i = Option.try_with (fun () -> of_int_exn i)
-
 let to_int = ident
 
 (* FEN string representation *)
