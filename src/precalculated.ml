@@ -73,7 +73,7 @@ module Magic = struct
 end
 
 (* Total number of possible squares. *)
-let ncoord = 1 lsl Square.bits
+let nsquares = 1 lsl Square.bits
 
 (* Simple movement patterns which can be wholly precalculated with no
    parameters. *)
@@ -81,7 +81,7 @@ let ncoord = 1 lsl Square.bits
 module Simple = struct
   (* Construct a simple table which maps squares to bitboards. *)
   let make f =
-    Array.init ncoord ~f:(fun i ->
+    Array.init nsquares ~f:(fun i ->
       let rank, file =
         let sq = Square.of_int_exn i in
         Square.(rank sq, file sq) in
@@ -150,12 +150,12 @@ module Mask = struct
 
   (* Combine all diagonal directions, minus the edges. *)
   let diagonal =
-    Array.init ncoord ~f:(fun i ->
+    Array.init nsquares ~f:(fun i ->
       Bitboard.(neast.(i) + nwest.(i) + seast.(i) + swest.(i) - Edge.edges) )
 
   (* Combine all straight directions, minus the edges. *)
   let straight =
-    Array.init ncoord ~f:(fun i ->
+    Array.init nsquares ~f:(fun i ->
       Bitboard.(
         east.(i) - Edge.file_h
         + (west.(i) - Edge.file_a)
@@ -208,9 +208,9 @@ module Sliding = struct
   (* Generate the magic hash table for bishop moves. *)
   let bishop =
     let tbl =
-      Array.init ncoord ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
+      Array.init nsquares ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
     in
-    for i = 0 to ncoord - 1 do
+    for i = 0 to nsquares - 1 do
       let shift = Shift.diagonal.(i) in
       let mask = Mask.diagonal.(i) in
       let magic = Magic.bishop.(i) in
@@ -225,9 +225,9 @@ module Sliding = struct
   (* Generate the magic hash table for rook moves. *)
   let rook =
     let tbl =
-      Array.init ncoord ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
+      Array.init nsquares ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
     in
-    for i = 0 to ncoord - 1 do
+    for i = 0 to nsquares - 1 do
       let shift = Shift.straight.(i) in
       let mask = Mask.straight.(i) in
       let magic = Magic.rook.(i) in
@@ -268,13 +268,16 @@ let queen sq occupied = Bitboard.(bishop sq occupied + rook sq occupied)
 let king sq = Simple.king.(Square.to_int sq)
 
 let castle =
-  let white_queenside = Bitboard.(empty <-- Square.c1 <-- Square.d1) in
-  let white_kingside = Bitboard.(empty <-- Square.f1 <-- Square.g1) in
-  let black_queenside = Bitboard.(empty <-- Square.c8 <-- Square.d8) in
-  let black_kingside = Bitboard.(empty <-- Square.f8 <-- Square.g8) in
-  fun (color : Piece.color) side ->
-    match (color, side) with
-    | White, `queen -> white_queenside
-    | White, `king -> white_kingside
-    | Black, `queen -> black_queenside
-    | Black, `king -> black_kingside
+  let open Bitboard in
+  let open Castling_rights in
+  let arr =
+    [| (Piece.White, `king, empty <-- Square.f1 <-- Square.g1)
+     ; (Piece.White, `queen, empty <-- Square.c1 <-- Square.d1)
+     ; (Piece.Black, `king, empty <-- Square.f8 <-- Square.g8)
+     ; (Piece.Black, `queen, empty <-- Square.c8 <-- Square.d8) |] in
+  let arr =
+    Array.init (1 lsl bits) ~f:(fun i ->
+      let x = of_int_exn i in
+      Array.fold arr ~init:empty ~f:(fun b (c, s, b') ->
+        if mem x c s then b + b' else b ) ) in
+  fun rights -> arr.(to_int rights)

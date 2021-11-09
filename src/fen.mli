@@ -10,8 +10,7 @@ val start : string
 
     [active] is the active color (e.g. which player is to move next).
 
-    [queenside_castle] and [kingside_castle] represent castling rights for
-    queenside and kingside, respectively, for each color.
+    [castle] represents castling rights for each color.
 
     [en_passant] is the square, if any, of the en passant target square. If
     it exists, then a pawn has just made a two-square move, and it is thus
@@ -24,12 +23,10 @@ val start : string
 type t =
   { placement: Piece.t Map.M(Square).t
   ; active: Piece.color
-  ; castle: castle
+  ; castle: Castling_rights.t
   ; en_passant: Square.t option
   ; halfmove: int
   ; fullmove: int }
-
-and castle = {queenside: Set.M(Piece.Color).t; kingside: Set.M(Piece.Color).t}
 [@@deriving compare, equal, hash, sexp]
 
 (** [of_string_exn s] attempts to parse a FEN string [s] into a valid

@@ -4,7 +4,7 @@ open Chess
 
 let cmp_placement = Base.Map.equal Piece.equal
 let cmp_active = Piece.Color.equal
-let cmp_castle = Base.Set.equal
+let cmp_castle = Castling_rights.equal
 let cmp_en_passant = Option.equal Square.equal
 
 let test_starting_position () =
@@ -30,12 +30,7 @@ let test_starting_position () =
        ; (Square.g8, Piece.black_knight); (Square.h8, Piece.black_rook) ] )
     ~cmp:cmp_placement;
   assert_equal fen.active Piece.White ~cmp:Piece.Color.equal;
-  assert_equal fen.castle.queenside
-    (Set.of_list (module Piece.Color) [White; Black])
-    ~cmp:cmp_castle;
-  assert_equal fen.castle.kingside
-    (Set.of_list (module Piece.Color) [White; Black])
-    ~cmp:cmp_castle;
+  assert_equal fen.castle Castling_rights.all ~cmp:cmp_castle;
   assert_equal fen.en_passant None ~cmp:cmp_en_passant;
   assert_equal fen.halfmove 0;
   assert_equal fen.fullmove 1;

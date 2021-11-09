@@ -27,6 +27,6 @@ val queen : Square.t -> Bitboard.t -> Bitboard.t
     square [sq]. *)
 val king : Square.t -> Bitboard.t
 
-(** [castle color side] returns a bitboard of potentially valid castling
-    squares for color [color] and side [side]. *)
-val castle : Piece.color -> [`queen | `king] -> Bitboard.t
+(** [castle rights] returns a bitboard of potentially valid castling squares
+    w.r.t. [rights] *)
+val castle : Castling_rights.t -> Bitboard.t

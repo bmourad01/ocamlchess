@@ -5,12 +5,10 @@ let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 type t =
   { placement: Piece.t Map.M(Square).t
   ; active: Piece.color
-  ; castle: castle
+  ; castle: Castling_rights.t
   ; en_passant: Square.t option
   ; halfmove: int
   ; fullmove: int }
-
-and castle = {queenside: Set.M(Piece.Color).t; kingside: Set.M(Piece.Color).t}
 [@@deriving compare, equal, hash, sexp]
 
 let parse_placement s =
@@ -54,24 +52,7 @@ let parse_active = function
   | "b" -> Piece.Black
   | s -> invalid_arg (sprintf "Invalid active color '%s'" s)
 
-let parse_castle s =
-  let init =
-    { queenside= Set.empty (module Piece.Color)
-    ; kingside= Set.empty (module Piece.Color) } in
-  if String.equal s "-" then init
-  else
-    (* There may be duplicate symbols in this string, but since they are
-       harmless we won't bother with checking for their presence. *)
-    String.fold s ~init ~f:(fun ({queenside; kingside} as castle) sym ->
-      match sym with
-      | 'K' -> {castle with kingside= Set.add kingside Piece.White}
-      | 'Q' -> {castle with queenside= Set.add queenside Piece.White}
-      | 'k' -> {castle with kingside= Set.add kingside Piece.Black}
-      | 'q' -> {castle with queenside= Set.add queenside Piece.Black}
-      | _ ->
-        invalid_arg
-          (sprintf "Unexpected symbol '%c' in castling rights string '%s'"
-             sym s ) )
+let parse_castle = Castling_rights.of_string_exn
 
 let parse_en_passant s =
   if String.equal s "-" then None else Some (Square.of_string_exn s)
@@ -128,16 +109,7 @@ let string_of_active = function
   | Piece.White -> "w"
   | Piece.Black -> "b"
 
-let string_of_castle {queenside; kingside} =
-  let king_white = if Set.mem kingside Piece.White then "K" else "" in
-  let queen_white = if Set.mem queenside Piece.White then "Q" else "" in
-  let king_black = if Set.mem kingside Piece.Black then "k" else "" in
-  let queen_black = if Set.mem queenside Piece.Black then "q" else "" in
-  let result =
-    String.concat ~sep:"" [king_white; queen_white; king_black; queen_black]
-  in
-  if String.is_empty result then "-" else result
-
+let string_of_castle = Castling_rights.to_string
 let string_of_en_passant = Option.value_map ~default:"-" ~f:Square.to_string
 
 let to_string fen =
