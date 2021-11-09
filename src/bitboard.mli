@@ -74,6 +74,11 @@ val iter : ?rev:bool -> t -> f:(Square.t -> unit) -> unit
     square h8, otherwise from a1. *)
 val iter_until : ?rev:bool -> t -> f:(Square.t -> bool) -> unit
 
+(** [filter b ~f] applies [f] to each occupied square [sq] in [b]. If [f sq]
+    returns [false], then [sq] is cleared in the resulting bitboard.
+    Otherwise, it is kept. *)
+val filter : t -> f:(Square.t -> bool) -> t
+
 module Syntax : sig
   (** [x & y] is equivalent to [inter x y]. *)
   val ( & ) : t -> t -> t

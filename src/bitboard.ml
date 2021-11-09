@@ -71,6 +71,10 @@ let iter_until ?(rev = false) b ~f =
     ~f:(fun () sq -> if f sq then Stop () else Continue ())
     ~finish:ident ~rev
 
+let filter b ~f =
+  fold b ~init:b ~f:(fun acc sq ->
+      if f sq then acc else diff acc @@ singleton sq )
+
 (* Infix operators. *)
 
 module Syntax = struct
