@@ -83,13 +83,13 @@ module Simple = struct
   let make f =
     let open Bitboard.Syntax in
     let tbl = Array.create ~len:ncoord Bitboard.empty in
-    let add i rank file =
-      Square.of_rank_and_file ~rank ~file
-      |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq) in
     for rank = 0 to 7 do
       for file = 0 to 7 do
         let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        f rank file |> List.iter ~f:(fun (rank, file) -> add i rank file)
+        f rank file
+        |> List.filter_map ~f:(fun (rank, file) ->
+             Square.of_rank_and_file ~rank ~file )
+        |> List.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq)
       done
     done;
     tbl
