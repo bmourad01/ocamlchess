@@ -24,11 +24,12 @@ val start : string
 type t =
   { placement: Piece.t Map.M(Square).t
   ; active: Piece.color
-  ; queenside_castle: Set.M(Piece.Color).t
-  ; kingside_castle: Set.M(Piece.Color).t
+  ; castle: castle
   ; en_passant: Square.t option
   ; halfmove: int
   ; fullmove: int }
+
+and castle = {queenside: Set.M(Piece.Color).t; kingside: Set.M(Piece.Color).t}
 [@@deriving compare, equal, hash, sexp]
 
 (** [of_string_exn s] attempts to parse a FEN string [s] into a valid

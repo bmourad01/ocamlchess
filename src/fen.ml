@@ -5,11 +5,12 @@ let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 type t =
   { placement: Piece.t Map.M(Square).t
   ; active: Piece.color
-  ; queenside_castle: Set.M(Piece.Color).t
-  ; kingside_castle: Set.M(Piece.Color).t
+  ; castle: castle
   ; en_passant: Square.t option
   ; halfmove: int
   ; fullmove: int }
+
+and castle = {queenside: Set.M(Piece.Color).t; kingside: Set.M(Piece.Color).t}
 [@@deriving compare, equal, hash, sexp]
 
 let parse_placement s =
@@ -54,17 +55,19 @@ let parse_active = function
   | s -> invalid_arg (sprintf "Invalid active color '%s'" s)
 
 let parse_castle s =
-  let queenside_castle = Set.empty (module Piece.Color) in
-  let kingside_castle = Set.empty (module Piece.Color) in
-  if String.equal s "-" then (queenside_castle, kingside_castle)
+  let init =
+    { queenside= Set.empty (module Piece.Color)
+    ; kingside= Set.empty (module Piece.Color) } in
+  if String.equal s "-" then init
   else
-    String.fold s ~init:(queenside_castle, kingside_castle)
-      ~f:(fun (queenside_castle, kingside_castle) sym ->
+    (* There may be duplicate symbols in this string, but since they are
+       harmless we won't bother with checking for their presence. *)
+    String.fold s ~init ~f:(fun ({queenside; kingside} as castle) sym ->
       match sym with
-      | 'K' -> (queenside_castle, Set.add kingside_castle Piece.White)
-      | 'Q' -> (Set.add queenside_castle Piece.White, kingside_castle)
-      | 'k' -> (queenside_castle, Set.add kingside_castle Piece.Black)
-      | 'q' -> (Set.add queenside_castle Piece.Black, kingside_castle)
+      | 'K' -> {castle with kingside= Set.add kingside Piece.White}
+      | 'Q' -> {castle with queenside= Set.add queenside Piece.White}
+      | 'k' -> {castle with kingside= Set.add kingside Piece.Black}
+      | 'q' -> {castle with queenside= Set.add queenside Piece.Black}
       | _ ->
         invalid_arg
           (sprintf "Unexpected symbol '%c' in castling rights string '%s'"
@@ -90,23 +93,16 @@ let parse_fullmove s =
   with Failure _ -> invalid_arg (sprintf "Invalid halfmove count '%s'" s)
 
 let of_string_exn s =
-  let sections = Array.of_list @@ String.split s ~on:' ' in
-  if Array.length sections <> 6 then
+  match String.split s ~on:' ' with
+  | [placement; active; castle; en_passant; halfmove; fullmove] ->
+    { placement= parse_placement placement
+    ; active= parse_active active
+    ; castle= parse_castle castle
+    ; en_passant= parse_en_passant en_passant
+    ; halfmove= parse_halfmove halfmove
+    ; fullmove= parse_fullmove fullmove }
+  | _ ->
     invalid_arg (sprintf "Invalid number of sections in FEN string '%s'" s)
-  else
-    let placement = parse_placement sections.(0) in
-    let active = parse_active sections.(1) in
-    let queenside_castle, kingside_castle = parse_castle sections.(2) in
-    let en_passant = parse_en_passant sections.(3) in
-    let halfmove = parse_halfmove sections.(4) in
-    let fullmove = parse_fullmove sections.(5) in
-    { placement
-    ; active
-    ; queenside_castle
-    ; kingside_castle
-    ; en_passant
-    ; halfmove
-    ; fullmove }
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
 let create () = of_string_exn start
@@ -132,13 +128,11 @@ let string_of_active = function
   | Piece.White -> "w"
   | Piece.Black -> "b"
 
-let string_of_castle queenside_castle kingside_castle =
-  let king_white = if Set.mem kingside_castle Piece.White then "K" else "" in
-  let queen_white =
-    if Set.mem queenside_castle Piece.White then "Q" else "" in
-  let king_black = if Set.mem kingside_castle Piece.Black then "k" else "" in
-  let queen_black =
-    if Set.mem queenside_castle Piece.Black then "q" else "" in
+let string_of_castle {queenside; kingside} =
+  let king_white = if Set.mem kingside Piece.White then "K" else "" in
+  let queen_white = if Set.mem queenside Piece.White then "Q" else "" in
+  let king_black = if Set.mem kingside Piece.Black then "k" else "" in
+  let queen_black = if Set.mem queenside Piece.Black then "q" else "" in
   let result =
     String.concat ~sep:"" [king_white; queen_white; king_black; queen_black]
   in
@@ -150,6 +144,6 @@ let to_string fen =
   sprintf "%s %s %s %s %d %d"
     (string_of_placement fen.placement)
     (string_of_active fen.active)
-    (string_of_castle fen.queenside_castle fen.kingside_castle)
+    (string_of_castle fen.castle)
     (string_of_en_passant fen.en_passant)
     fen.halfmove fen.fullmove

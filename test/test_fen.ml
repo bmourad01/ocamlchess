@@ -30,10 +30,10 @@ let test_starting_position () =
        ; (Square.g8, Piece.black_knight); (Square.h8, Piece.black_rook) ] )
     ~cmp:cmp_placement;
   assert_equal fen.active Piece.White ~cmp:Piece.Color.equal;
-  assert_equal fen.queenside_castle
+  assert_equal fen.castle.queenside
     (Set.of_list (module Piece.Color) [White; Black])
     ~cmp:cmp_castle;
-  assert_equal fen.kingside_castle
+  assert_equal fen.castle.kingside
     (Set.of_list (module Piece.Color) [White; Black])
     ~cmp:cmp_castle;
   assert_equal fen.en_passant None ~cmp:cmp_en_passant;
