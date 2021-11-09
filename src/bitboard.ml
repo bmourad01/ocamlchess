@@ -12,10 +12,39 @@ include Comparable.Make (T)
 let of_int64 = ident
 let to_int64 = ident
 
-(* Constants. *)
+(* Generic constants. *)
 
 let empty = Int64.zero
 let full = Int64.bit_not empty
+
+(* Chess-specific constants. *)
+
+let rank_1 = 0x00000000000000FFL
+let rank_2 = 0x000000000000FF00L
+let rank_3 = 0x0000000000FF0000L
+let rank_4 = 0x00000000FF000000L
+let rank_5 = 0x000000FF00000000L
+let rank_6 = 0x0000FF0000000000L
+let rank_7 = 0x00FF000000000000L
+let rank_8 = 0xFF00000000000000L
+let file_a = 0x0101010101010101L
+let file_b = 0x0202020202020202L
+let file_c = 0x0404040404040404L
+let file_d = 0x0808080808080808L
+let file_e = 0x1010101010101010L
+let file_f = 0x2020202020202020L
+let file_g = 0x4040404040404040L
+let file_h = 0x8080808080808080L
+let edges = 0xFF818181818181FFL
+
+(* Helpers to access rank/file by index. *)
+
+let ranks = [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|]
+let files = [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|]
+let rank_exn = Array.get ranks
+let file_exn = Array.get files
+let rank i = Option.try_with (fun () -> rank_exn i)
+let file i = Option.try_with (fun () -> file_exn i)
 
 (* Bitwise operators. *)
 

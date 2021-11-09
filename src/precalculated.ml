@@ -120,17 +120,6 @@ end
 (* Masks for various movement directions. *)
 
 module Mask = struct
-  (* The edges of the board. *)
-  module Edge = struct
-    open Bitboard
-
-    let rank_1 = of_int64 0x00000000000000FFL
-    let rank_8 = of_int64 0xFF00000000000000L
-    let file_a = of_int64 0x0101010101010101L
-    let file_h = of_int64 0x8080808080808080L
-    let edges = rank_1 + rank_8 + file_a + file_h
-  end
-
   (* Direction to move in when starting from a particular square. *)
   let dir r f =
     Simple.make
@@ -151,16 +140,16 @@ module Mask = struct
   (* Combine all diagonal directions, minus the edges. *)
   let diagonal =
     Array.init nsquares ~f:(fun i ->
-      Bitboard.(neast.(i) + nwest.(i) + seast.(i) + swest.(i) - Edge.edges) )
+      Bitboard.(neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges) )
 
   (* Combine all straight directions, minus the edges. *)
   let straight =
     Array.init nsquares ~f:(fun i ->
       Bitboard.(
-        east.(i) - Edge.file_h
-        + (west.(i) - Edge.file_a)
-        + (north.(i) - Edge.rank_8)
-        + (south.(i) - Edge.rank_1)) )
+        east.(i) - file_h
+        + (west.(i) - file_a)
+        + (north.(i) - rank_8)
+        + (south.(i) - rank_1)) )
 end
 
 (* Generation of sliding attack patterns. *)

@@ -19,6 +19,73 @@ val empty : t
 (** [full] is the fully-occupied board. *)
 val full : t
 
+(** [rank_1] is the first rank. *)
+val rank_1 : t
+
+(** [rank_2] is the second rank. *)
+val rank_2 : t
+
+(** [rank_3] is the third rank. *)
+val rank_3 : t
+
+(** [rank_4] is the fourth rank. *)
+val rank_4 : t
+
+(** [rank_5] is the fifth rank. *)
+val rank_5 : t
+
+(** [rank_6] is the sixth rank. *)
+val rank_6 : t
+
+(** [rank_7] is the seventh rank. *)
+val rank_7 : t
+
+(** [rank_8] is the eighth rank. *)
+val rank_8 : t
+
+(** [file_a] is the a file. *)
+val file_a : t
+
+(** [file_b] is the b file. *)
+val file_b : t
+
+(** [file_c] is the c file. *)
+val file_c : t
+
+(** [file_d] is the d file. *)
+val file_d : t
+
+(** [file_e] is the e file. *)
+val file_e : t
+
+(** [file_f] is the f file. *)
+val file_f : t
+
+(** [file_g] is the g file. *)
+val file_g : t
+
+(** [file_h] is the h file. *)
+val file_h : t
+
+(** [edges] is the union of [file_a], [file_h], [rank_1], and [rank_8]. *)
+val edges : t
+
+(** [rank_exn i] the rank at index [i] if [i \in \[0,7\]]. Otherwise, an
+    exception is raised. *)
+val rank_exn : int -> t
+
+(** [file_exn i] the file at index [i] if [i \in \[0,7\]]. Otherwise, an
+    exception is raised. *)
+val file_exn : int -> t
+
+(** [rank i] the rank at index [i] if [i \in \[0,7\]]. Otherwise, [None] is
+    returned *)
+val rank : int -> t option
+
+(** [file i] the file at index [i] if [i \in \[0,7\]]. Otherwise, [None] is
+    returned *)
+val file : int -> t option
+
 (** [inter x y] is the intersection of bitboards [x] and [y]. *)
 val inter : t -> t -> t
 
