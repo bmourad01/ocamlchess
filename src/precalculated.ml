@@ -92,7 +92,7 @@ module Simple = struct
   (* Pawns, knights, and kings have simple movement patterns, which we can
      store the entirety of. *)
 
-  let white_pawn_fwd =
+  let white_pawn_advance =
     let tbl, add = make () in
     for rank = 0 to 7 do
       for file = 0 to 7 do
@@ -113,7 +113,7 @@ module Simple = struct
     done;
     tbl
 
-  let black_pawn_fwd =
+  let black_pawn_advance =
     let tbl, add = make () in
     for rank = 0 to 7 do
       for file = 0 to 7 do
@@ -328,12 +328,12 @@ end
 
 (* The actual API for accessing precalculated move patterns. *)
 
-let pawn_fwd sq (color : Piece.color) =
+let pawn_advance sq (color : Piece.color) =
   match color with
-  | White -> Simple.white_pawn_fwd.(Square.to_int sq)
-  | Black -> Simple.black_pawn_fwd.(Square.to_int sq)
+  | White -> Simple.white_pawn_advance.(Square.to_int sq)
+  | Black -> Simple.black_pawn_advance.(Square.to_int sq)
 
-let pawn_attack sq (color : Piece.color) =
+let pawn_capture sq (color : Piece.color) =
   match color with
   | White -> Simple.white_pawn_capture.(Square.to_int sq)
   | Black -> Simple.black_pawn_capture.(Square.to_int sq)
