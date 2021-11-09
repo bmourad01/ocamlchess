@@ -150,26 +150,17 @@ module Mask = struct
 
   (* Combine all diagonal directions, minus the edges. *)
   let diagonal =
-    let tbl = Array.create ~len:ncoord Bitboard.empty in
-    for i = 0 to ncoord - 1 do
-      let open Bitboard.Syntax in
-      tbl.(i) <- neast.(i) + nwest.(i) + seast.(i) + swest.(i) - Edge.edges
-    done;
-    tbl
+    Array.init ncoord ~f:(fun i ->
+      Bitboard.(neast.(i) + nwest.(i) + seast.(i) + swest.(i) - Edge.edges) )
 
   (* Combine all straight directions, minus the edges. *)
   let straight =
-    let tbl = Array.create ~len:ncoord Bitboard.empty in
-    for i = 0 to ncoord - 1 do
-      let open Bitboard.Syntax in
-      let open Edge in
-      tbl.(i) <-
-        east.(i) - file_h
-        + (west.(i) - file_a)
-        + (north.(i) - rank_8)
-        + (south.(i) - rank_1)
-    done;
-    tbl
+    Array.init ncoord ~f:(fun i ->
+      Bitboard.(
+        east.(i) - Edge.file_h
+        + (west.(i) - Edge.file_a)
+        + (north.(i) - Edge.rank_8)
+        + (south.(i) - Edge.rank_1)) )
 end
 
 (* Generation of sliding attack patterns. *)
