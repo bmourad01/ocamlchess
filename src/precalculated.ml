@@ -80,92 +80,45 @@ let ncoord = 1 lsl Square.bits
 
 module Simple = struct
   (* Construct a simple table which maps squares to bitboards. *)
-  let make () =
+  let make f =
     let open Bitboard.Syntax in
     let tbl = Array.create ~len:ncoord Bitboard.empty in
     let add i rank file =
       Square.of_rank_and_file ~rank ~file
       |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq) in
-    (tbl, add)
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        f rank file |> List.iter ~f:(fun (rank, file) -> add i rank file)
+      done
+    done;
+    tbl
 
   (* Pawns, knights, and kings have simple movement patterns, which we can
      store the entirety of. *)
 
-  let white_pawn_advance =
-    let tbl, add = make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        add i (rank + 1) file
-      done
-    done;
-    tbl
+  let white_pawn_advance = make @@ fun rank file -> [(rank + 1, file)]
+  let black_pawn_advance = make @@ fun rank file -> [(rank - 1, file)]
 
   let white_pawn_capture =
-    let tbl, add = make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        add i (rank + 1) (file + 1);
-        add i (rank + 1) (file - 1)
-      done
-    done;
-    tbl
-
-  let black_pawn_advance =
-    let tbl, add = make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        add i (rank - 1) file
-      done
-    done;
-    tbl
+    make @@ fun rank file -> [(rank + 1, file + 1); (rank + 1, file - 1)]
 
   let black_pawn_capture =
-    let tbl, add = make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        add i (rank - 1) (file + 1);
-        add i (rank - 1) (file - 1)
-      done
-    done;
-    tbl
+    make @@ fun rank file -> [(rank - 1, file + 1); (rank - 1, file - 1)]
 
   let knight =
-    let tbl, add = make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        add i (rank + 2) (file + 1);
-        add i (rank - 2) (file + 1);
-        add i (rank + 2) (file - 1);
-        add i (rank - 2) (file - 1);
-        add i (rank + 1) (file + 2);
-        add i (rank - 1) (file + 2);
-        add i (rank + 1) (file - 2);
-        add i (rank - 1) (file - 2)
-      done
-    done;
-    tbl
+    make
+    @@ fun rank file ->
+    [ (rank + 2, file + 1); (rank - 2, file + 1); (rank + 2, file - 1)
+    ; (rank - 2, file - 1); (rank + 1, file + 2); (rank - 1, file + 2)
+    ; (rank + 1, file - 2); (rank - 1, file - 2) ]
 
   let king =
-    let tbl, add = make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        add i rank (file + 1);
-        add i rank (file - 1);
-        add i (rank + 1) (file + 1);
-        add i (rank + 1) (file - 1);
-        add i (rank - 1) (file + 1);
-        add i (rank - 1) (file - 1);
-        add i (rank + 1) file;
-        add i (rank - 1) file
-      done
-    done;
-    tbl
+    make
+    @@ fun rank file ->
+    [ (rank, file + 1); (rank, file - 1); (rank + 1, file + 1)
+    ; (rank + 1, file - 1); (rank - 1, file + 1); (rank - 1, file - 1)
+    ; (rank + 1, file); (rank - 1, file) ]
 end
 
 (* Masks for various movement directions. *)
@@ -173,27 +126,20 @@ end
 module Mask = struct
   (* The edges of the board. *)
   module Edge = struct
-    open Bitboard.Syntax
+    open Bitboard
 
-    let rank_1 = Bitboard.of_int64 0x00000000000000FFL
-    let rank_8 = Bitboard.of_int64 0xFF00000000000000L
-    let file_a = Bitboard.of_int64 0x0101010101010101L
-    let file_h = Bitboard.of_int64 0x8080808080808080L
+    let rank_1 = of_int64 0x00000000000000FFL
+    let rank_8 = of_int64 0xFF00000000000000L
+    let file_a = of_int64 0x0101010101010101L
+    let file_h = of_int64 0x8080808080808080L
     let edges = rank_1 + rank_8 + file_a + file_h
   end
 
   (* Direction to move in when starting from a particular square. *)
   let dir r f =
-    let tbl, add = Simple.make () in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        for j = 1 to 7 do
-          add i (r rank j) (f file j)
-        done
-      done
-    done;
-    tbl
+    Simple.make
+    @@ fun rank file ->
+    List.init 7 ~f:(fun i -> (r rank (i + 1), f file (i + 1)))
 
   (* All 8 directions. *)
 
@@ -233,33 +179,28 @@ end
 (* Generation of sliding attack patterns. *)
 
 module Sliding = struct
-  let right = Int64.ctz
-  let left b = 63 - Int64.clz b
-
-  let gen arr i occupied =
-    let open Bitboard in
-    let occupied = of_int64 occupied in
-    Array.map arr ~f:(fun (tbl, f) ->
-      let b = tbl.(i) in
-      let j =
-        match to_int64 (b & occupied) with
-        | 0L -> None
-        | b' -> Some (f b') in
-      (b, j) )
-    |> Array.foldi ~init:empty ~f:(fun i acc (b, j) ->
-         let acc = acc + b in
-         Option.value_map j ~default:acc ~f:(fun j ->
-           acc - (fst arr.(i)).(j) ) )
-
-  (* Compute the bitboard of attacking squares for a diagonal move, given the
-     set of occupied squares. *)
-  let diagonal =
-    gen Mask.[|(neast, right); (nwest, right); (seast, left); (swest, left)|]
-
-  (* Compute the bitboard of attacking squares for a straight move, given the
-     set of occupied squares. *)
-  let straight =
-    gen Mask.[|(east, right); (west, left); (north, right); (south, left)|]
+  (* Computes the bitboards for diagonal and straight attacks, given a
+     starting square and the set of occupied squares. *)
+  let diagonal, straight =
+    let gen arr i occupied =
+      let open Bitboard in
+      let occupied = of_int64 occupied in
+      Array.map arr ~f:(fun (tbl, f) ->
+        let b = tbl.(i) in
+        let j =
+          match to_int64 (b & occupied) with
+          | 0L -> None
+          | b' -> Some (f b') in
+        (b, j) )
+      |> Array.foldi ~init:empty ~f:(fun i acc (b, j) ->
+           let acc = acc + b in
+           Option.value_map j ~default:acc ~f:(fun j ->
+             acc - (fst arr.(i)).(j) ) ) in
+    let l b = 63 - Int64.clz b in
+    let r = Int64.ctz in
+    Mask.
+      ( gen [|(neast, r); (nwest, r); (seast, l); (swest, l)|]
+      , gen [|(east, r); (west, l); (north, r); (south, l)|] )
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
