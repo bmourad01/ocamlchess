@@ -3,9 +3,7 @@ open OUnit2
 open Chess
 
 let cmp_move_opt = Option.equal Move.equal
-
 let cmp_square = Square.equal
-
 let cmp_promote = Option.equal Piece.Kind.equal
 
 let test_parse () =

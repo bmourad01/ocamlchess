@@ -3,11 +3,8 @@ open OUnit2
 open Chess
 
 let cmp_placement = Base.Map.equal Piece.equal
-
 let cmp_active = Piece.Color.equal
-
 let cmp_castle = Base.Set.equal
-
 let cmp_en_passant = Option.equal Square.equal
 
 let test_starting_position () =
