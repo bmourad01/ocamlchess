@@ -75,94 +75,99 @@ end
 (* Total number of possible squares. *)
 let ncoord = 1 lsl Square.bits
 
-(* Construct a simple table which maps squares to bitboards. *)
-let make_simple () =
-  let open Bitboard.Syntax in
-  let tbl = Array.create ~len:ncoord Bitboard.empty in
-  let add i rank file =
-    Square.of_rank_and_file ~rank ~file
-    |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq)
-  in
-  (tbl, add)
+(* Simple movement patterns which can be wholly precalculated with no
+   parameters. *)
 
-(* Pawns, knights, and kings have simple movement patterns, which we can
-   store the entirety of. *)
+module Simple = struct
+  (* Construct a simple table which maps squares to bitboards. *)
+  let make () =
+    let open Bitboard.Syntax in
+    let tbl = Array.create ~len:ncoord Bitboard.empty in
+    let add i rank file =
+      Square.of_rank_and_file ~rank ~file
+      |> Option.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq)
+    in
+    (tbl, add)
 
-let white_pawn_moves =
-  let tbl, add = make_simple () in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      add i (rank + 1) file
-    done
-  done;
-  tbl
+  (* Pawns, knights, and kings have simple movement patterns, which we can
+     store the entirety of. *)
 
-let white_pawn_attacks =
-  let tbl, add = make_simple () in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      add i (rank + 1) (file + 1);
-      add i (rank + 1) (file - 1)
-    done
-  done;
-  tbl
+  let white_pawn_fwd =
+    let tbl, add = make () in
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        add i (rank + 1) file
+      done
+    done;
+    tbl
 
-let black_pawn_moves =
-  let tbl, add = make_simple () in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      add i (rank - 1) file
-    done
-  done;
-  tbl
+  let white_pawn_capture =
+    let tbl, add = make () in
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        add i (rank + 1) (file + 1);
+        add i (rank + 1) (file - 1)
+      done
+    done;
+    tbl
 
-let black_pawn_attacks =
-  let tbl, add = make_simple () in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      add i (rank - 1) (file + 1);
-      add i (rank - 1) (file - 1)
-    done
-  done;
-  tbl
+  let black_pawn_fwd =
+    let tbl, add = make () in
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        add i (rank - 1) file
+      done
+    done;
+    tbl
 
-let knight_moves =
-  let tbl, add = make_simple () in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      add i (rank + 2) (file + 1);
-      add i (rank - 2) (file + 1);
-      add i (rank + 2) (file - 1);
-      add i (rank - 2) (file - 1);
-      add i (rank + 1) (file + 2);
-      add i (rank - 1) (file + 2);
-      add i (rank + 1) (file - 2);
-      add i (rank - 1) (file - 2)
-    done
-  done;
-  tbl
+  let black_pawn_capture =
+    let tbl, add = make () in
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        add i (rank - 1) (file + 1);
+        add i (rank - 1) (file - 1)
+      done
+    done;
+    tbl
 
-let king_moves =
-  let tbl, add = make_simple () in
-  for rank = 0 to 7 do
-    for file = 0 to 7 do
-      let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-      add i rank (file + 1);
-      add i rank (file - 1);
-      add i (rank + 1) (file + 1);
-      add i (rank + 1) (file - 1);
-      add i (rank - 1) (file + 1);
-      add i (rank - 1) (file - 1);
-      add i (rank + 1) file;
-      add i (rank - 1) file
-    done
-  done;
-  tbl
+  let knight =
+    let tbl, add = make () in
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        add i (rank + 2) (file + 1);
+        add i (rank - 2) (file + 1);
+        add i (rank + 2) (file - 1);
+        add i (rank - 2) (file - 1);
+        add i (rank + 1) (file + 2);
+        add i (rank - 1) (file + 2);
+        add i (rank + 1) (file - 2);
+        add i (rank - 1) (file - 2)
+      done
+    done;
+    tbl
+
+  let king =
+    let tbl, add = make () in
+    for rank = 0 to 7 do
+      for file = 0 to 7 do
+        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
+        add i rank (file + 1);
+        add i rank (file - 1);
+        add i (rank + 1) (file + 1);
+        add i (rank + 1) (file - 1);
+        add i (rank - 1) (file + 1);
+        add i (rank - 1) (file - 1);
+        add i (rank + 1) file;
+        add i (rank - 1) file
+      done
+    done;
+    tbl
+end
 
 (* Masks for various movement directions. *)
 
@@ -184,7 +189,7 @@ module Mask = struct
 
   (* Direction to move in when starting from a particular square. *)
   let dir r f =
-    let tbl, add = make_simple () in
+    let tbl, add = Simple.make () in
     for rank = 0 to 7 do
       for file = 0 to 7 do
         let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
@@ -237,7 +242,9 @@ module Mask = struct
     tbl
 end
 
-module Attack = struct
+(* Generation of sliding attack patterns. *)
+
+module Sliding = struct
   let ctz = Int64.ctz
 
   let clz b = 63 - Int64.clz b
@@ -264,98 +271,97 @@ module Attack = struct
      set of occupied squares. *)
   let straight =
     gen Mask.[|(east, ctz); (west, clz); (north, ctz); (south, clz)|]
+
+  (* Generate the occupied squares for a particular mask and index. *)
+  let blockers idx mask =
+    let mask = Bitboard.to_int64 mask in
+    Int64.popcount mask |> Array.init ~f:ident
+    |> Array.fold ~init:(0L, mask) ~f:(fun (blockers, mask) i ->
+           let blockers =
+             if idx land (1 lsl i) = 0 then blockers
+             else
+               let j = Int64.ctz mask in
+               Int64.(blockers lor (one lsl j))
+           in
+           (blockers, Int64.(mask land pred mask)) )
+    |> fst
+
+  (* Compute the index into the magic hash table. *)
+  let hash occupied magic shift =
+    let shift = 64 - shift in
+    Int64.((occupied * magic) lsr shift |> to_int_exn)
+
+  (* Generate the magic hash table for bishop moves. *)
+  let bishop =
+    let tbl =
+      Array.init ncoord ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
+    in
+    for i = 0 to ncoord - 1 do
+      let shift = Shift.diagonal.(i) in
+      let mask = Mask.diagonal.(i) in
+      let magic = Magic.bishop.(i) in
+      let t = tbl.(i) in
+      for j = 0 to 1 lsl shift do
+        let occupied = blockers j mask in
+        t.(hash occupied magic shift) <- diagonal i occupied
+      done
+    done;
+    tbl
+
+  (* Generate the magic hash table for rook moves. *)
+  let rook =
+    let tbl =
+      Array.init ncoord ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
+    in
+    for i = 0 to ncoord - 1 do
+      let shift = Shift.straight.(i) in
+      let mask = Mask.straight.(i) in
+      let magic = Magic.rook.(i) in
+      let t = tbl.(i) in
+      for j = 0 to 1 lsl shift do
+        let occupied = blockers j mask in
+        t.(hash occupied magic shift) <- straight i occupied
+      done
+    done;
+    tbl
 end
 
-(* Generate the occupied squares for a particular mask and index. *)
-let blockers idx mask =
-  let mask = Bitboard.to_int64 mask in
-  Int64.popcount mask |> Array.init ~f:ident
-  |> Array.fold ~init:(0L, mask) ~f:(fun (blockers, mask) i ->
-         let blockers =
-           if idx land (1 lsl i) = 0 then blockers
-           else
-             let j = Int64.ctz mask in
-             Int64.(blockers lor (one lsl j))
-         in
-         (blockers, Int64.(mask land pred mask)) )
-  |> fst
-
-(* Compute the index into the magic hash table. *)
-let hash_key occupied magic shift =
-  let shift = 64 - shift in
-  Int64.((occupied * magic) lsr shift |> to_int_exn)
-
-(* Generate the magic hash table for bishop moves. *)
-let bishop_moves =
-  let tbl =
-    Array.init ncoord ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
-  in
-  for i = 0 to ncoord - 1 do
-    let shift = Shift.diagonal.(i) in
-    let mask = Mask.diagonal.(i) in
-    let magic = Magic.bishop.(i) in
-    let t = tbl.(i) in
-    for j = 0 to 1 lsl shift do
-      let occupied = blockers j mask in
-      t.(hash_key occupied magic shift) <- Attack.diagonal i occupied
-    done
-  done;
-  tbl
-
-(* Generate the magic hash table for rook moves. *)
-let rook_moves =
-  let tbl =
-    Array.init ncoord ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
-  in
-  for i = 0 to ncoord - 1 do
-    let shift = Shift.straight.(i) in
-    let mask = Mask.straight.(i) in
-    let magic = Magic.rook.(i) in
-    let t = tbl.(i) in
-    for j = 0 to 1 lsl shift do
-      let occupied = blockers j mask in
-      t.(hash_key occupied magic shift) <- Attack.straight i occupied
-    done
-  done;
-  tbl
+(* The actual API for accessing precalculated move patterns. *)
 
 let pawn_fwd sq (color : Piece.color) =
   match color with
-  | White -> white_pawn_moves.(Square.to_int sq)
-  | Black -> black_pawn_moves.(Square.to_int sq)
+  | White -> Simple.white_pawn_fwd.(Square.to_int sq)
+  | Black -> Simple.black_pawn_fwd.(Square.to_int sq)
 
 let pawn_attack sq (color : Piece.color) =
   match color with
-  | White -> white_pawn_attacks.(Square.to_int sq)
-  | Black -> black_pawn_attacks.(Square.to_int sq)
+  | White -> Simple.white_pawn_capture.(Square.to_int sq)
+  | Black -> Simple.black_pawn_capture.(Square.to_int sq)
 
-let knight sq = knight_moves.(Square.to_int sq)
+let knight sq = Simple.knight.(Square.to_int sq)
 
 let bishop sq occupied =
   let occupied = Bitboard.to_int64 occupied in
   let i = Square.to_int sq in
-  bishop_moves.(i).(hash_key occupied Magic.bishop.(i) Shift.diagonal.(i))
+  Sliding.(bishop.(i).(hash occupied Magic.bishop.(i) Shift.diagonal.(i)))
 
 let rook sq occupied =
   let occupied = Bitboard.to_int64 occupied in
   let i = Square.to_int sq in
-  rook_moves.(i).(hash_key occupied Magic.rook.(i) Shift.straight.(i))
+  Sliding.(rook.(i).(hash occupied Magic.rook.(i) Shift.straight.(i)))
 
 let queen sq occupied = Bitboard.(bishop sq occupied + rook sq occupied)
 
-let king sq = king_moves.(Square.to_int sq)
+let king sq = Simple.king.(Square.to_int sq)
 
-let white_queenside_castle = Bitboard.(empty <-- Square.c1 <-- Square.d1)
-
-let white_kingside_castle = Bitboard.(empty <-- Square.f1 <-- Square.g1)
-
-let black_queenside_castle = Bitboard.(empty <-- Square.c8 <-- Square.d8)
-
-let black_kingside_castle = Bitboard.(empty <-- Square.f8 <-- Square.g8)
-
-let castle (color : Piece.color) side =
-  match (color, side) with
-  | White, `queen -> white_queenside_castle
-  | White, `king -> white_kingside_castle
-  | Black, `queen -> black_queenside_castle
-  | Black, `king -> black_kingside_castle
+let castle =
+  let white_queenside = Bitboard.(empty <-- Square.c1 <-- Square.d1) in
+  let white_kingside = Bitboard.(empty <-- Square.f1 <-- Square.g1) in
+  let black_queenside = Bitboard.(empty <-- Square.c8 <-- Square.d8) in
+  let black_kingside = Bitboard.(empty <-- Square.f8 <-- Square.g8) in
+  fun (color : Piece.color) side ->
+    match (color, side) with
+    | White, `queen -> white_queenside
+    | White, `king -> white_kingside
+    | Black, `queen -> black_queenside
+    | Black, `king -> black_kingside
