@@ -233,8 +233,8 @@ end
 (* Generation of sliding attack patterns. *)
 
 module Sliding = struct
-  let ctz = Int64.ctz
-  let clz b = 63 - Int64.clz b
+  let right = Int64.ctz
+  let left b = 63 - Int64.clz b
 
   let gen arr i occupied =
     let open Bitboard in
@@ -242,7 +242,7 @@ module Sliding = struct
     Array.map arr ~f:(fun (tbl, f) ->
       let b = tbl.(i) in
       let j =
-        match to_int64 @@ (b & occupied) with
+        match to_int64 (b & occupied) with
         | 0L -> None
         | b' -> Some (f b') in
       (b, j) )
@@ -254,12 +254,12 @@ module Sliding = struct
   (* Compute the bitboard of attacking squares for a diagonal move, given the
      set of occupied squares. *)
   let diagonal =
-    gen Mask.[|(neast, ctz); (nwest, ctz); (seast, clz); (swest, clz)|]
+    gen Mask.[|(neast, right); (nwest, right); (seast, left); (swest, left)|]
 
   (* Compute the bitboard of attacking squares for a straight move, given the
      set of occupied squares. *)
   let straight =
-    gen Mask.[|(east, ctz); (west, clz); (north, ctz); (south, clz)|]
+    gen Mask.[|(east, right); (west, left); (north, right); (south, left)|]
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
@@ -268,9 +268,7 @@ module Sliding = struct
     |> Array.fold ~init:(0L, mask) ~f:(fun (blockers, mask) i ->
          let blockers =
            if idx land (1 lsl i) = 0 then blockers
-           else
-             let j = Int64.ctz mask in
-             Int64.(blockers lor (one lsl j)) in
+           else Int64.(blockers lor (one lsl ctz mask)) in
          (blockers, Int64.(mask land pred mask)) )
     |> fst
 
