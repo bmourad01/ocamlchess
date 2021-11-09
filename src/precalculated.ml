@@ -81,18 +81,14 @@ let ncoord = 1 lsl Square.bits
 module Simple = struct
   (* Construct a simple table which maps squares to bitboards. *)
   let make f =
-    let open Bitboard.Syntax in
-    let tbl = Array.create ~len:ncoord Bitboard.empty in
-    for rank = 0 to 7 do
-      for file = 0 to 7 do
-        let i = Square.of_rank_and_file_exn ~rank ~file |> Square.to_int in
-        f rank file
-        |> List.filter_map ~f:(fun (rank, file) ->
-             Square.of_rank_and_file ~rank ~file )
-        |> List.iter ~f:(fun sq -> tbl.(i) <- tbl.(i) <-- sq)
-      done
-    done;
-    tbl
+    Array.init ncoord ~f:(fun i ->
+      let rank, file =
+        let sq = Square.of_int_exn i in
+        Square.(rank sq, file sq) in
+      f rank file
+      |> List.filter_map ~f:(fun (rank, file) ->
+           Square.of_rank_and_file ~rank ~file )
+      |> List.fold ~init:Bitboard.empty ~f:Bitboard.set )
 
   (* Pawns, knights, and kings have simple movement patterns, which we can
      store the entirety of. *)
