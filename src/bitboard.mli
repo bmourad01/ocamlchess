@@ -40,7 +40,7 @@ val singleton : Square.t -> t
 (** [set b sq] is equivalent to [union b (singleton sq)]. *)
 val set : t -> Square.t -> t
 
-(** [clear b sq] is equivalent to [inter b (compl (singleton sq))] *)
+(** [clear b sq] is equivalent to [diff b (singleton sq)] *)
 val clear : t -> Square.t -> t
 
 (** [mem b sq] tests if the square [sq] is occupied in [b]. *)
