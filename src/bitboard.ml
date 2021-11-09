@@ -33,7 +33,7 @@ let singleton sq = Int64.(one lsl Square.to_int sq)
 
 let set b sq = union b @@ singleton sq
 
-let clear b sq = inter b @@ compl @@ singleton sq
+let clear b sq = diff b @@ singleton sq
 
 let mem b sq = empty <> inter b @@ singleton sq
 
@@ -72,8 +72,7 @@ let iter_until ?(rev = false) b ~f =
     ~finish:ident ~rev
 
 let filter b ~f =
-  fold b ~init:b ~f:(fun acc sq ->
-      if f sq then acc else diff acc @@ singleton sq )
+  fold b ~init:b ~f:(fun acc sq -> if f sq then acc else clear acc sq)
 
 (* Infix operators. *)
 
