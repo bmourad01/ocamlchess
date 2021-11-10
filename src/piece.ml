@@ -22,23 +22,23 @@ module Bits = struct
   (* Valid encodings *)
 
   module Pieces = struct
-    let white_pawn = (white lsl 3) lor pawn
-    let white_knight = (white lsl 3) lor knight
-    let white_bishop = (white lsl 3) lor bishop
-    let white_rook = (white lsl 3) lor rook
-    let white_queen = (white lsl 3) lor queen
-    let white_king = (white lsl 3) lor king
-    let black_pawn = (black lsl 3) lor pawn
-    let black_knight = (black lsl 3) lor knight
-    let black_bishop = (black lsl 3) lor bishop
-    let black_rook = (black lsl 3) lor rook
-    let black_queen = (black lsl 3) lor queen
-    let black_king = (black lsl 3) lor king
+    let white_pawn = (white lsl kind_bits) lor pawn
+    let white_knight = (white lsl kind_bits) lor knight
+    let white_bishop = (white lsl kind_bits) lor bishop
+    let white_rook = (white lsl kind_bits) lor rook
+    let white_queen = (white lsl kind_bits) lor queen
+    let white_king = (white lsl kind_bits) lor king
+    let black_pawn = (black lsl kind_bits) lor pawn
+    let black_knight = (black lsl kind_bits) lor knight
+    let black_bishop = (black lsl kind_bits) lor bishop
+    let black_rook = (black lsl kind_bits) lor rook
+    let black_queen = (black lsl kind_bits) lor queen
+    let black_king = (black lsl kind_bits) lor king
   end
 
   (* Extract the bits *)
 
-  let color p = p lsr 3
+  let color p = p lsr kind_bits
   let kind p = p land 0b111
 end
 
@@ -107,7 +107,7 @@ let create color kind =
     | Rook -> Bits.rook
     | Queen -> Bits.queen
     | King -> Bits.king in
-  (color lsl 3) lor kind
+  (color lsl kind_bits) lor kind
 
 (* Testing membership *)
 

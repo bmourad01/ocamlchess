@@ -20,7 +20,7 @@ let of_rank_and_file_exn ~rank ~file =
     invalid_arg (sprintf "Invalid rank index '%d'" rank)
   else if file < 0 || file > 7 then
     invalid_arg (sprintf "Invalid file index '%d'" file)
-  else (rank lsl 3) lor file
+  else (rank lsl bits lsr 1) lor file
 
 let of_rank_and_file ~rank ~file =
   Option.try_with (fun () -> of_rank_and_file_exn ~rank ~file)
