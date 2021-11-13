@@ -34,7 +34,7 @@ let all = white lor black
 let inter x y = x land y
 let union x y = x lor y
 let compl x = all land lnot x
-let diff x y = inter x @@ lnot y
+let diff x y = inter x @@ compl y
 
 (* Testing membership. *)
 
@@ -48,14 +48,14 @@ let mem x (color : Piece.color) side =
 (* String operations. *)
 
 let to_string =
-  let l =
+  let arr =
     List.zip_exn (List.init bits ~f:(fun i -> 1 lsl i)) ["K"; "Q"; "k"; "q"]
     |> Array.of_list in
   function
   | 0 -> "-"
   | x ->
-    Array.fold l ~init:"" ~f:(fun acc (n, s) ->
-      if n land x <> none then acc ^ s else acc )
+    Array.fold arr ~init:"" ~f:(fun acc (y, s) ->
+      if inter x y <> none then acc ^ s else acc )
 
 let of_string_exn = function
   | "" ->
