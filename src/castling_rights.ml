@@ -47,13 +47,15 @@ let mem x (color : Piece.color) side =
 
 (* String operations. *)
 
-let to_string x =
-  let wk = if mem x White `king then "K" else "" in
-  let wq = if mem x White `queen then "Q" else "" in
-  let bk = if mem x Black `king then "k" else "" in
-  let bq = if mem x Black `queen then "q" else "" in
-  let s = String.concat ~sep:"" [wk; wq; bk; bq] in
-  if String.is_empty s then "-" else s
+let to_string =
+  let l =
+    List.zip_exn (List.init bits ~f:(fun i -> 1 lsl i)) ["K"; "Q"; "k"; "q"]
+    |> Array.of_list in
+  function
+  | 0 -> "-"
+  | x ->
+    Array.fold l ~init:"" ~f:(fun acc (n, s) ->
+      if n land x <> none then acc ^ s else acc )
 
 let of_string_exn = function
   | "" ->
