@@ -39,10 +39,16 @@ let edges = 0xFF818181818181FFL
 
 (* Helpers to access rank/file by index. *)
 
-let ranks = [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|]
-let files = [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|]
-let rank_exn = Array.get ranks
-let file_exn = Array.get files
+let rank_exn =
+  let ranks =
+    [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|] in
+  Array.get ranks
+
+let file_exn =
+  let files =
+    [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|] in
+  Array.get files
+
 let rank i = Option.try_with (fun () -> rank_exn i)
 let file i = Option.try_with (fun () -> file_exn i)
 

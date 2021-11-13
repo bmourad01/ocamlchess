@@ -195,38 +195,24 @@ module Sliding = struct
     Int64.((occupied * magic) lsr shift |> to_int_exn)
 
   (* Generate the magic hash table for bishop moves. *)
-  let bishop =
-    let tbl =
-      Array.init nsquares ~f:(fun _ -> Array.create ~len:1024 Bitboard.empty)
-    in
-    for i = 0 to nsquares - 1 do
-      let shift = Shift.diagonal.(i) in
-      let mask = Mask.diagonal.(i) in
-      let magic = Magic.bishop.(i) in
-      let t = tbl.(i) in
-      for j = 0 to 1 lsl shift do
-        let occupied = blockers j mask in
-        t.(hash occupied magic shift) <- diagonal i occupied
-      done
-    done;
-    tbl
-
-  (* Generate the magic hash table for rook moves. *)
-  let rook =
-    let tbl =
-      Array.init nsquares ~f:(fun _ -> Array.create ~len:4096 Bitboard.empty)
-    in
-    for i = 0 to nsquares - 1 do
-      let shift = Shift.straight.(i) in
-      let mask = Mask.straight.(i) in
-      let magic = Magic.rook.(i) in
-      let t = tbl.(i) in
-      for j = 0 to 1 lsl shift do
-        let occupied = blockers j mask in
-        t.(hash occupied magic shift) <- straight i occupied
-      done
-    done;
-    tbl
+  let bishop, rook =
+    let go len shift mask magic gen =
+      let tbl =
+        Array.init nsquares ~f:(fun _ -> Array.create ~len Bitboard.empty)
+      in
+      for i = 0 to nsquares - 1 do
+        let shift = shift.(i)
+        and mask = mask.(i)
+        and magic = magic.(i)
+        and t = tbl.(i) in
+        for j = 0 to 1 lsl shift do
+          let occupied = blockers j mask in
+          t.(hash occupied magic shift) <- gen i occupied
+        done
+      done;
+      tbl in
+    ( go 1024 Shift.diagonal Mask.diagonal Magic.bishop diagonal
+    , go 4096 Shift.straight Mask.straight Magic.rook straight )
 end
 
 (* The actual API for accessing precalculated move patterns. *)
