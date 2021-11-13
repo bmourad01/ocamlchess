@@ -58,11 +58,7 @@ let inter = Int64.bit_and
 let union = Int64.bit_or
 let compl = Int64.bit_not
 let diff x y = inter x @@ compl y
-
-let singleton =
-  let arr = Array.init (1 lsl Square.bits) ~f:Int64.(shift_left one) in
-  fun sq -> arr.(Square.to_int sq)
-
+let singleton sq = Int64.(one lsl Square.to_int sq)
 let set b sq = union b @@ singleton sq
 let clear b sq = diff b @@ singleton sq
 let mem b sq = empty <> inter b @@ singleton sq
