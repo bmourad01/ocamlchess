@@ -49,7 +49,7 @@ let mem x (color : Piece.color) side =
 
 let to_string =
   let arr =
-    List.zip_exn (List.init bits ~f:(fun i -> 1 lsl i)) ["K"; "Q"; "k"; "q"]
+    List.zip_exn (List.init bits ~f:Int.(( lsl ) 1)) ["K"; "Q"; "k"; "q"]
     |> Array.of_list in
   function
   | 0 -> "-"
