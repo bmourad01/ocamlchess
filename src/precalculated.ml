@@ -91,10 +91,22 @@ module Simple = struct
       |> List.fold ~init:Bitboard.empty ~f:Bitboard.set )
 
   (* Pawns, knights, and kings have simple movement patterns, which we can
-     store the entirety of. *)
+     store the entirety of.
 
-  let white_pawn_advance = make @@ fun rank file -> [(rank + 1, file)]
-  let black_pawn_advance = make @@ fun rank file -> [(rank - 1, file)]
+     For white and black pawns on ranks 2 and 7, respectively, we can assume
+     that they are in their starting position, since there is no way for them
+     to return to those squares once they have made an advance or a capture
+     (they cannot be promoted to pawns either). *)
+
+  let white_pawn_advance =
+    make
+    @@ fun rank file ->
+    (rank + 1, file) :: (if rank = 1 then [(rank + 2, file)] else [])
+
+  let black_pawn_advance =
+    make
+    @@ fun rank file ->
+    (rank - 1, file) :: (if rank = 6 then [(rank - 2, file)] else [])
 
   let white_pawn_capture =
     make @@ fun rank file -> [(rank + 1, file + 1); (rank + 1, file - 1)]
