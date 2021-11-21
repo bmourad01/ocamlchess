@@ -85,7 +85,7 @@ let of_string_exn s =
   | [placement; active; castle; en_passant; halfmove; fullmove] ->
     let white, black, pawn, knight, bishop, rook, queen, king =
       parse_placement placement in
-    Board.
+    Position.
       { white
       ; black
       ; pawn
@@ -105,7 +105,7 @@ let of_string_exn s =
 let of_string s = Option.try_with (fun () -> of_string_exn s)
 let create () = of_string_exn start
 
-let string_of_placement b =
+let string_of_placement pos =
   let rec aux rank file skip acc =
     if rank < 0 then acc
     else if file > 7 then
@@ -114,7 +114,7 @@ let string_of_placement b =
       aux (rank - 1) 0 0 acc
     else
       let sq = Square.of_rank_and_file_exn ~rank ~file in
-      match Board.piece_at_square b sq with
+      match Position.piece_at_square pos sq with
       | None -> aux rank (file + 1) (skip + 1) acc
       | Some p ->
         let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
@@ -129,9 +129,9 @@ let string_of_active = function
 let string_of_castle = Castling_rights.to_string
 let string_of_en_passant = Option.value_map ~default:"-" ~f:Square.to_string
 
-let to_string (b : Board.t) =
-  sprintf "%s %s %s %s %d %d" (string_of_placement b)
-    (string_of_active b.active)
-    (string_of_castle b.castle)
-    (string_of_en_passant b.en_passant)
-    b.halfmove b.fullmove
+let to_string (pos : Position.t) =
+  sprintf "%s %s %s %s %d %d" (string_of_placement pos)
+    (string_of_active pos.active)
+    (string_of_castle pos.castle)
+    (string_of_en_passant pos.en_passant)
+    pos.halfmove pos.fullmove

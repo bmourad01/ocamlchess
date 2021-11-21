@@ -6,14 +6,14 @@ val start : string
 (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
     representation. Raises [Invalid_argument] if [s] is not a valid FEN
     string. *)
-val of_string_exn : string -> Board.t
+val of_string_exn : string -> Position.t
 
 (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
     representation. Returns [None] if [s] is not a valid FEN string. *)
-val of_string : string -> Board.t option
+val of_string : string -> Position.t option
 
 (** [create ()] constructs the starting position. *)
-val create : unit -> Board.t
+val create : unit -> Position.t
 
 (** [to_string fen] returns a string representation of [fen]. *)
-val to_string : Board.t -> string
+val to_string : Position.t -> string

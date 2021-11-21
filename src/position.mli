@@ -1,6 +1,6 @@
 open Base
 
-(** Representation of a FEN configuration.
+(** Representation of a chess position, compatible with FEN notation.
 
     [white] and [black] represents piece placement as bitboards, with respect
     to the color of the pieces.
@@ -36,27 +36,30 @@ type t =
   ; fullmove: int }
 [@@deriving compare, equal, hash, sexp]
 
-(** [board_of_color b c] returns the bitboard of color [c] from board [b]. *)
+(** [board_of_color pos c] returns the bitboard of color [c] from position
+    [pos]. *)
 val board_of_color : t -> Piece.color -> Bitboard.t
 
-(** [board_of_color b k] returns the bitboard of kind [k] from board [b]. *)
+(** [board_of_color pos k] returns the bitboard of kind [k] from position
+    [pos]. *)
 val board_of_kind : t -> Piece.kind -> Bitboard.t
 
-(** [board_of_piece b p] returns the bitboard of piece [p] from board [b]. *)
+(** [board_of_piece pos p] returns the bitboard of piece [p] from position
+    [pos]. *)
 val board_of_piece : t -> Piece.t -> Bitboard.t
 
-(** [find_color b c] returns a list of square-kind pairs where pieces of
-    color [c] occupy squares on board [b]. *)
+(** [find_color pos c] returns a list of square-kind pairs where pieces of
+    color [c] occupy squares on position [pos]. *)
 val find_color : t -> Piece.color -> (Square.t * Piece.kind) list
 
-(** [find_kind b k] returns a list of square-color pairs where pieces of kind
-    [k] occupy squares on board [b]. *)
+(** [find_kind pos k] returns a list of square-color pairs where pieces of
+    kind [k] occupy squares on position [pos]. *)
 val find_kind : t -> Piece.kind -> (Square.t * Piece.color) list
 
-(** [find_piece b p] returns a list of squares where pieces matching [p]
-    occupy squares on board [b]. *)
+(** [find_piece pos p] returns a list of squares where pieces matching [p]
+    occupy squares on position [pos]. *)
 val find_piece : t -> Piece.t -> Square.t list
 
-(** [piece_at_square b sq] returns the piece, if any, occupying the square
-    [sq] on board [b]. *)
+(** [piece_at_square pos sq] returns the piece, if any, occupying the square
+    [sq] on position [pos]. *)
 val piece_at_square : t -> Square.t -> Piece.t option
