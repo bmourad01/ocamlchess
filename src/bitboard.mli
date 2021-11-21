@@ -162,8 +162,8 @@ module Syntax : sig
   (** [~~b] is equivalent to [compl b]. *)
   val ( ~~ ) : t -> t
 
-  (** [!sq] is equivalent to [singleton sq]. *)
-  val ( ! ) : Square.t -> t
+  (** [!!sq] is equivalent to [singleton sq]. *)
+  val ( !! ) : Square.t -> t
 
   (** [b <-- sq] is equivalent to [set b sq]. *)
   val ( <-- ) : t -> Square.t -> t
