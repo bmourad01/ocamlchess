@@ -63,3 +63,47 @@ val find_piece : t -> Piece.t -> Square.t list
 (** [piece_at_square pos sq] returns the piece, if any, occupying the square
     [sq] on position [pos]. *)
 val piece_at_square : t -> Square.t -> Piece.t option
+
+(** [all_pieces pos] returns a list of square-piece pairs for each occupied
+    square on position [pos]. *)
+val all_pieces : t -> (Square.t * Piece.t) list
+
+(** This submodule provides helper functions related to generating attacked
+    squares for a particular color. *)
+module Attacks : sig
+  (** [pawn pos c] returns the bitboard of attacked squares by pawns of color
+      [c], according to position [pos]. *)
+  val pawn : t -> Piece.color -> Bitboard.t
+
+  (** [knight pos c] returns the bitboard of attacked squares by knights of
+      color [c], according to position [pos]. *)
+  val knight : t -> Piece.color -> Bitboard.t
+
+  (** [bishop pos c ~king_danger] returns the bitboard of attacked squares by
+      bishops of color [c], according to position [pos]. [king_danger]
+      indicates whether the sliding bishop attack should ignore the enemy
+      king. By default, it is [false]. *)
+  val bishop : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+
+  (** [rook pos c ~king_danger] returns the bitboard of attacked squares by
+      rooks of color [c], according to position [pos]. [king_danger]
+      indicates whether the sliding rook attack should ignore the enemy king.
+      By default, it is [false]. *)
+  val rook : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+
+  (** [queen pos c ~king_danger] returns the bitboard of attacked squares by
+      queens of color [c], according to position [pos]. [king_danger]
+      indicates whether the sliding queen attack should ignore the enemy
+      king. By default, it is [false]. *)
+  val queen : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+
+  (** [king pos c] returns the bitboard of attacked squares by kings of color
+      [c], according to position [pos]. *)
+  val king : t -> Piece.color -> Bitboard.t
+
+  (** [all pos c ~king_danger] returns the bitboard of attacked squares by
+      all pieces of color [c], according position [pos]. [king_danger]
+      indicates whether the sliding attacks should ignore the enemy king. By
+      default, it is [false]. *)
+  val all : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+end

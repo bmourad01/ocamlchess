@@ -60,6 +60,10 @@ module Color = struct
   let to_int = function
     | White -> Bits.white
     | Black -> Bits.black
+
+  let opposite = function
+    | White -> Black
+    | Black -> White
 end
 
 type kind = Pawn | Knight | Bishop | Rook | Queen | King
