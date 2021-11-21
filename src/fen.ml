@@ -1,6 +1,6 @@
 open Core_kernel
 
-let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+let start_string = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 let parse_placement s =
   let color = Array.create Bitboard.empty ~len:2 in
@@ -103,7 +103,7 @@ let of_string_exn s =
     invalid_arg (sprintf "Invalid number of sections in FEN string '%s'" s)
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
-let create () = of_string_exn start
+let start = of_string_exn start_string
 
 let string_of_placement pos =
   let rec aux rank file skip acc =

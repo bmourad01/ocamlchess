@@ -8,7 +8,7 @@ let cmp_castle = Castling_rights.equal
 let cmp_en_passant = Option.equal Square.equal
 
 let test_starting_position () =
-  let pos = Fen.create () in
+  let pos = Fen.start in
   assert_equal pos.white Bitboard.(rank_1 + rank_2) ~cmp:cmp_bitboard;
   assert_equal pos.black Bitboard.(rank_7 + rank_8) ~cmp:cmp_bitboard;
   assert_equal pos.pawn Bitboard.(rank_2 + rank_7) ~cmp:cmp_bitboard;
@@ -32,7 +32,7 @@ let test_starting_position () =
   assert_equal pos.en_passant None ~cmp:cmp_en_passant;
   assert_equal pos.halfmove 0;
   assert_equal pos.fullmove 1;
-  assert_equal (Fen.to_string pos) Fen.start ~cmp:String.equal
+  assert_equal (Fen.to_string pos) Fen.start_string ~cmp:String.equal
 
 let suite =
   "Test FEN"
