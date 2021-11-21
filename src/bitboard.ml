@@ -108,7 +108,6 @@ module Syntax = struct
   let ( <-- ) = set
   let ( --> ) = clear
   let ( @ ) sq b = mem b sq
-  let ( $ ) = count
 end
 
 include Syntax

@@ -156,9 +156,6 @@ module Syntax : sig
   (** [x - y] is equivalent to [diff x y]. *)
   val ( - ) : t -> t -> t
 
-  (** [$b] is equivalent to [count b]. *)
-  val ( $ ) : t -> int
-
   (** [~~b] is equivalent to [compl b]. *)
   val ( ~~ ) : t -> t
 
