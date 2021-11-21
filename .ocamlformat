@@ -9,4 +9,4 @@ doc-comments = before
 cases-exp-indent = 2
 max-indent = 2
 break-infix-before-func = true
-break-infix = fit-or-vertical
+break-infix = wrap

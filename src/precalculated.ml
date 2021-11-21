@@ -194,7 +194,7 @@ module Sliding = struct
     let shift = 64 - shift in
     Int64.((occupied * magic) lsr shift |> to_int_exn)
 
-  (* Generate the magic hash table for bishop moves. *)
+  (* Generate the magic hash table for bishop and rook moves. *)
   let bishop, rook =
     let go len shift mask magic gen =
       let tbl =
