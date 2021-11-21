@@ -2,50 +2,57 @@ open Core_kernel
 
 let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-type t =
-  { placement: Piece.t Map.M(Square).t
-  ; active: Piece.color
-  ; castle: Castling_rights.t
-  ; en_passant: Square.t option
-  ; halfmove: int
-  ; fullmove: int }
-[@@deriving compare, equal, hash, sexp]
-
 let parse_placement s =
-  String.fold s
-    ~init:(7, 0, Map.empty (module Square))
-    ~f:(fun (rank, file, placement) sym ->
-      if rank < 0 then
-        invalid_arg (sprintf "Invalid number of ranks %d" (8 - rank))
-      else if Char.equal sym '/' then
-        if file <> 8 then
-          invalid_arg
-            (sprintf "Invalid separation at rank %d with %d files remaining"
-               (rank + 1) (8 - file) )
-        else (rank - 1, 0, placement)
-      else if Char.is_digit sym then
-        let inc = Char.(to_int sym - to_int '0') in
-        let file' = file + inc in
-        if file' > 8 then
-          invalid_arg (sprintf "Invalid increment %d at file %d" inc file)
-        else (rank, file', placement)
-      else if Char.is_alpha sym then
-        if file > 7 then
-          invalid_arg
-            (sprintf "Invalid piece placement on full rank %d" (rank + 1))
-        else
-          let key = Square.of_rank_and_file_exn ~rank ~file in
-          match Piece.of_fen sym with
-          | None ->
-            invalid_arg
-              (sprintf "Invalid piece '%c' placed at square '%s'" sym
-                 (Square.to_string key) )
-          | Some data -> (rank, file + 1, Map.set placement ~key ~data)
-      else
+  let color = Array.create Bitboard.empty ~len:2 in
+  let kind = Array.create Bitboard.empty ~len:6 in
+  let place_piece p sq =
+    let open Bitboard.Syntax in
+    let c = Piece.(color p |> Color.to_int) in
+    let k = Piece.(kind p |> Kind.to_int) in
+    color.(c) <- color.(c) <-- sq;
+    kind.(k) <- kind.(k) <-- sq in
+  String.fold s ~init:(7, 0) ~f:(fun (rank, file) sym ->
+    if rank < 0 then
+      invalid_arg (sprintf "Invalid number of ranks %d" (8 - rank))
+    else if Char.equal sym '/' then
+      if file <> 8 then
         invalid_arg
-          (sprintf "Unexpected symbol '%c' in piece placement string '%s'"
-             sym s ) )
-  |> trd3
+          (sprintf "Invalid separation at rank %d with %d files remaining"
+             (rank + 1) (8 - file) )
+      else (rank - 1, 0)
+    else if Char.is_digit sym then
+      let inc = Char.(to_int sym - to_int '0') in
+      let file' = file + inc in
+      if file' > 8 then
+        invalid_arg (sprintf "Invalid increment %d at file %d" inc file)
+      else (rank, file')
+    else if Char.is_alpha sym then (
+      if file > 7 then
+        invalid_arg
+          (sprintf "Invalid piece placement on full rank %d" (rank + 1))
+      else
+        let sq = Square.of_rank_and_file_exn ~rank ~file in
+        match Piece.of_fen sym with
+        | None ->
+          invalid_arg
+            (sprintf "Invalid piece '%c' placed at square '%s'" sym
+               (Square.to_string sq) )
+        | Some p ->
+          place_piece p sq;
+          (rank, file + 1) )
+    else
+      invalid_arg
+        (sprintf "Unexpected symbol '%c' in piece placement string '%s'" sym
+           s ) )
+  |> ignore;
+  ( color.(Piece.Color.to_int White)
+  , color.(Piece.Color.to_int Black)
+  , kind.(Piece.Kind.to_int Pawn)
+  , kind.(Piece.Kind.to_int Knight)
+  , kind.(Piece.Kind.to_int Bishop)
+  , kind.(Piece.Kind.to_int Rook)
+  , kind.(Piece.Kind.to_int Queen)
+  , kind.(Piece.Kind.to_int King) )
 
 let parse_active = function
   | "w" -> Piece.White
@@ -76,19 +83,29 @@ let parse_fullmove s =
 let of_string_exn s =
   match String.split s ~on:' ' with
   | [placement; active; castle; en_passant; halfmove; fullmove] ->
-    { placement= parse_placement placement
-    ; active= parse_active active
-    ; castle= parse_castle castle
-    ; en_passant= parse_en_passant en_passant
-    ; halfmove= parse_halfmove halfmove
-    ; fullmove= parse_fullmove fullmove }
+    let white, black, pawn, knight, bishop, rook, queen, king =
+      parse_placement placement in
+    Board.
+      { white
+      ; black
+      ; pawn
+      ; knight
+      ; bishop
+      ; rook
+      ; queen
+      ; king
+      ; active= parse_active active
+      ; castle= parse_castle castle
+      ; en_passant= parse_en_passant en_passant
+      ; halfmove= parse_halfmove halfmove
+      ; fullmove= parse_fullmove fullmove }
   | _ ->
     invalid_arg (sprintf "Invalid number of sections in FEN string '%s'" s)
 
 let of_string s = Option.try_with (fun () -> of_string_exn s)
 let create () = of_string_exn start
 
-let string_of_placement placement =
+let string_of_placement b =
   let rec aux rank file skip acc =
     if rank < 0 then acc
     else if file > 7 then
@@ -97,7 +114,7 @@ let string_of_placement placement =
       aux (rank - 1) 0 0 acc
     else
       let sq = Square.of_rank_and_file_exn ~rank ~file in
-      match Map.find placement sq with
+      match Board.piece_at_square b sq with
       | None -> aux rank (file + 1) (skip + 1) acc
       | Some p ->
         let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
@@ -112,10 +129,9 @@ let string_of_active = function
 let string_of_castle = Castling_rights.to_string
 let string_of_en_passant = Option.value_map ~default:"-" ~f:Square.to_string
 
-let to_string fen =
-  sprintf "%s %s %s %s %d %d"
-    (string_of_placement fen.placement)
-    (string_of_active fen.active)
-    (string_of_castle fen.castle)
-    (string_of_en_passant fen.en_passant)
-    fen.halfmove fen.fullmove
+let to_string (b : Board.t) =
+  sprintf "%s %s %s %s %d %d" (string_of_placement b)
+    (string_of_active b.active)
+    (string_of_castle b.castle)
+    (string_of_en_passant b.en_passant)
+    b.halfmove b.fullmove

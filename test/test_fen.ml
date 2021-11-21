@@ -2,39 +2,33 @@ open Core_kernel
 open OUnit2
 open Chess
 
-let cmp_placement = Base.Map.equal Piece.equal
+let cmp_bitboard = Bitboard.equal
 let cmp_active = Piece.Color.equal
 let cmp_castle = Castling_rights.equal
 let cmp_en_passant = Option.equal Square.equal
 
 let test_starting_position () =
-  let fen = Fen.create () in
-  assert_equal fen.placement
-    (Map.of_alist_exn
-       (module Square)
-       [ (Square.a1, Piece.white_rook); (Square.b1, Piece.white_knight)
-       ; (Square.c1, Piece.white_bishop); (Square.d1, Piece.white_queen)
-       ; (Square.e1, Piece.white_king); (Square.f1, Piece.white_bishop)
-       ; (Square.g1, Piece.white_knight); (Square.h1, Piece.white_rook)
-       ; (Square.a2, Piece.white_pawn); (Square.b2, Piece.white_pawn)
-       ; (Square.c2, Piece.white_pawn); (Square.d2, Piece.white_pawn)
-       ; (Square.e2, Piece.white_pawn); (Square.f2, Piece.white_pawn)
-       ; (Square.g2, Piece.white_pawn); (Square.h2, Piece.white_pawn)
-       ; (Square.a7, Piece.black_pawn); (Square.b7, Piece.black_pawn)
-       ; (Square.c7, Piece.black_pawn); (Square.d7, Piece.black_pawn)
-       ; (Square.e7, Piece.black_pawn); (Square.f7, Piece.black_pawn)
-       ; (Square.g7, Piece.black_pawn); (Square.h7, Piece.black_pawn)
-       ; (Square.a8, Piece.black_rook); (Square.b8, Piece.black_knight)
-       ; (Square.c8, Piece.black_bishop); (Square.d8, Piece.black_queen)
-       ; (Square.e8, Piece.black_king); (Square.f8, Piece.black_bishop)
-       ; (Square.g8, Piece.black_knight); (Square.h8, Piece.black_rook) ] )
-    ~cmp:cmp_placement;
-  assert_equal fen.active Piece.White ~cmp:Piece.Color.equal;
-  assert_equal fen.castle Castling_rights.all ~cmp:cmp_castle;
-  assert_equal fen.en_passant None ~cmp:cmp_en_passant;
-  assert_equal fen.halfmove 0;
-  assert_equal fen.fullmove 1;
-  assert_equal (Fen.to_string fen) Fen.start ~cmp:String.equal
+  let b = Fen.create () in
+  assert_equal b.white Bitboard.(rank_1 + rank_2) ~cmp:cmp_bitboard;
+  assert_equal b.black Bitboard.(rank_7 + rank_8) ~cmp:cmp_bitboard;
+  assert_equal b.pawn Bitboard.(rank_2 + rank_7) ~cmp:cmp_bitboard;
+  assert_equal b.knight
+    Bitboard.(!Square.b1 + !Square.g1 + !Square.b8 + !Square.g8)
+    ~cmp:cmp_bitboard;
+  assert_equal b.bishop
+    Bitboard.(!Square.c1 + !Square.f1 + !Square.c8 + !Square.f8)
+    ~cmp:cmp_bitboard;
+  assert_equal b.rook
+    Bitboard.(!Square.a1 + !Square.h1 + !Square.a8 + !Square.h8)
+    ~cmp:cmp_bitboard;
+  assert_equal b.queen Bitboard.(!Square.d1 + !Square.d8) ~cmp:cmp_bitboard;
+  assert_equal b.king Bitboard.(!Square.e1 + !Square.e8) ~cmp:cmp_bitboard;
+  assert_equal b.active Piece.White ~cmp:Piece.Color.equal;
+  assert_equal b.castle Castling_rights.all ~cmp:cmp_castle;
+  assert_equal b.en_passant None ~cmp:cmp_en_passant;
+  assert_equal b.halfmove 0;
+  assert_equal b.fullmove 1;
+  assert_equal (Fen.to_string b) Fen.start ~cmp:String.equal
 
 let suite =
   "Test FEN"
