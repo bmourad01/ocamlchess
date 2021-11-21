@@ -29,6 +29,15 @@ let kingside = white_kingside lor black_kingside
 let queenside = white_queenside lor black_queenside
 let all = white lor black
 
+(* Constructor *)
+
+let singleton c s =
+  match ((c : Piece.color), s) with
+  | White, `king -> white_kingside
+  | White, `queen -> white_queenside
+  | Black, `king -> black_kingside
+  | Black, `queen -> black_queenside
+
 (* Logical operators. *)
 
 let inter x y = x land y

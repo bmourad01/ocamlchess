@@ -255,4 +255,4 @@ let castle =
       let x = of_int_exn i in
       Array.fold arr ~init:empty ~f:(fun b (c, s, b') ->
         if mem x c s then b + b' else b ) ) in
-  fun rights -> arr.(to_int rights)
+  fun rights c s -> arr.(to_int @@ inter rights @@ singleton c s)

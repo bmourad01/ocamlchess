@@ -49,6 +49,10 @@ val queenside : t
 (** Full castling rights for both colors. *)
 val all : t
 
+(** [singleton c side] creates a singleton of castling rights for color [c]
+    and side [side]. *)
+val singleton : Piece.color -> [`king | `queen] -> t
+
 (** [inter x y] returns the intersection of castling rights for [x] and [y]. *)
 val inter : t -> t -> t
 
