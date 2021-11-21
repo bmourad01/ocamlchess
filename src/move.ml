@@ -22,10 +22,8 @@ let to_string m =
     (src m |> Square.to_string)
     (dst m |> Square.to_string)
     ( promote m
-    |> function
-    | None -> ""
-    | Some kind -> Piece.create Black kind |> Piece.to_fen |> Char.to_string
-    )
+    |> Option.value_map ~default:"" ~f:(fun kind ->
+         Piece.create Black kind |> Piece.to_fen |> Char.to_string ) )
 
 let of_string_exn s =
   try
