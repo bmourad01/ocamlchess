@@ -394,7 +394,8 @@ module Update = struct
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
-     that the move is legal.  *)
+     that the move is legal. For the check if `p` is a pawn or not, we assume
+     that it belongs to the active color.  *)
   let update_en_passant ?p sq sq' = handle_piece sq ?p >>= begin function
       | None -> State.return None
       | Some p when not @@ Piece.is_pawn p -> State.return None
