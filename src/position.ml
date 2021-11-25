@@ -97,7 +97,7 @@ module Fen = struct
     let kind_tbl = Array.create Bitboard.empty ~len:Piece.Kind.count in
     let rec f (rank, file) sym =
       if rank < 0 then invalid_arg @@
-        sprintf "Invalid number of ranks %d" (8 - rank)
+        sprintf "Invalid number of ranks %d" (Square.Rank.count - rank)
       else if Char.equal sym '/' then rank_separator rank file
       else if Char.is_digit sym  then skip_file rank file sym
       else if Char.is_alpha sym  then place_piece rank file sym
@@ -105,19 +105,19 @@ module Fen = struct
         sprintf "Unexpected symbol '%c' in piece placement string '%s'"
           sym s
     and rank_separator rank file =
-      if file <> 8 then invalid_arg @@
+      if file <> Square.File.count then invalid_arg @@
         sprintf "Invalid separation at rank %d with %d files remaining"
-          (succ rank) (8 - file)
+          (succ rank) (Square.File.count - file)
       else pred rank, 0
     and skip_file rank file sym =
       let inc = Char.(to_int sym - to_int '0') in
       let file' = file + inc in
-      if file' > 8  then invalid_arg @@
+      if file' > Square.File.count then invalid_arg @@
         sprintf "Invalid increment %d at file %d" inc file
       else rank, file'
     and place_piece rank file sym =
       if file > Square.File.h then invalid_arg @@
-        sprintf "Invalid piece placement on full rank %d" (rank + 1)
+        sprintf "Invalid piece placement on full rank %d" (succ rank)
       else
         let sq = Square.create_exn ~rank ~file in
         match Piece.of_fen sym with
