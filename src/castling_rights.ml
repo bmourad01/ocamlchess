@@ -71,12 +71,12 @@ let of_string_exn = function
   | "-" -> none
   | "" -> invalid_arg @@
     "Empty string is invalid for castling rights, use \"-\" instead."
-  | s -> String.fold s ~init:none ~f:(fun acc sym -> match sym with
+  | s -> String.fold s ~init:none ~f:(fun acc -> function
       | 'K' -> union acc white_kingside
       | 'Q' -> union acc white_queenside
       | 'k' -> union acc black_kingside
       | 'q' -> union acc black_queenside
-      | _ -> invalid_arg @@
+      | sym -> invalid_arg @@
         sprintf "Invalid symbol '%c' in castling rights string '%s'" sym s)
 
 let of_string s = Option.try_with @@ fun () -> of_string_exn s
