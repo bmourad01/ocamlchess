@@ -7,10 +7,13 @@ build: [
   ["dune" "build" "-p" name "-j" jobs]
 ]
 depends: [
-  "dune" {>= "2.9.0"}
-  "core" {>= "0.14.1"}
-  "ocaml" {>= "4.08"}
-  "ppx_compare"
-  "ppx_hash"
+  "core" {>= "0.14.2"}
+  "dune" {>= "2.9.1"}
+  "monads"
+  "ocaml" {>= "4.09"}
   "ounit2"
+  "ppx_compare"
+  "ppx_fields_conv"
+  "ppx_hash"
+  "ppx_sexp_conv"
 ]
