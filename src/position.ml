@@ -325,7 +325,7 @@ module Update = struct
       (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
     is_pawn, is_capture
 
-  (* The haalfmove clock is reset after captures or pawn moves, and
+  (* The halfmove clock is reset after captures or pawn moves, and
      incremented otherwise. *)
   let update_halfmove sq sq' = is_pawn_or_capture sq sq' >>=
     fun (is_pawn, is_capture) -> map_field Fields.halfmove ~f:(fun n ->
