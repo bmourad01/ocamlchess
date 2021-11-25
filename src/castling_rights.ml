@@ -61,7 +61,7 @@ let mem x color side = match color, side with
 
 let to_string =
   let pairs =
-    List.zip_exn (List.init bits ~f:Int.(( lsl ) 1)) ["K"; "Q"; "k"; "q"] in
+    List.zip_exn (List.init bits ~f:Int.((lsl) 1)) ["K"; "Q"; "k"; "q"] in
   function
   | 0 -> "-"
   | x -> List.fold pairs ~init:"" ~f:(fun acc (y, s) ->
