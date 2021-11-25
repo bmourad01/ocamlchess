@@ -301,9 +301,9 @@ module Update = struct
 
   (* A piece can be optionally provided. If not, then we will look up
      the piece at that square. *)
-  let handle_piece ?p sq = State.gets @@ fun pos -> match p with
-    | None -> piece_at_square pos sq
-    | Some _ -> p
+  let handle_piece ?p sq = match p with
+    | None -> State.gets @@ Fn.flip piece_at_square @@ sq
+    | Some _ -> State.return p
 
   let map_field field ~f = State.update @@ Field.map field ~f
 
