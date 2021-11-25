@@ -41,7 +41,7 @@ module Info = struct
     | Nodes of int
     | Pv of Move.t list
     | Multipv of int
-    | Score of {cp: float; mate: int; bound: [`lower | `upper]}
+    | Score of score
     | Currmove of Move.t
     | Currmovenumber of int
     | Hashfull of int
@@ -51,7 +51,22 @@ module Info = struct
     | Cpuload of int
     | String of string
     | Refutation of Move.t list
-    | Currline of {cpunr: int; moves: Move.t list}
+    | Currline of currline
+
+  and score = {
+    cp : float;
+    mate : int;
+    bound : [`lower | `upper];
+  }
+
+  and currline = {
+    cpunr : int;
+    moves : Move.t list;
+  }
+
+  let string_of_bound = function
+    | `lower -> "lowerbound"
+    | `upper -> "upperbound"
 
   let to_string = function
     | Depth n -> sprintf "depth %d" n
@@ -61,10 +76,7 @@ module Info = struct
     | Pv moves -> "pv " ^ string_of_moves moves
     | Multipv n -> sprintf "multipv %d" n
     | Score {cp; mate; bound} ->
-      sprintf "score cp %f mate %d %s" cp mate
-        ( match bound with
-        | `lower -> "lowerbound"
-        | `upper -> "upperbound" )
+      sprintf "score cp %f mate %d %s" cp mate (string_of_bound bound)
     | Currmove move -> "currmove " ^ Move.to_string move
     | Currmovenumber n -> sprintf "currmovenumber %d" n
     | Hashfull n -> sprintf "hashfull %d" n
@@ -84,31 +96,42 @@ let string_of_string = function
 
 module Option = struct
   module Spin = struct
-    type t = {default: int; min: int; max: int}
+    type t = {
+      default : int;
+      min : int;
+      max : int;
+    }
 
     let to_string {default; min; max} =
       sprintf "type spin default %d min %d max %d" default min max
   end
 
   module Check = struct
-    type t = {default: bool}
+    type t = {
+      default : bool;
+    }
 
     let to_string {default} =
       sprintf "type check default %s" (Bool.to_string default)
   end
 
   module Combo = struct
-    type t = {default: string; var: string list}
+    type t = {
+      default : string;
+      var : string list;
+    }
 
     let to_string {default; var} =
-      "type combo "
-      ^ String.concat ~sep:" "
-          ( ("default " ^ string_of_string default)
-          :: List.map var ~f:(fun s -> "var " ^ string_of_string s) )
+      "type combo " ^
+      String.concat ~sep:" " @@
+      ("default " ^ string_of_string default) ::
+      List.map var ~f:(fun s -> "var " ^ string_of_string s)
   end
 
   module String = struct
-    type t = {default: string}
+    type t = {
+      default : string
+    }
 
     let to_string {default} =
       "type string default " ^ string_of_string default
@@ -199,11 +222,16 @@ module Send = struct
     | Id of [`name of string | `author of string]
     | Uciok
     | Readyok
-    | Bestmove of {move: Move.t; ponder: Move.t option}
+    | Bestmove of bestmove
     | Copyprotection of [`checking | `ok | `error]
     | Registration of [`checking | `ok | `error]
     | Info of Info.t
     | Option of Option.t
+
+  and bestmove = {
+    move : Move.t;
+    ponder : Move.t option
+  }
 
   let to_string = function
     | Id (`name name) -> "id name " ^ name

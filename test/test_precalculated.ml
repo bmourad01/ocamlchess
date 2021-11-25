@@ -5,11 +5,10 @@ open Chess
 let cmp_bitboard = Bitboard.equal
 
 let test_bitboard expected result =
-  assert_equal result expected ~cmp:cmp_bitboard
-    ~msg:
-      (sprintf "Got 0x%LX, expected 0x%LX"
-         (Bitboard.to_int64 result)
-         (Bitboard.to_int64 expected) )
+  assert_equal result expected ~cmp:cmp_bitboard ~msg:begin
+    sprintf "Got 0x%LX, expected 0x%LX"
+      (Bitboard.to_int64 result) (Bitboard.to_int64 expected)
+  end
 
 let test_queen_empty_a1 () =
   let occupied = Bitboard.of_int64 0L in
@@ -83,19 +82,19 @@ let test_rook_start_h8 () =
   let result = Precalculated.rook Square.h8 occupied in
   test_bitboard expected result
 
-let suite =
-  "Test precalculated"
-  >::: [ ("Queen empty a1" >:: fun _ -> test_queen_empty_a1 ())
-       ; ("Queen empty a8" >:: fun _ -> test_queen_empty_a8 ())
-       ; ("Queen empty h1" >:: fun _ -> test_queen_empty_h1 ())
-       ; ("Queen empty h8" >:: fun _ -> test_queen_empty_h8 ())
-       ; ("Bishop start c1" >:: fun _ -> test_bishop_start_c1 ())
-       ; ("Bishop start f1" >:: fun _ -> test_bishop_start_f1 ())
-       ; ("Bishop start c8" >:: fun _ -> test_bishop_start_c8 ())
-       ; ("Bishop start f8" >:: fun _ -> test_bishop_start_f8 ())
-       ; ("Rook start a1" >:: fun _ -> test_rook_start_a1 ())
-       ; ("Rook start h1" >:: fun _ -> test_rook_start_h1 ())
-       ; ("Rook start a8" >:: fun _ -> test_rook_start_a8 ())
-       ; ("Rook start a8" >:: fun _ -> test_rook_start_h8 ()) ]
+let suite = "Test precalculated" >::: [
+    ("Queen empty a1" >:: fun _ -> test_queen_empty_a1 ());
+    ("Queen empty a8" >:: fun _ -> test_queen_empty_a8 ());
+    ("Queen empty h1" >:: fun _ -> test_queen_empty_h1 ());
+    ("Queen empty h8" >:: fun _ -> test_queen_empty_h8 ());
+    ("Bishop start c1" >:: fun _ -> test_bishop_start_c1 ());
+    ("Bishop start f1" >:: fun _ -> test_bishop_start_f1 ());
+    ("Bishop start c8" >:: fun _ -> test_bishop_start_c8 ());
+    ("Bishop start f8" >:: fun _ -> test_bishop_start_f8 ());
+    ("Rook start a1" >:: fun _ -> test_rook_start_a1 ());
+    ("Rook start h1" >:: fun _ -> test_rook_start_h1 ());
+    ("Rook start a8" >:: fun _ -> test_rook_start_a8 ());
+    ("Rook start a8" >:: fun _ -> test_rook_start_h8 ());
+  ]
 
 let () = run_test_tt_main suite

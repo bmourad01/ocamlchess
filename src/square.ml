@@ -2,32 +2,34 @@ open Core
 open Base
 
 let bits = 6
+let count = 64
 
-module T = struct type t = int [@@deriving compare, equal, hash, sexp] end
+module T = struct
+  type t = int [@@deriving compare, equal, hash, sexp]
+end
+
 include T
 include Comparable.Make (T)
 
 let of_int_exn i =
   if i < 0 || i > 63 then
-    invalid_arg (sprintf "Invalid square integer '%d'" i)
+    invalid_arg @@ sprintf "Invalid square integer '%d'" i
   else i
 
-let of_int i = Option.try_with (fun () -> of_int_exn i)
+let of_int i = Option.try_with @@ fun () -> of_int_exn i
 let to_int = ident
 
-let of_rank_and_file_exn ~rank ~file =
+let create_exn ~rank ~file =
   if rank < 0 || rank > 7 then
-    invalid_arg (sprintf "Invalid rank index '%d'" rank)
+    invalid_arg @@ sprintf "Invalid rank index '%d'" rank
   else if file < 0 || file > 7 then
-    invalid_arg (sprintf "Invalid file index '%d'" file)
+    invalid_arg @@ sprintf "Invalid file index '%d'" file
   else (rank lsl bits lsr 1) lor file
 
-let of_rank_and_file ~rank ~file =
-  Option.try_with (fun () -> of_rank_and_file_exn ~rank ~file)
+let create ~rank ~file = Option.try_with @@ fun () -> create_exn ~rank ~file
 
 module Bits = struct
   (* Valid squares *)
-
   let a1 = 0b000_000
   let b1 = 0b000_001
   let c1 = 0b000_010
@@ -94,7 +96,6 @@ module Bits = struct
   let h8 = 0b111_111
 
   (* Extract the bits *)
-
   let rank sq = sq lsr 3
   let file sq = sq land 0b111
 end
@@ -108,28 +109,27 @@ let file_char =
   fun sq -> files.[Bits.file sq]
 
 let of_string =
-  let tbl =
-    Hashtbl.of_alist_exn
-      (module String)
-      Bits.
-        [ ("a1", a1); ("b1", b1); ("c1", c1); ("d1", d1); ("e1", e1)
-        ; ("f1", f1); ("g1", g1); ("h1", h1); ("a2", a2); ("b2", b2)
-        ; ("c2", c2); ("d2", d2); ("e2", e2); ("f2", f2); ("g2", g2)
-        ; ("h2", h2); ("a3", a3); ("b3", b3); ("c3", c3); ("d3", d3)
-        ; ("e3", e3); ("f3", f3); ("g3", g3); ("h3", h3); ("a4", a4)
-        ; ("b4", b4); ("c4", c4); ("d4", d4); ("e4", e4); ("f4", f4)
-        ; ("g4", g4); ("h4", h4); ("a5", a5); ("b5", b5); ("c5", c5)
-        ; ("d5", d5); ("e5", e5); ("f5", f5); ("g5", g5); ("h5", h5)
-        ; ("a6", a6); ("b6", b6); ("c6", c6); ("d6", d6); ("e6", e6)
-        ; ("f6", f6); ("g6", g6); ("h6", h6); ("a7", a7); ("b7", b7)
-        ; ("c7", c7); ("d7", d7); ("e7", e7); ("f7", f7); ("g7", g7)
-        ; ("h7", h7); ("a8", a8); ("b8", b8); ("c8", c8); ("d8", d8)
-        ; ("e8", e8); ("f8", f8); ("g8", g8); ("h8", h8) ] in
-  Hashtbl.find tbl
+  Hashtbl.of_alist_exn (module String) Bits.[
+      ("a1", a1); ("b1", b1); ("c1", c1); ("d1", d1);
+      ("e1", e1); ("f1", f1); ("g1", g1); ("h1", h1);
+      ("a2", a2); ("b2", b2); ("c2", c2); ("d2", d2);
+      ("e2", e2); ("f2", f2); ("g2", g2); ("h2", h2);
+      ("a3", a3); ("b3", b3); ("c3", c3); ("d3", d3);
+      ("e3", e3); ("f3", f3); ("g3", g3); ("h3", h3);
+      ("a4", a4); ("b4", b4); ("c4", c4); ("d4", d4);
+      ("e4", e4); ("f4", f4); ("g4", g4); ("h4", h4);
+      ("a5", a5); ("b5", b5); ("c5", c5); ("d5", d5);
+      ("e5", e5); ("f5", f5); ("g5", g5); ("h5", h5);
+      ("a6", a6); ("b6", b6); ("c6", c6); ("d6", d6);
+      ("e6", e6); ("f6", f6); ("g6", g6); ("h6", h6);
+      ("a7", a7); ("b7", b7); ("c7", c7); ("d7", d7);
+      ("e7", e7); ("f7", f7); ("g7", g7); ("h7", h7);
+      ("a8", a8); ("b8", b8); ("c8", c8); ("d8", d8);
+      ("e8", e8); ("f8", f8); ("g8", g8); ("h8", h8);
+    ] |> Hashtbl.find
 
-let of_string_exn s =
-  match of_string s with
-  | None -> invalid_arg (sprintf "Invalid square string '%s'" s)
+let of_string_exn s = match of_string s with
+  | None -> invalid_arg @@ sprintf "Invalid square string '%s'" s
   | Some sq -> sq
 
 let to_string sq = sprintf "%c%c" (file_char sq) (rank_char sq)

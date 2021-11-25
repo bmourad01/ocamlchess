@@ -3,6 +3,9 @@ open Base
 (** Number of bits needed to store the square. *)
 val bits : int
 
+(** Number of squares on the board. *)
+val count : int
+
 (** Represents a square on the board as an unboxed integer. Must be within
     the range [\[0, 63\]]. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
@@ -17,17 +20,17 @@ val of_int_exn : int -> t
     integer is not within the specified range. *)
 val of_int : int -> t option
 
-(** [of_rank_and_file_exn ~rank ~file] creates a square from the rank and
+(** [create_exn ~rank ~file] creates a square from the rank and
     file indicies [rank] and [file], respectively. Both represent indices,
     and so they must fall within the range [\[0, 7\]], otherwise
     [Invalid_argument] is raised. *)
-val of_rank_and_file_exn : rank:int -> file:int -> t
+val create_exn : rank:int -> file:int -> t
 
-(** [of_rank_and_file_exn ~rank ~file] creates a square from the rank and
+(** [create_exn ~rank ~file] creates a square from the rank and
     file indicies [rank] and [file], respectively. Both represent indices,
     and so they must fall within the range [\[0, 7\]], otherwise [None] is
     returned. *)
-val of_rank_and_file : rank:int -> file:int -> t option
+val create : rank:int -> file:int -> t option
 
 (** [to_int sq] returns the integer representation of [sq]. *)
 val to_int : t -> int

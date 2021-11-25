@@ -44,8 +44,6 @@ end
 
 type color = White | Black [@@deriving compare, equal, hash, sexp]
 
-let colors = [|White; Black|]
-
 module Color = struct
   module T = struct
     type t = color [@@deriving compare, equal, hash, sexp]
@@ -54,8 +52,14 @@ module Color = struct
   include T
   include Comparable.Make (T)
 
-  let of_int_exn i = colors.(i)
-  let of_int i = Option.try_with (fun () -> of_int_exn i)
+  let count = 2
+
+  let of_int_exn = function
+    | 0b0 -> White
+    | 0b1 -> Black
+    | i -> invalid_arg @@ sprintf "Integer %d is not a valid color" i
+
+  let of_int i = Option.try_with @@ fun () -> of_int_exn i
 
   let to_int = function
     | White -> Bits.white
@@ -69,15 +73,26 @@ end
 type kind = Pawn | Knight | Bishop | Rook | Queen | King
 [@@deriving compare, equal, hash, sexp]
 
-let kinds = [|Pawn; Knight; Bishop; Rook; Queen; King|]
-
 module Kind = struct
-  module T = struct type t = kind [@@deriving compare, equal, hash, sexp] end
+  module T = struct
+    type t = kind [@@deriving compare, equal, hash, sexp]
+  end
+  
   include T
   include Comparable.Make (T)
 
-  let of_int_exn i = kinds.(i)
-  let of_int i = Option.try_with (fun () -> of_int_exn i)
+  let count = 6
+
+  let of_int_exn = function
+    | 0b000 -> Pawn
+    | 0b001 -> Knight
+    | 0b010 -> Bishop
+    | 0b011 -> Rook
+    | 0b100 -> Queen
+    | 0b101 -> King
+    | i -> invalid_arg @@ sprintf "Integer %d is not a valid piece" i
+
+  let of_int i = Option.try_with @@ fun () -> of_int_exn i
 
   let to_int = function
     | Pawn -> Bits.pawn
@@ -88,7 +103,10 @@ module Kind = struct
     | King -> Bits.king
 end
 
-module T = struct type t = int [@@deriving compare, equal, hash, sexp] end
+module T = struct
+  type t = int [@@deriving compare, equal, hash, sexp]
+end
+
 include T
 include Comparable.Make (T)
 include Bits.Pieces
@@ -99,19 +117,7 @@ let color p = Color.of_int_exn @@ Bits.color p
 let kind p = Kind.of_int_exn @@ Bits.kind p
 
 let create color kind =
-  let color =
-    match color with
-    | White -> Bits.white
-    | Black -> Bits.black in
-  let kind =
-    match kind with
-    | Pawn -> Bits.pawn
-    | Knight -> Bits.knight
-    | Bishop -> Bits.bishop
-    | Rook -> Bits.rook
-    | Queen -> Bits.queen
-    | King -> Bits.king in
-  (color lsl kind_bits) lor kind
+  (Color.to_int color lsl kind_bits) lor Kind.to_int kind
 
 (* Testing membership *)
 
@@ -128,15 +134,15 @@ let is_king p = Bits.(kind p = king)
 
 let of_int_exn i =
   let color = Bits.color i in
-  if color < 0 || color > 1 then
-    invalid_arg (sprintf "Invalid color index '%d'" color)
+  if color < 0 || color > 1 then invalid_arg @@
+    sprintf "Invalid color index '%d'" color
   else
     let kind = Bits.kind i in
-    if kind < 0 || kind > 5 then
-      invalid_arg (sprintf "Invalid kind index '%d'" kind)
+    if kind < 0 || kind > 5 then invalid_arg @@
+      sprintf "Invalid kind index '%d'" kind
     else i
 
-let of_int i = Option.try_with (fun () -> of_int_exn i)
+let of_int i = Option.try_with @@ fun () -> of_int_exn i
 let to_int = ident
 
 (* FEN string representation *)
@@ -154,10 +160,14 @@ let of_fen_exn = function
   | 'r' -> black_rook
   | 'q' -> black_queen
   | 'k' -> black_king
-  | c -> invalid_arg (sprintf "Invalid FEN piece '%c'" c)
+  | c -> invalid_arg @@ sprintf "Invalid FEN piece '%c'" c
 
-let of_fen c = Option.try_with (fun () -> of_fen_exn c)
+let of_fen c = Option.try_with @@ fun () -> of_fen_exn c
 
-let to_fen =
-  let fen = [|"PNBRQK"; "pnbrqk"|] in
-  fun p -> fen.(Bits.color p).[Bits.kind p]
+let fen_white = "PNBRQK"
+let fen_black = "pnbrqk"
+
+let to_fen p = match color p with
+  | White -> fen_white.[Bits.kind p]
+  | Black -> fen_black.[Bits.kind p]
+           

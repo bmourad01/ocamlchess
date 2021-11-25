@@ -125,7 +125,7 @@ val fold : ?rev:bool -> t -> init:'a -> f:('a -> Square.t -> 'a) -> 'a
     result is computed by [finish]. If [rev] is [true], then iteration starts
     from square h8, otherwise from a1. *)
 val fold_until :
-     ?rev:bool
+  ?rev:bool
   -> t
   -> init:'a
   -> f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t)
@@ -148,28 +148,28 @@ val filter : t -> f:(Square.t -> bool) -> t
 
 module Syntax : sig
   (** [x & y] is equivalent to [inter x y]. *)
-  val ( & ) : t -> t -> t
+  val (&) : t -> t -> t
 
   (** [x + y] is equivalent to [union x y]. *)
-  val ( + ) : t -> t -> t
+  val (+) : t -> t -> t
 
   (** [x - y] is equivalent to [diff x y]. *)
-  val ( - ) : t -> t -> t
+  val (-) : t -> t -> t
 
   (** [~~b] is equivalent to [compl b]. *)
-  val ( ~~ ) : t -> t
+  val (~~) : t -> t
 
   (** [!!sq] is equivalent to [singleton sq]. *)
-  val ( !! ) : Square.t -> t
+  val (!!) : Square.t -> t
 
   (** [b <-- sq] is equivalent to [set b sq]. *)
-  val ( <-- ) : t -> Square.t -> t
+  val (<--) : t -> Square.t -> t
 
   (** [b --> sq] is equivalent to [clear b sq]. *)
-  val ( --> ) : t -> Square.t -> t
+  val (-->) : t -> Square.t -> t
 
   (** [sq @ b] is equivalent to [mem b sq]. *)
-  val ( @ ) : Square.t -> t -> bool
+  val (@) : Square.t -> t -> bool
 end
 
 include module type of Syntax

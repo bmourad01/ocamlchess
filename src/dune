@@ -4,5 +4,6 @@
  (libraries core)
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_compare
+                  ppx_fields_conv
                   ppx_hash
                   ppx_sexp_conv)))

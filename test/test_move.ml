@@ -24,11 +24,11 @@ let test_parse_promote () =
 let test_parse_garbage () =
   assert_equal (Move.of_string "abcdefgh") None ~cmp:cmp_move_opt
 
-let suite =
-  "Test move"
-  >::: [ ("Parse" >:: fun _ -> test_parse ())
-       ; ("Parse empty" >:: fun _ -> test_parse_empty ())
-       ; ("Parse promote" >:: fun _ -> test_parse_promote ())
-       ; ("Parse garbage" >:: fun _ -> test_parse_garbage ()) ]
+let suite = "Test move" >::: [
+    ("Parse" >:: fun _ -> test_parse ());
+    ("Parse empty" >:: fun _ -> test_parse_empty ());
+    ("Parse promote" >:: fun _ -> test_parse_promote ());
+    ("Parse garbage" >:: fun _ -> test_parse_garbage ());
+  ]
 
 let () = run_test_tt_main suite

@@ -1,40 +1,58 @@
 open Base
 
-(** Representation of a chess position, compatible with FEN notation.
+(** Representation of a chess position. *)
+type t [@@deriving compare, equal, hash, sexp]
 
-    [white] and [black] represents piece placement as bitboards, with respect
-    to the color of the pieces.
+(** [white pos] returns the bitboard representing all squares occupied by
+    white pieces in position [pos]. *)
+val white : t -> Bitboard.t
 
-    [pawn], [knight], [bishop], [rook], [queen], and [king] represent piece
-    placement as bitboards, with respect to the kinds of the pieces.
+(** [black pos] returns the bitboard representing all squares occupied by
+    black pieces in position [pos]. *)
+val black : t -> Bitboard.t
 
-    [active] is the active color (e.g. which player is to move next).
+(** [pawn pos] returns the bitboard representing all squares occupied by
+    pawns in position [pos]. *)
+val pawn : t -> Bitboard.t
 
-    [castle] represents castling rights for each color.
+(** [knight pos] returns the bitboard representing all squares occupied by
+    knights in position [pos]. *)
+val knight : t -> Bitboard.t
 
-    [en_passant] is the square, if any, of the en passant target square. If
-    it exists, then a pawn has just made a two-square move, and it is thus
-    the square "behind" the pawn.
+(** [bishop pos] returns the bitboard representing all squares occupied by
+    bishops in position [pos]. *)
+val bishop : t -> Bitboard.t
 
-    [halfmove] is the number of halfmoves since the last capture or pawn
-    advance, used for the fifty-move rule.
+(** [rook pos] returns the bitboard representing all squares occupied by
+    rooks in position [pos]. *)
+val rook : t -> Bitboard.t
 
-    [fullmove] is the number of full moves that have been completed. *)
-type t =
-  { white: Bitboard.t
-  ; black: Bitboard.t
-  ; pawn: Bitboard.t
-  ; knight: Bitboard.t
-  ; bishop: Bitboard.t
-  ; rook: Bitboard.t
-  ; queen: Bitboard.t
-  ; king: Bitboard.t
-  ; active: Piece.color
-  ; castle: Castling_rights.t
-  ; en_passant: Square.t option
-  ; halfmove: int
-  ; fullmove: int }
-[@@deriving compare, equal, hash, sexp]
+(** [queen pos] returns the bitboard representing all squares occupied by
+    queens in position [pos]. *)
+val queen : t -> Bitboard.t
+
+(** [king pos] returns the bitboard representing all squares occupied by
+    kings in position [pos]. *)
+val king : t -> Bitboard.t
+
+(** [active pos] returns the active color (whose turn it is to move) for
+    position [pos]. *)
+val active : t -> Piece.color
+
+(** [castle pos] returns the castling rights for position [pos]. *)
+val castle : t -> Castling_rights.t
+
+(** [en_passant pos] returns the square, if any, of the en passant target
+    square. If it exists, then a pawn has just made a two-square move, and it
+    is thus the square "behind" the pawn. *)
+val en_passant : t -> Square.t option
+
+(** [halfmove pos] returns the number of halfmoves since the last capture or
+    pawn advance. Used for the fifty-move rule. *)
+val halfmove : t -> int
+
+(** [fullmove pos] returns then number of full moves that have been made. *)
+val fullmove : t -> int
 
 (** [board_of_color pos c] returns the bitboard of color [c] from position
     [pos]. *)
@@ -67,6 +85,28 @@ val piece_at_square : t -> Square.t -> Piece.t option
 (** [all_pieces pos] returns a list of square-piece pairs for each occupied
     square on position [pos]. *)
 val all_pieces : t -> (Square.t * Piece.t) list
+
+(** This submodule provides compatibility with FEN (Forsyth-Edwards
+    Notation). This notation is designed to give a compact ASCII
+    representation of any chess position. *)
+module Fen : sig
+  (** String representation of the starting position. *)
+  val start : string
+
+  (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
+      position. Raises [Invalid_argument] if [s] is not a valid FEN string. *)
+  val of_string_exn : string -> t
+
+  (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
+      representation. Returns [None] if [s] is not a valid FEN string. *)
+  val of_string : string -> t option
+
+  (** [to_string fen] returns a string representation of [fen]. *)
+  val to_string : t -> string
+end
+
+(** The starting position. *)
+val start : t
 
 (** This submodule provides helper functions related to generating attacked
     squares for a particular color. *)

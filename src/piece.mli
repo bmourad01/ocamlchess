@@ -20,8 +20,21 @@ module Color : sig
 
   include Comparable.S with type t := t
 
+  (** The number of valid colors. *)
+  val count : int
+
+  (** [of_int_exn i] returns the color associated with integer [i].
+      Raises [Invalid_argument] if [i] is out of range. *)
+  val of_int_exn : int -> t
+
+  (** [of_int i] returns the color associated with integer [i].
+      Returns [None] if [i] is out of range. *)
   val of_int : int -> t option
+
+  (** [to_int c] returns the integer associated with color [c]. *)
   val to_int : t -> int
+
+  (** [opposite c] returns the opposite color of [c]. *)
   val opposite : t -> t
 end
 
@@ -34,7 +47,18 @@ module Kind : sig
 
   include Comparable.S with type t := t
 
+  (** The number of valid pieces. *)
+  val count : int
+
+  (** [of_int_exn i] returns the piece associated with integer [i].
+      Raises [Invalid_argument] if [i] is out of range. *)
+  val of_int_exn : int -> t
+
+  (** [of_int i] returns the piece associated with integer [i].
+      Returns [None] if [i] is out of range. *)
   val of_int : int -> t option
+
+  (** [to_int p] returns the integer associated with piece [p]. *)
   val to_int : t -> int
 end
 
@@ -130,8 +154,8 @@ val of_int : int -> t option
 (** [to_int p] returns the integer representation of piece [p]. *)
 val to_int : t -> int
 
-(** [of_fen_exn c] returns the corresponding piece given a character [c]. [c]
-    is expected to follow from FEN notation, shown as regex below:
+(** [of_fen_exn c] returns the corresponding piece given a character [c].
+    [c] is expected to follow from FEN notation, shown as regex below:
 
     [(P|N|B|R|Q|K)] represents the white pieces, while [(p|n|b|r|q|k)]
     represents the black pieces
@@ -139,8 +163,8 @@ val to_int : t -> int
     All other inputs will raise [Invalid_argument]. *)
 val of_fen_exn : char -> t
 
-(** [of_fen c] returns the corresponding piece given a character [c]. [c] is
-    expected to follow from FEN notation, shown as regex below:
+(** [of_fen c] returns the corresponding piece given a character [c].
+    [c] is expected to follow from FEN notation, shown as regex below:
 
     [(P|N|B|R|Q|K)] represents the white pieces, while [(p|n|b|r|q|k)]
     represents the black pieces

@@ -26,11 +26,11 @@ let test_fold_empty_rev () =
       ~rev:true in
   assert_equal count 0 ~cmp:Int.equal
 
-let suite =
-  "Test bitboard"
-  >::: [ ("Fold full" >:: fun _ -> test_fold_full ())
-       ; ("Fold full (rev)" >:: fun _ -> test_fold_full_rev ())
-       ; ("Fold empty" >:: fun _ -> test_fold_empty ())
-       ; ("Fold empty (rev)" >:: fun _ -> test_fold_empty_rev ()) ]
+let suite = "Test bitboard" >::: [
+    ("Fold full" >:: fun _ -> test_fold_full ());
+    ("Fold full (rev)" >:: fun _ -> test_fold_full_rev ());
+    ("Fold empty" >:: fun _ -> test_fold_empty ());
+    ("Fold empty (rev)" >:: fun _ -> test_fold_empty_rev ());
+  ]
 
 let () = run_test_tt_main suite

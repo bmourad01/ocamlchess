@@ -26,7 +26,7 @@ module Info : sig
     | Nodes of int
     | Pv of Move.t list
     | Multipv of int
-    | Score of {cp: float; mate: int; bound: [`lower | `upper]}
+    | Score of score
     | Currmove of Move.t
     | Currmovenumber of int
     | Hashfull of int
@@ -36,32 +36,54 @@ module Info : sig
     | Cpuload of int
     | String of string
     | Refutation of Move.t list
-    | Currline of {cpunr: int; moves: Move.t list}
+    | Currline of currline
+
+  and score = {
+    cp : float;
+    mate : int;
+    bound : [`lower | `upper];
+  }
+
+  and currline = {
+    cpunr : int;
+    moves : Move.t list;
+  }
 
   val to_string : t -> string
 end
 
 module Option : sig
   module Spin : sig
-    type t = {default: int; min: int; max: int}
+    type t = {
+      default : int;
+      min : int;
+      max : int
+    }
 
     val to_string : t -> string
   end
 
   module Check : sig
-    type t = {default: bool}
+    type t = {
+      default : bool
+    }
 
     val to_string : t -> string
   end
 
   module Combo : sig
-    type t = {default: string; var: string list}
+    type t = {
+      default : string;
+      var : string list
+    }
 
     val to_string : t -> string
   end
 
   module String : sig
-    type t = {default: string}
+    type t = {
+      default : string
+    }
 
     val to_string : t -> string
   end
@@ -108,11 +130,16 @@ module Send : sig
     | Id of [`name of string | `author of string]
     | Uciok
     | Readyok
-    | Bestmove of {move: Move.t; ponder: Move.t option}
+    | Bestmove of bestmove
     | Copyprotection of [`checking | `ok | `error]
     | Registration of [`checking | `ok | `error]
     | Info of Info.t
     | Option of Option.t
+
+  and bestmove = {
+    move : Move.t;
+    ponder : Move.t option
+  }
 
   val to_string : t -> string
 end
