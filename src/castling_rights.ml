@@ -9,6 +9,8 @@ end
 include T
 include Comparable.Make (T)
 
+type side = [`king | `queen]
+
 (* Integer conversion. *)
 
 let of_int_exn i =

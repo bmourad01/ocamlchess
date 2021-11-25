@@ -30,4 +30,4 @@ val king : Square.t -> Bitboard.t
 (** [castle rights c side] returns a bitboard of potentially valid castling
     squares w.r.t. [rights] for color [c] and side [side]. *)
 val castle :
-  Castling_rights.t -> Piece.color -> [`king | `queen] -> Bitboard.t
+  Castling_rights.t -> Piece.color -> Castling_rights.side -> Bitboard.t
