@@ -84,8 +84,8 @@ module Fen = struct
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
   let parse_placement s =
-    let color = Array.create Bitboard.empty ~len:2 in
-    let kind = Array.create Bitboard.empty ~len:6 in
+    let color_tbl = Array.create Bitboard.empty ~len:Piece.Color.count in
+    let kind_tbl = Array.create Bitboard.empty ~len:Piece.Kind.count in
     let rec f (rank, file) sym =
       if rank < 0 then invalid_arg @@
         sprintf "Invalid number of ranks %d" (8 - rank)
@@ -116,21 +116,22 @@ module Fen = struct
           let open Bitboard.Syntax in
           let c = Piece.(color p |> Color.to_int) in
           let k = Piece.(kind p |> Kind.to_int) in
-          color.(c) <- color.(c) <-- sq;
-          kind.(k) <- kind.(k) <-- sq;
+          color_tbl.(c) <- color_tbl.(c) <-- sq;
+          kind_tbl.(k) <- kind_tbl.(k) <-- sq;
           rank, succ file
         | None -> invalid_arg @@
           sprintf "Invalid piece '%c' placed at square '%s'"
             sym (Square.to_string sq) in
     ignore @@ String.fold s ~init:(7, 0) ~f;
-    color.(Piece.Color.to_int White),
-    color.(Piece.Color.to_int Black),
-    kind.(Piece.Kind.to_int Pawn),
-    kind.(Piece.Kind.to_int Knight),
-    kind.(Piece.Kind.to_int Bishop),
-    kind.(Piece.Kind.to_int Rook),
-    kind.(Piece.Kind.to_int Queen),
-    kind.(Piece.Kind.to_int King)
+    Piece.(
+      color_tbl.(Color.to_int White),
+      color_tbl.(Color.to_int Black),
+       kind_tbl.(Kind.to_int Pawn),
+       kind_tbl.(Kind.to_int Knight),
+       kind_tbl.(Kind.to_int Bishop),
+       kind_tbl.(Kind.to_int Rook),
+       kind_tbl.(Kind.to_int Queen),
+       kind_tbl.(Kind.to_int King))
 
   let parse_active = function
     | "w" -> Piece.White
