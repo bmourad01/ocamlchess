@@ -392,25 +392,21 @@ module Update = struct
     | Some _ -> rook_captured sq'
     | _ -> State.return ()
 
-  (* Update the en passant square if a pawn double advance occurred. *)
-  let update_en_passant sq sq' = State.update @@ fun pos ->
-    Field.map Fields.en_passant pos ~f:(fun _ ->
-        (* Must be a pawn move. *)
-        if not Bitboard.(sq @ (pos.pawn & active_board pos)) then None
-        else
-          (* Must move to the same file. *)
-          let rank, file = Square.decomp sq
-          and rank', file' = Square.decomp sq' in
-          if file <> file' then None
-          else
-            (* Check if the pawn moved by two ranks. *)
-            let open Square.Rank in
-            match pos.active with
-            | Piece.White when rank = two && rank' = four ->
-              Some (Square.create_exn ~rank:(pred rank') ~file)
-            | Piece.Black when rank = seven && rank' = five ->
-              Some (Square.create_exn ~rank:(succ rank') ~file)
-            | _ -> None)
+  (* Update the en passant square if a pawn double push occurred. We're
+     skipping the check on whether the file changed, since our assumption is
+     that the move is legal.  *)
+  let update_en_passant ?p sq sq' = handle_piece sq ?p >>= begin function
+      | None -> State.return None
+      | Some p when not @@ Piece.is_pawn p -> State.return None
+      | Some _ ->
+        let rank = Square.rank sq and rank', file = Square.decomp sq' in
+        State.gets active >>| function
+        | Piece.White when Square.Rank.(rank = two && rank' = four) ->
+          Some (Square.create_exn ~rank:(pred rank') ~file)
+        | Piece.Black when Square.Rank.(rank = seven && rank' = five) ->
+          Some (Square.create_exn ~rank:(succ rank') ~file)
+        | _ -> None
+    end >>= fun ep -> map_field Fields.en_passant ~f:(const ep)
 
   (* After each halfmove, give the turn to the other player. *)
   let flip_active = map_field Fields.active ~f:Piece.Color.opposite
@@ -426,15 +422,16 @@ module Update = struct
     | Some k -> State.gets @@ fun pos -> Some (Piece.create pos.active k)
     | None -> State.return p
 
-  (* Perform a halfmove. Assume it has already been checked for legality. *)
-  let _move ?p m =
+  (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
+     for legality. *)
+  let _move p m =
     Move.decomp m |> fun (sq, sq', promote) ->
     update_halfmove sq sq' >>= fun () ->
-    update_en_passant sq sq' >>= fun () ->
-    castle sq sq' ?p >>= fun () ->
-    clear_square sq ?p >>= fun () ->
+    update_en_passant sq sq' ~p >>= fun () ->
+    castle sq sq' ~p >>= fun () ->
+    clear_square sq ~p >>= fun () ->
     clear_square sq' >>= fun () ->
-    do_promote promote ?p >>= fun p ->
+    do_promote promote ~p >>= fun p ->
     set_square sq' ?p >>= fun () ->
     update_fullmove >>= fun () ->
     flip_active

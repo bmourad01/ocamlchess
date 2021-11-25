@@ -58,6 +58,10 @@ val fullmove : t -> int
     [pos]. *)
 val board_of_color : t -> Piece.color -> Bitboard.t
 
+(** [active_board pos] returns the bitboard for all the pieces of the active
+    color. *)
+val active_board : t -> Bitboard.t
+
 (** [board_of_color pos k] returns the bitboard of kind [k] from position
     [pos]. *)
 val board_of_kind : t -> Piece.kind -> Bitboard.t
