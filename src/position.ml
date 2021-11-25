@@ -345,12 +345,12 @@ module Update = struct
 
   let black_kingside_castle =
     clear_square Square.h8 >>= fun () ->
-    set_square Square.f1 ~p:Piece.black_rook >>= fun () ->
+    set_square Square.f8 ~p:Piece.black_rook >>= fun () ->
     State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
 
   let black_queenside_castle =
     clear_square Square.a8 >>= fun () ->
-    set_square Square.d1 ~p:Piece.black_rook >>= fun () ->
+    set_square Square.d8 ~p:Piece.black_rook >>= fun () ->
     State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
 
   (* If this move is actually a castling, then we need to move the rook
