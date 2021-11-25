@@ -355,7 +355,7 @@ module Update = struct
 
   (* If this move is actually a castling, then we need to move the rook
      as well as clear our rights. *)
-  let king_castled sq sq' = State.gets (fun pos -> pos.active) >>= function
+  let king_castled sq sq' = State.gets active >>= function
     | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
     | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
     | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
