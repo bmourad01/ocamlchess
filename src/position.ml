@@ -301,14 +301,14 @@ module Update = struct
 
   (* A piece can be optionally provided. If not, then we will look up
      the piece at that square. *)
-  let handle_piece p sq = State.gets @@ fun pos -> match p with
+  let handle_piece ?p sq = State.gets @@ fun pos -> match p with
     | None -> piece_at_square pos sq
     | Some _ -> p
 
   let map_field field ~f = State.update @@ Field.map field ~f
 
   (* Helper for setting both the color and the kind fields of the board. *)
-  let map_square ?p sq ~f = handle_piece p sq >>= function
+  let map_square ?p sq ~f = handle_piece sq ?p >>= function
     | None -> State.return ()
     | Some p ->
       let c, k = piece_fields p in
@@ -331,16 +331,64 @@ module Update = struct
     fun (is_pawn, is_capture) -> map_field Fields.halfmove ~f:(fun n ->
       if is_pawn || is_capture then 0 else succ n)
 
+  module CR = Castling_rights
+
+  let white_kingside_castle =
+    clear_square Square.h1 >>= fun () ->
+    set_square Square.f1 ~p:Piece.white_rook >>= fun () ->
+    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+
+  let white_queenside_castle =
+    clear_square Square.a1 >>= fun () ->
+    set_square Square.d1 ~p:Piece.white_rook >>= fun () ->
+    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+
+  let black_kingside_castle =
+    clear_square Square.h8 >>= fun () ->
+    set_square Square.f1 ~p:Piece.black_rook >>= fun () ->
+    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+
+  let black_queenside_castle =
+    clear_square Square.a8 >>= fun () ->
+    set_square Square.d1 ~p:Piece.black_rook >>= fun () ->
+    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+
+  (* If this move is actually a castling, then we need to move the rook
+     as well as clear our rights. *)
+  let king_castle sq sq' = State.gets (fun pos -> pos.active) >>= function
+    | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
+    | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
+    | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
+    | Piece.Black when Square.(sq = e8 && sq' = c8) -> black_queenside_castle
+    | _ -> State.return ()
+
+  (* If we're moving a rook, then clear the castling rights for that
+     particular side. *)
+  let rook_castle sq = State.gets (fun pos -> pos.active) >>= function
+    | Piece.White when Square.(sq = h1) -> State.update @@
+      Field.map Fields.castle ~f:(fun x -> CR.(diff x white_kingside))
+    | Piece.White when Square.(sq = a1) -> State.update @@
+      Field.map Fields.castle ~f:(fun x -> CR.(diff x white_queenside))
+    | Piece.Black when Square.(sq = h8) -> State.update @@
+      Field.map Fields.castle ~f:(fun x -> CR.(diff x black_kingside))
+    | Piece.Black when Square.(sq = a8) -> State.update @@
+      Field.map Fields.castle ~f:(fun x -> CR.(diff x black_queenside))
+    | _ -> State.return ()  
+
+  let castle ?p sq sq' = handle_piece sq ?p >>= function
+    | Some p when Piece.is_king p -> king_castle sq sq'
+    | Some p when Piece.is_rook p -> rook_castle sq
+    | _ -> State.return ()
+
   (* Update the en passant square if a pawn double advance occurred. *)
   let update_en_passant sq sq' = State.update @@ fun pos ->
     Field.map Fields.en_passant pos ~f:(fun _ ->
-        let open Bitboard.Syntax in
-        (* Not a pawn move. *)
-        if not (sq @ (pos.pawn & active_board pos)) then None
+        (* Must be a pawn move. *)
+        if not Bitboard.(sq @ (pos.pawn & active_board pos)) then None
         else
+          (* Must move to the same file. *)
           let rank, file = Square.decomp sq
           and rank', file' = Square.decomp sq' in
-          (* Must move to the same file. *)
           if file <> file' then None
           else
             (* Check if the pawn moved by two ranks. *)
@@ -371,6 +419,7 @@ module Update = struct
     Move.decomp m |> fun (sq, sq', promote) ->
     update_halfmove sq sq' >>= fun () ->
     update_en_passant sq sq' >>= fun () ->
+    castle sq sq' ?p >>= fun () ->
     clear_square sq ?p >>= fun () ->
     clear_square sq' >>= fun () ->
     do_promote promote ?p >>= fun p ->
