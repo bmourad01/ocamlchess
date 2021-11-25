@@ -5,22 +5,24 @@ let kind_bits = 3
 let bits = color_bits + kind_bits
 
 module Bits = struct
-  (* Valid colors *)
+  module Color = struct
+    let white = 0b0
+    let black = 0b1
+  end
 
-  let white = 0b0
-  let black = 0b1
+  module Kind = struct
+    let pawn = 0b000
+    let knight = 0b001
+    let bishop = 0b010
+    let rook = 0b011
+    let queen = 0b100
+    let king = 0b101
+  end
 
-  (* Valid kinds *)
-
-  let pawn = 0b000
-  let knight = 0b001
-  let bishop = 0b010
-  let rook = 0b011
-  let queen = 0b100
-  let king = 0b101
+  include Color
+  include Kind
 
   (* Valid encodings *)
-
   module Pieces = struct
     let white_pawn = (white lsl kind_bits) lor pawn
     let white_knight = (white lsl kind_bits) lor knight
@@ -37,7 +39,6 @@ module Bits = struct
   end
 
   (* Extract the bits *)
-
   let color p = p lsr kind_bits
   let kind p = p land 0b111
 end
@@ -51,6 +52,7 @@ module Color = struct
 
   include T
   include Comparable.Make (T)
+  include Bits.Color
 
   let count = 2
 
@@ -62,12 +64,16 @@ module Color = struct
   let of_int i = Option.try_with @@ fun () -> of_int_exn i
 
   let to_int = function
-    | White -> Bits.white
-    | Black -> Bits.black
+    | White -> white
+    | Black -> black
 
   let opposite = function
     | White -> Black
     | Black -> White
+
+  let opposite_int = function
+    | White -> black
+    | Black -> white
 end
 
 type kind = Pawn | Knight | Bishop | Rook | Queen | King
@@ -80,6 +86,7 @@ module Kind = struct
   
   include T
   include Comparable.Make (T)
+  include Bits.Kind
 
   let count = 6
 
@@ -95,12 +102,12 @@ module Kind = struct
   let of_int i = Option.try_with @@ fun () -> of_int_exn i
 
   let to_int = function
-    | Pawn -> Bits.pawn
-    | Knight -> Bits.knight
-    | Bishop -> Bits.bishop
-    | Rook -> Bits.rook
-    | Queen -> Bits.queen
-    | King -> Bits.king
+    | Pawn -> pawn
+    | Knight -> knight
+    | Bishop -> bishop
+    | Rook -> rook
+    | Queen -> queen
+    | King -> king
 end
 
 module T = struct

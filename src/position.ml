@@ -124,14 +124,14 @@ module Fen = struct
             sym (Square.to_string sq) in
     ignore @@ String.fold s ~init:(7, 0) ~f;
     Piece.(
-      color_tbl.(Color.to_int White),
-      color_tbl.(Color.to_int Black),
-       kind_tbl.(Kind.to_int Pawn),
-       kind_tbl.(Kind.to_int Knight),
-       kind_tbl.(Kind.to_int Bishop),
-       kind_tbl.(Kind.to_int Rook),
-       kind_tbl.(Kind.to_int Queen),
-       kind_tbl.(Kind.to_int King))
+      color_tbl.(Color.white),
+      color_tbl.(Color.black),
+       kind_tbl.(Kind.pawn),
+       kind_tbl.(Kind.knight),
+       kind_tbl.(Kind.bishop),
+       kind_tbl.(Kind.rook),
+       kind_tbl.(Kind.queen),
+       kind_tbl.(Kind.king))
 
   let parse_active = function
     | "w" -> Piece.White

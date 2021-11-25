@@ -23,6 +23,12 @@ module Color : sig
   (** The number of valid colors. *)
   val count : int
 
+  (** Integer representation of white. *)
+  val white : int
+
+  (** Integer representation of black. *)
+  val black : int
+
   (** [of_int_exn i] returns the color associated with integer [i].
       Raises [Invalid_argument] if [i] is out of range. *)
   val of_int_exn : int -> t
@@ -36,6 +42,10 @@ module Color : sig
 
   (** [opposite c] returns the opposite color of [c]. *)
   val opposite : t -> t
+    
+  (** [opposite_int c] returns the integer representation of the opposite
+      color of [c]. *)
+  val opposite_int : t -> int
 end
 
 (** The kind of a piece *)
@@ -49,6 +59,24 @@ module Kind : sig
 
   (** The number of valid pieces. *)
   val count : int
+
+  (** Integer representation of pawn. *)
+  val pawn : int
+
+  (** Integer representation of knight. *)
+  val knight : int
+
+  (** Integer representation of bishop. *)
+  val bishop : int
+
+  (** Integer representation of rook. *)
+  val rook : int
+
+  (** Integer representation of queen. *)
+  val queen : int
+
+  (** Integer representation of king. *)
+  val king : int
 
   (** [of_int_exn i] returns the piece associated with integer [i].
       Raises [Invalid_argument] if [i] is out of range. *)
