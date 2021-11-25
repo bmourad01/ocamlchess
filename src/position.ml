@@ -335,12 +335,15 @@ module Update = struct
   let update_en_passant sq sq' = State.update @@ fun pos ->
     Field.map Fields.en_passant pos ~f:(fun _ ->
         let open Bitboard.Syntax in
+        (* Not a pawn move. *)
         if not (sq @ (pos.pawn & active_board pos)) then None
         else
           let rank, file = Square.decomp sq
           and rank', file' = Square.decomp sq' in
+          (* Must move to the same file. *)
           if file <> file' then None
           else
+            (* Check if the pawn moved by two ranks. *)
             let open Square.Rank in
             match pos.active with
             | Piece.White when rank = two && rank' = four ->
