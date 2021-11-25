@@ -417,9 +417,9 @@ module Update = struct
 
   (* Since white moves first, increment the fullmove clock after black
      has moved. *)
-  let update_fullmove = State.get () >>= function
-    | {active = White; _} -> State.return ()
-    | {active = Black; _} -> map_field Fields.fullmove ~f:succ
+  let update_fullmove = State.gets active >>= function
+    | White -> State.return ()
+    | Black -> map_field Fields.fullmove ~f:succ
 
   (* Update the piece for the destination square if we're promoting. *)
   let do_promote ?p = function
