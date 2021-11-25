@@ -122,6 +122,7 @@ include Bits.Pieces
 
 let color p = Color.of_int_exn @@ Bits.color p
 let kind p = Kind.of_int_exn @@ Bits.kind p
+let decomp p = color p, kind p
 
 let create color kind =
   (Color.to_int color lsl kind_bits) lor Kind.to_int kind

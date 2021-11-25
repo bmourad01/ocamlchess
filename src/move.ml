@@ -20,6 +20,7 @@ let square_mask = (1 lsl Square.bits) - 1
 let src m = m land square_mask |> Square.of_int_exn
 let dst m = (m lsr Square.bits) land square_mask |> Square.of_int_exn
 let promote m = m lsr (Square.bits * 2) |> Piece.Kind.of_int
+let decomp m = src m, dst m, promote m
 
 let to_string m =
   sprintf "%s%s%s"

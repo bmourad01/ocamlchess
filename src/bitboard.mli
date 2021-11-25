@@ -146,6 +146,11 @@ val iter_until : ?rev:bool -> t -> f:(Square.t -> bool) -> unit
     Otherwise, it is kept. *)
 val filter : t -> f:(Square.t -> bool) -> t
 
+(** [find b ~f ~rev] returns the first square [sq] of [b] which satisfies
+    [f sq], if it exists. If [rev] is [true], then iteration starts from
+    square h8, otherwise from a1. *)
+val find : ?rev:bool -> t -> f:(Square.t -> bool) -> Square.t option
+
 module Syntax : sig
   (** [x & y] is equivalent to [inter x y]. *)
   val (&) : t -> t -> t

@@ -51,6 +51,10 @@ val file : t -> int
     which is within the range ['a'..'h']. *)
 val file_char : t -> char
 
+(** [decomp sq] returns a pair containing the rank and file of [sq],
+    in that order. *)
+val decomp : t -> (int * int)
+
 (** [of_string_exn s] parses [s] to the underlying representation of a
     square. [s] must obey the regular language [\[a-h\]\[1-8\]], otherwise
     [Invalid_argument] is raised. *)
@@ -256,3 +260,63 @@ val h7 : t
 
 (** The h8 square. *)
 val h8 : t
+
+(** Integer representations of the ranks. *)
+module Rank : sig
+  (** The first rank. *)
+  val one : int
+
+  (** The second rank. *)
+  val two : int
+
+  (** The third rank. *)
+  val three : int
+
+  (** The fourth rank. *)
+  val four : int
+
+  (** The fifth rank. *)
+  val five : int
+
+  (** The sixth rank. *)
+  val six : int
+
+  (** The seventh rank. *)
+  val seven : int
+
+  (** The eighth rank. *)
+  val eight : int
+
+  (** Number of ranks. *)
+  val count : int
+end
+
+(** Integer represenations of the files. *)
+module File : sig
+  (** The a file. *)
+  val a : int
+
+  (** The b file. *)
+  val b : int
+
+  (** The c file. *)
+  val c : int
+
+  (** The d file. *)
+  val d : int
+
+  (** The e file. *)
+  val e : int
+
+  (** The f file. *)
+  val f : int
+
+  (** The g file. *)
+  val g : int
+
+  (** The h file. *)
+  val h : int
+
+  (** Number of files. *)
+  val count : int
+end

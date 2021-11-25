@@ -12,24 +12,40 @@ include T
 include Comparable.Make (T)
 
 let of_int_exn i =
-  if i < 0 || i > 63 then
+  if i < 0 || i >= count then
     invalid_arg @@ sprintf "Invalid square integer '%d'" i
   else i
 
 let of_int i = Option.try_with @@ fun () -> of_int_exn i
 let to_int = ident
 
-let create_exn ~rank ~file =
-  if rank < 0 || rank > 7 then
-    invalid_arg @@ sprintf "Invalid rank index '%d'" rank
-  else if file < 0 || file > 7 then
-    invalid_arg @@ sprintf "Invalid file index '%d'" file
-  else (rank lsl bits lsr 1) lor file
-
-let create ~rank ~file = Option.try_with @@ fun () -> create_exn ~rank ~file
-
 module Bits = struct
-  (* Valid squares *)
+  module Rank = struct
+    let one = 0b000
+    let two = 0b001
+    let three = 0b010
+    let four = 0b011
+    let five = 0b100
+    let six = 0b101
+    let seven = 0b110
+    let eight = 0b111
+
+    let count = 8
+  end
+
+  module File = struct
+    let a = 0b000
+    let b = 0b001
+    let c = 0b010
+    let d = 0b011
+    let e = 0b100
+    let f = 0b101
+    let g = 0b110
+    let h = 0b111
+
+    let count = 8
+  end
+
   let a1 = 0b000_000
   let b1 = 0b000_001
   let c1 = 0b000_010
@@ -98,7 +114,17 @@ module Bits = struct
   (* Extract the bits *)
   let rank sq = sq lsr 3
   let file sq = sq land 0b111
+  let decomp sq = rank sq, file sq
 end
+
+let create_exn ~rank ~file =
+  if rank < 0 || rank >= Bits.Rank.count then
+    invalid_arg @@ sprintf "Invalid rank index '%d'" rank
+  else if file < 0 || file >= Bits.File.count then
+    invalid_arg @@ sprintf "Invalid file index '%d'" file
+  else (rank lsl bits lsr 1) lor file
+
+let create ~rank ~file = Option.try_with @@ fun () -> create_exn ~rank ~file
 
 let rank_char =
   let ranks = "12345678" in

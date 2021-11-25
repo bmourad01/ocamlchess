@@ -1,22 +1,27 @@
 open Core_kernel
+open Monads.Std
 
 module Pre = Precalculated
 
-type t = {
-  white : Bitboard.t;
-  black : Bitboard.t;
-  pawn : Bitboard.t;
-  knight : Bitboard.t;
-  bishop : Bitboard.t;
-  rook : Bitboard.t;
-  queen : Bitboard.t;
-  king : Bitboard.t;
-  active : Piece.color;
-  castle : Castling_rights.t;
-  en_passant : Square.t option;
-  halfmove : int;
-  fullmove : int
-} [@@deriving compare, equal, fields, hash, sexp]
+module T = struct
+  type t = {
+    white : Bitboard.t;
+    black : Bitboard.t;
+    pawn : Bitboard.t;
+    knight : Bitboard.t;
+    bishop : Bitboard.t;
+    rook : Bitboard.t;
+    queen : Bitboard.t;
+    king : Bitboard.t;
+    active : Piece.color;
+    castle : Castling_rights.t;
+    en_passant : Square.t option;
+    halfmove : int;
+    fullmove : int
+  } [@@deriving compare, equal, fields, hash, sexp]
+end
+
+include T
 
 (* Bitboard accessors *)
 
@@ -25,6 +30,8 @@ let all_board pos = Bitboard.(pos.white + pos.black)
 let board_of_color pos = function
   | Piece.White -> pos.white
   | Piece.Black -> pos.black
+
+let active_board pos = board_of_color pos pos.active
 
 let board_of_kind pos = function
   | Piece.Pawn -> pos.pawn
@@ -35,8 +42,10 @@ let board_of_kind pos = function
   | Piece.King -> pos.king
 
 let board_of_piece pos p =
-  let c = Piece.color p and k = Piece.kind p in
+  let c, k = Piece.decomp p in
   Bitboard.(board_of_color pos c & board_of_kind pos k)
+
+let is_en_passant pos sq = Option.exists pos.en_passant ~f:(Square.equal sq)
 
 (* Piece lookup *)
 
@@ -103,11 +112,11 @@ module Fen = struct
     and skip_file rank file sym =
       let inc = Char.(to_int sym - to_int '0') in
       let file' = file + inc in
-      if file' > 8 then invalid_arg @@
+      if file' > 8  then invalid_arg @@
         sprintf "Invalid increment %d at file %d" inc file
       else rank, file'
     and place_piece rank file sym =
-      if file > 7 then invalid_arg @@
+      if file > Square.File.h then invalid_arg @@
         sprintf "Invalid piece placement on full rank %d" (rank + 1)
       else
         let sq = Square.create_exn ~rank ~file in
@@ -126,12 +135,12 @@ module Fen = struct
     Piece.(
       color_tbl.(Color.white),
       color_tbl.(Color.black),
-       kind_tbl.(Kind.pawn),
-       kind_tbl.(Kind.knight),
-       kind_tbl.(Kind.bishop),
-       kind_tbl.(Kind.rook),
-       kind_tbl.(Kind.queen),
-       kind_tbl.(Kind.king))
+      kind_tbl.(Kind.pawn),
+      kind_tbl.(Kind.knight),
+      kind_tbl.(Kind.bishop),
+      kind_tbl.(Kind.rook),
+      kind_tbl.(Kind.queen),
+      kind_tbl.(Kind.king))
 
   let parse_active = function
     | "w" -> Piece.White
@@ -210,8 +219,7 @@ end
 
 let start = Fen.(of_string_exn start)
 
-(* Attacked squares *)
-
+(* Generating attacked squares *)
 module Attacks = struct
   (* Useful when excluding squares that are occupied by our color.  *)
   let ignore_color pos c b = Bitboard.(b - board_of_color pos c)
@@ -264,4 +272,106 @@ module Attacks = struct
     let occupied = occupied pos c king_danger in
     find_color pos c |> List.fold ~init:Bitboard.empty ~f:(fun acc (sq, k) ->
         acc + pre_of_kind sq occupied c k) |> ignore_color pos c
+end
+
+module State = struct
+  include Monad.State.T1(T)(Monad.Ident)
+  include Monad.State.Make(T)(Monad.Ident)
+end
+
+open State.Syntax
+
+(* Helpers for updating fields. *)
+module Update = struct
+  let color_field = function
+    | Piece.White -> Fields.white
+    | Piece.Black -> Fields.black
+
+  let kind_field = function
+    | Piece.Pawn -> Fields.pawn
+    | Piece.Knight -> Fields.knight
+    | Piece.Bishop -> Fields.bishop
+    | Piece.Rook -> Fields.rook
+    | Piece.Queen -> Fields.queen
+    | Piece.King -> Fields.king
+
+  let piece_fields p =
+    let c, k = Piece.decomp p in
+    color_field c, kind_field k
+
+  (* A piece can be optionally provided. If not, then we will look up
+     the piece at that square. *)
+  let handle_piece p sq = State.gets @@ fun pos -> match p with
+    | None -> piece_at_square pos sq
+    | Some _ -> p
+
+  let map_field field ~f = State.update @@ Field.map field ~f
+
+  (* Helper for setting both the color and the kind fields of the board. *)
+  let map_square ?p sq ~f = handle_piece p sq >>= function
+    | None -> State.return ()
+    | Some p ->
+      let c, k = piece_fields p in
+      map_field c ~f >>= fun () ->
+      map_field k ~f
+
+  let set_square ?p sq = map_square sq ?p ~f:Bitboard.((+) !!sq)
+  let clear_square ?p sq = map_square sq ?p ~f:Bitboard.((-) !!sq)
+
+  let is_pawn_or_capture sq sq' = State.gets @@ fun pos ->
+    let open Bitboard.Syntax in
+    let is_pawn = sq @ pos.pawn in
+    let is_capture =
+      (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
+    is_pawn, is_capture
+
+  (* The haalfmove clock is reset after captures or pawn moves, and
+     incremented otherwise. *)
+  let update_halfmove sq sq' = is_pawn_or_capture sq sq' >>=
+    fun (is_pawn, is_capture) -> map_field Fields.halfmove ~f:(fun n ->
+      if is_pawn || is_capture then 0 else succ n)
+
+  (* Update the en passant square if a pawn double advance occurred. *)
+  let update_en_passant sq sq' = State.update @@ fun pos ->
+    Field.map Fields.en_passant pos ~f:(fun _ ->
+        let open Bitboard.Syntax in
+        if not (sq @ (pos.pawn & active_board pos)) then None
+        else
+          let rank, file = Square.decomp sq
+          and rank', file' = Square.decomp sq' in
+          if file <> file' then None
+          else
+            let open Square.Rank in
+            match pos.active with
+            | Piece.White when rank = two && rank' = four ->
+              Some (Square.create_exn ~rank:(pred rank') ~file)
+            | Piece.Black when rank = seven && rank' = five ->
+              Some (Square.create_exn ~rank:(succ rank') ~file)
+            | _ -> None)
+
+  (* After each halfmove, give the turn to the other player. *)
+  let flip_active = map_field Fields.active ~f:Piece.Color.opposite
+
+  (* Since white moves first, increment the fullmove clock after black
+     has moved. *)
+  let update_fullmove = State.get () >>= function
+    | {active = White; _} -> State.return ()
+    | {active = Black; _} -> map_field Fields.fullmove ~f:succ
+
+  (* Update the piece for the destination square if we're promoting. *)
+  let do_promote ?p = function
+    | Some k -> State.gets @@ fun pos -> Some (Piece.create pos.active k)
+    | None -> State.return p
+
+  (* Perform a halfmove. Assume it has already been checked for legality. *)
+  let _move ?p m =
+    Move.decomp m |> fun (sq, sq', promote) ->
+    update_halfmove sq sq' >>= fun () ->
+    update_en_passant sq sq' >>= fun () ->
+    clear_square sq ?p >>= fun () ->
+    clear_square sq' >>= fun () ->
+    do_promote promote ?p >>= fun p ->
+    set_square sq' ?p >>= fun () ->
+    update_fullmove >>= fun () ->
+    flip_active
 end

@@ -78,8 +78,10 @@ let count = Int64.popcount
 
 (* Higher-order functions. *)
 
+let rev_sq = (Square.h8 :> int)
+
 let fold ?(rev = false) b ~init ~f =
-  let next = if rev then fun b -> 63 - Int64.clz b else Int64.ctz in
+  let next = if rev then fun b -> rev_sq - Int64.clz b else Int64.ctz in
   let rec aux b acc =
     if b = empty then acc
     else
@@ -89,7 +91,7 @@ let fold ?(rev = false) b ~init ~f =
 
 let fold_until ?(rev = false) b ~init ~f ~finish =
   let open Continue_or_stop in
-  let next = if rev then fun b -> 63 - Int64.clz b else Int64.ctz in
+  let next = if rev then fun b -> rev_sq - Int64.clz b else Int64.ctz in
   let rec aux b acc =
     if b = empty then finish acc
     else
@@ -101,13 +103,16 @@ let fold_until ?(rev = false) b ~init ~f ~finish =
 
 let iter ?(rev = false) b ~f = fold b ~init:() ~f:(fun () sq -> f sq) ~rev
 
-let iter_until ?(rev = false) b ~f =
-  fold_until b ~init:()
+let iter_until ?(rev = false) b ~f = fold_until b ~init:()
     ~f:(fun () sq -> if f sq then Stop () else Continue ())
     ~finish:ident ~rev
 
 let filter b ~f =
   fold b ~init:b ~f:(fun acc sq -> if f sq then acc else clear acc sq)
+
+let find ?(rev = false) b ~f = fold_until b ~init:None
+    ~f:(fun acc sq -> if f sq then Stop (Some sq) else Continue acc)
+    ~finish:ident ~rev
 
 (* Infix operators. *)
 

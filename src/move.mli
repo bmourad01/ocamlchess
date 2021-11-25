@@ -23,6 +23,10 @@ val dst : t -> Square.t
 (** [promote m] returns the piece promotion of move [m], if it exists. *)
 val promote : t -> Piece.kind option
 
+(** [decomp m] returns a triple containing the source, destination and
+    promotion of move [m], in that order. *)
+val decomp : t -> (Square.t * Square.t * Piece.kind option)
+
 (** [to_string m] returns the UCI-compatible string notation of move [m]. *)
 val to_string : t -> string
 

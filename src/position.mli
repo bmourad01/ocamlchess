@@ -66,6 +66,10 @@ val board_of_kind : t -> Piece.kind -> Bitboard.t
     [pos]. *)
 val board_of_piece : t -> Piece.t -> Bitboard.t
 
+(** [is_en_passant t sq] returns [true] if an en passant square exists
+    in [pos] and it is equal to [sq]. *)
+val is_en_passant : t -> Square.t -> bool
+
 (** [find_color pos c] returns a list of square-kind pairs where pieces of
     color [c] occupy squares on position [pos]. *)
 val find_color : t -> Piece.color -> (Square.t * Piece.kind) list

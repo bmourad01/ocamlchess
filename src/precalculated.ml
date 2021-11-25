@@ -125,8 +125,9 @@ end
 (* Masks for various movement directions. *)
 module Mask = struct
   (* Direction to move in when starting from a particular square. *)
-  let dir r f = Simple.make @@ fun rank file ->
-    List.init 7 ~f:(fun i -> r rank (i + 1), f file (i + 1))
+  let dir r f =
+    Simple.make @@ fun rank file ->
+    List.init ((Square.count lsr 3) - 1) ~f:(fun i -> r rank (i + 1), f file (i + 1))
 
   (* All 8 directions. *)
   let east = dir const (+)
@@ -139,8 +140,8 @@ module Mask = struct
   and swest = dir (-) (-)
 
   (* Combine all diagonal directions, minus the edges. *)
-  let diagonal = Array.init Square.count ~f:(fun i ->
-      Bitboard.(neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges))
+  let diagonal = Array.init Square.count ~f:(fun i -> Bitboard.(
+      neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges))
 
   (* Combine all straight directions, minus the edges. *)
   let straight = Array.init Square.count ~f:(fun i -> Bitboard.(
@@ -168,7 +169,8 @@ module Sliding = struct
           let acc = acc + b in
           Option.value_map j ~default:acc
             ~f:(fun j -> acc - (fst arr.(i)).(j))) in
-    let l b = 63 - Int64.clz b in
+    let rev_sq = (Square.h8 :> int) in
+    let l b = rev_sq - Int64.clz b in
     let r = Int64.ctz in
     Mask.(gen [|(neast, r); (nwest, r); (seast, l); (swest, l)|],
           gen [|(east,  r); (west,  l); (north, r); (south, l)|])
@@ -193,10 +195,8 @@ module Sliding = struct
       let tbl = Array.init Square.count
           ~f:(fun _ -> Array.create ~len Bitboard.empty) in
       for i = 0 to Square.count - 1 do
-        let shift = shift.(i)
-        and mask = mask.(i)
-        and magic = magic.(i)
-        and t = tbl.(i) in
+        let shift = shift.(i) and mask = mask.(i)
+        and magic = magic.(i) and t = tbl.(i) in
         for j = 0 to 1 lsl shift do
           let occupied = blockers j mask in
           t.(hash occupied magic shift) <- gen i occupied

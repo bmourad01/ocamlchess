@@ -138,6 +138,10 @@ val color : t -> color
 (** [kind p] returns the corresponding kind of piece [p]. *)
 val kind : t -> kind
 
+(** [decomp p] returns a pair containing the color and kind of piece [p],
+    in that order.  *)
+val decomp : t -> (color * kind)
+
 (** [create color kind] creates a piece with color [color] and kind [kind]. *)
 val create : color -> kind -> t
 
