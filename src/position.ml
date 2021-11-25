@@ -355,16 +355,16 @@ module Update = struct
 
   (* If this move is actually a castling, then we need to move the rook
      as well as clear our rights. *)
-  let king_castle sq sq' = State.gets (fun pos -> pos.active) >>= function
+  let king_castled sq sq' = State.gets (fun pos -> pos.active) >>= function
     | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
     | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
     | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
     | Piece.Black when Square.(sq = e8 && sq' = c8) -> black_queenside_castle
     | _ -> State.return ()
 
-  (* If we're moving a rook, then clear the castling rights for that
-     particular side. *)
-  let rook_castle sq = State.gets (fun pos -> pos.active) >>= function
+  (* If we're moving or capturing a rook, then clear the castling rights for
+     that particular side. *)
+  let rook_moved_or_captured sq = function
     | Piece.White when Square.(sq = h1) -> State.update @@
       Field.map Fields.castle ~f:(fun x -> CR.(diff x white_kingside))
     | Piece.White when Square.(sq = a1) -> State.update @@
@@ -373,11 +373,23 @@ module Update = struct
       Field.map Fields.castle ~f:(fun x -> CR.(diff x black_kingside))
     | Piece.Black when Square.(sq = a8) -> State.update @@
       Field.map Fields.castle ~f:(fun x -> CR.(diff x black_queenside))
-    | _ -> State.return ()  
+    | _ -> State.return ()
 
+  (* Rook moved from a square. *)
+  let rook_moved sq = State.gets active >>= rook_moved_or_captured sq
+
+  (* Rook was captured at a square. Assume that it is the enemy's color. *)
+  let rook_captured sq = handle_piece sq >>= function
+    | Some p when Piece.is_rook p -> rook_moved_or_captured sq @@ Piece.color p
+    | _ -> State.return ()
+
+  (* Handle castling-related details. *)
   let castle ?p sq sq' = handle_piece sq ?p >>= function
-    | Some p when Piece.is_king p -> king_castle sq sq'
-    | Some p when Piece.is_rook p -> rook_castle sq
+    | Some p when Piece.is_king p -> king_castled sq sq'
+    | Some p when Piece.is_rook p ->
+      rook_moved sq >>= fun () ->
+      rook_captured sq
+    | Some _ -> rook_captured sq'
     | _ -> State.return ()
 
   (* Update the en passant square if a pawn double advance occurred. *)
