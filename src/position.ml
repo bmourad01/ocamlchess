@@ -278,6 +278,8 @@ module State = Monad.State.Make(T)(Monad.Ident)
 
 open State.Syntax
 
+let (>>) m n = m >>= fun _ -> n
+
 (* Helpers for updating fields. *)
 module Update = struct
   let color_field = function
@@ -309,8 +311,7 @@ module Update = struct
     | None -> State.return ()
     | Some p ->
       let c, k = piece_fields p in
-      map_field c ~f >>= fun () ->
-      map_field k ~f
+      map_field c ~f >> map_field k ~f
 
   let set_square ?p sq = map_square sq ?p ~f:Bitboard.((+) !!sq)
   let clear_square ?p sq = map_square sq ?p ~f:Bitboard.((-) !!sq)
@@ -331,23 +332,19 @@ module Update = struct
   module CR = Castling_rights
 
   let white_kingside_castle =
-    clear_square Square.h1 >>= fun () ->
-    set_square Square.f1 ~p:Piece.white_rook >>= fun () ->
+    clear_square Square.h1 >> set_square Square.f1 ~p:Piece.white_rook >>
     State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
 
   let white_queenside_castle =
-    clear_square Square.a1 >>= fun () ->
-    set_square Square.d1 ~p:Piece.white_rook >>= fun () ->
+    clear_square Square.a1 >> set_square Square.d1 ~p:Piece.white_rook >>
     State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
 
   let black_kingside_castle =
-    clear_square Square.h8 >>= fun () ->
-    set_square Square.f8 ~p:Piece.black_rook >>= fun () ->
+    clear_square Square.h8 >> set_square Square.f8 ~p:Piece.black_rook >>
     State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
 
   let black_queenside_castle =
-    clear_square Square.a8 >>= fun () ->
-    set_square Square.d8 ~p:Piece.black_rook >>= fun () ->
+    clear_square Square.a8 >> set_square Square.d8 ~p:Piece.black_rook >>
     State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
 
   (* If this move is actually a castling, then we need to move the rook
@@ -381,11 +378,9 @@ module Update = struct
     | _ -> State.return ()
 
   (* Handle castling-related details. *)
-  let castle ?p sq sq' = handle_piece sq ?p >>= function
+  let update_castle ?p sq sq' = handle_piece sq ?p >>= function
     | Some p when Piece.is_king p -> king_castled sq sq'
-    | Some p when Piece.is_rook p ->
-      rook_moved sq >>= fun () ->
-      rook_captured sq
+    | Some p when Piece.is_rook p -> rook_moved sq >> rook_captured sq
     | Some _ -> rook_captured sq'
     | _ -> State.return ()
 
@@ -424,13 +419,13 @@ module Update = struct
      for legality. *)
   let _move p m =
     Move.decomp m |> fun (sq, sq', promote) ->
-    update_halfmove sq sq' >>= fun () ->
-    update_en_passant sq sq' ~p >>= fun () ->
-    castle sq sq' ~p >>= fun () ->
-    clear_square sq ~p >>= fun () ->
-    clear_square sq' >>= fun () ->
-    do_promote promote ~p >>= fun p ->
-    set_square sq' ?p >>= fun () ->
-    update_fullmove >>= fun () ->
-    flip_active
+    (* Do the stuff that relies on the initial state. *)
+    update_halfmove sq sq' >>
+    update_en_passant sq sq' ~p >>
+    update_castle sq sq' ~p >>
+    (* Move the piece. *)
+    clear_square sq ~p >> clear_square sq' >>
+    do_promote promote ~p >>= fun p -> set_square sq' ?p >>
+    (* Prepare for the next move. *)
+    update_fullmove >> flip_active
 end
