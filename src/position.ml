@@ -522,13 +522,16 @@ module Moves = struct
        1) Our pawn is on the king's side of the pin, and the enemy pawn is
           on the enemy's side of the pin.
        2) Same as (1), but reversed.
-       3) Our pawn is on both sides of the pin.
-       4) The enemy pawn is on both sides of the pin.  *)
+       3) The enemy pawn is on both sides of the pin.
+       
+       We don't have to check if our pawn is on both sides of the pin (see
+       the use of `pin_mask`). This function checks for the special case of
+       en passant, since it is the only kind of move where we capture a piece
+       by moving to a square that is not occupied by that piece. *)
     let en_passant sq ep diag = Reader.read () >>|
       fun {king_slide; enemy_slide; _} -> Bb.(
         if (sq @ king_slide && ep @ enemy_slide)
         || (ep @ king_slide && sq @ king_slide)
-        || (sq @ king_slide && sq @ enemy_slide)
         || (ep @ king_slide && ep @ enemy_slide)
         then diag else diag + !!ep)
 
