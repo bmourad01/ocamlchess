@@ -56,24 +56,15 @@ module Color = struct
 
   let count = 2
 
-  let of_int_exn = function
-    | 0b0 -> White
-    | 0b1 -> Black
-    | i -> invalid_arg @@ sprintf "Integer %d is not a valid color" i
+  let of_int_exn i =
+    if Int.(i < 0 || i >= count) then invalid_arg @@
+      sprintf "Integer %d is not a valid color" i
+    else ((Obj.magic i) : t)
 
   let of_int i = Option.try_with @@ fun () -> of_int_exn i
-
-  let to_int = function
-    | White -> white
-    | Black -> black
-
-  let opposite = function
-    | White -> Black
-    | Black -> White
-
-  let opposite_int = function
-    | White -> black
-    | Black -> white
+  let to_int c = (Obj.magic (Obj.repr c) : int)
+  let opposite_int c = to_int c lxor 1
+  let opposite c = ((Obj.magic @@ opposite_int c) : t)
 end
 
 type kind = Pawn | Knight | Bishop | Rook | Queen | King
@@ -90,24 +81,13 @@ module Kind = struct
 
   let count = 6
 
-  let of_int_exn = function
-    | 0b000 -> Pawn
-    | 0b001 -> Knight
-    | 0b010 -> Bishop
-    | 0b011 -> Rook
-    | 0b100 -> Queen
-    | 0b101 -> King
-    | i -> invalid_arg @@ sprintf "Integer %d is not a valid piece" i
+  let of_int_exn i =
+    if Int.(i < 0 || i >= count) then invalid_arg @@
+      sprintf "Integer %d is not a valid kind" i
+    else  ((Obj.magic i) : t)
 
   let of_int i = Option.try_with @@ fun () -> of_int_exn i
-
-  let to_int = function
-    | Pawn -> pawn
-    | Knight -> knight
-    | Bishop -> bishop
-    | Rook -> rook
-    | Queen -> queen
-    | King -> king
+  let to_int k = (Obj.magic (Obj.repr k) : int)
 end
 
 module T = struct
