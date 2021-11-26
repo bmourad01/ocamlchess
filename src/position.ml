@@ -522,11 +522,13 @@ module Moves = struct
        1) Our pawn is on the king's side of the pin, and the enemy pawn is
           on the enemy's side of the pin.
        2) Same as (1), but reversed.
-       3) The enemy pawn is on both sides of the pin. *)
+       3) Our pawn is on both sides of the pin.
+       4) The enemy pawn is on both sides of the pin.  *)
     let en_passant sq ep diag = Reader.read () >>|
       fun {king_slide; enemy_slide; _} -> Bb.(
         if (sq @ king_slide && ep @ enemy_slide)
-        || (sq @ enemy_slide && ep @ king_slide)
+        || (ep @ king_slide && sq @ king_slide)
+        || (sq @ king_slide && sq @ enemy_slide)
         || (ep @ king_slide && ep @ enemy_slide)
         then empty else (~~diag & !!ep) + diag)
 
@@ -576,7 +578,7 @@ module Moves = struct
   module King = struct
     let move sq = Reader.read () >>| fun {active_board; enemy_attacks; _} ->
       Bb.(Pre.king sq - active_board - enemy_attacks)
-    
+
     let castle = Reader.read () >>| fun {pos; enemy_attacks; _} ->
       let open Bb.Syntax in
       let kingside_sq, queenside_sq = match pos.active with
