@@ -221,7 +221,6 @@ end
 
 let start = Fen.(of_string_exn start)
 
-(* Generating attacked squares *)
 module Attacks = struct
   (* Useful when excluding squares that are occupied by our color.  *)
   let ignore_color pos c b = Bitboard.(b - board_of_color pos c)
@@ -289,14 +288,13 @@ module Attacks = struct
       | _ -> true)
 end
 
-module State = Monad.State.Make(T)(Monad.Ident)
-
-open State.Syntax
-
-let (>>) m n = m >>= fun _ -> n
-
 (* Helpers for updating fields. *)
 module Update = struct
+  module State = Monad.State.Make(T)(Monad.Ident)
+  open State.Syntax
+
+  let (>>) m n = m >>= fun _ -> n
+
   let color_field = function
     | Piece.White -> Fields.white
     | Piece.Black -> Fields.black
@@ -445,20 +443,42 @@ module Update = struct
     update_fullmove >> flip_active
 end
 
-(* Calculate the intersection of the following bitboards:
-   1) The rays of sliding moves that move outward from the king's square.
-   2) All sliding attacks from enemy pieces.
-   3) All pieces of the active color except for the king. *)
-let pinned_pieces_fast ~king_sq ~occupied ~enemy_sliders ~active_board =
-  let open Bitboard.Syntax in
-  let king_slide = Pre.queen king_sq occupied in
-  king_slide & enemy_sliders & (active_board --> king_sq)
+module Moves = struct
+  (* General information about the position that is needed for generating
+     moves. *)
+  module Info = struct
+    type t = {
+      pos : T.t;
+      king_sq : Square.t;
+      occupied : Bitboard.t;
+      active_board : Bitboard.t;
+      enemy_sliders : Bitboard.t;
+      enemy_attacks : Bitboard.t;
+    } [@@deriving fields]
+  end
 
-let pinned_pieces pos =
-  let king_sq =
-    List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
-  let occupied = all_board pos in
-  let enemy = Piece.Color.opposite pos.active in
-  let enemy_sliders = Attacks.sliding pos enemy ~king_danger:true in
-  let active_board = active_board pos in
-  pinned_pieces_fast ~king_sq ~occupied ~enemy_sliders ~active_board
+  module Reader = Monad.Reader.Make(Info)(Monad.Ident)
+
+  open Reader.Syntax
+
+  (* Calculate the intersection of the following bitboards:
+     1) The rays of sliding moves that move outward from the king's square.
+     2) All sliding attacks from enemy pieces.
+     3) All pieces of the active color except for the king. *)
+  let pinned_pieces_fast = Reader.read () >>| fun info ->
+    let open Bitboard.Syntax in
+    let king_slide = Pre.queen info.king_sq info.occupied in
+    let no_king = info.active_board --> info.king_sq in
+    king_slide & info.enemy_sliders & no_king
+
+  let pinned_pieces pos =
+    let king_sq =
+      List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
+    let occupied = all_board pos in
+    let enemy = Piece.Color.opposite pos.active in
+    let enemy_sliders = Attacks.sliding pos enemy in
+    let active_board = active_board pos in
+    Monad.Reader.run pinned_pieces_fast @@ Info.Fields.create
+      ~pos ~king_sq ~occupied ~active_board ~enemy_sliders
+      ~enemy_attacks:Bitboard.empty
+end
