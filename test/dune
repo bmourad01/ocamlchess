@@ -3,5 +3,5 @@
         test_bitboard
         test_move
         test_precalculated)
- (ocamlopt_flags -O3)
+ (ocamlopt_flags -O3 -unbox-closures)
  (libraries ounit2 chess))

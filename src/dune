@@ -2,7 +2,7 @@
  (name chess)
  (public_name chess)
  (libraries core monads)
- (ocamlopt_flags -O3)
+ (ocamlopt_flags -O3 -unbox-closures)
  (preprocess (pps ppx_compare
                   ppx_fields_conv
                   ppx_hash
