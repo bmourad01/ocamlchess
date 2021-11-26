@@ -274,10 +274,7 @@ module Attacks = struct
         acc + pre_of_kind sq occupied c k) |> ignore_color pos c
 end
 
-module State = struct
-  include Monad.State.T1(T)(Monad.Ident)
-  include Monad.State.Make(T)(Monad.Ident)
-end
+module State = Monad.State.Make(T)(Monad.Ident)
 
 open State.Syntax
 
