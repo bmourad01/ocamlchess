@@ -314,7 +314,7 @@ module Update = struct
       map_field c ~f >> map_field k ~f
 
   let set_square ?p sq = map_square sq ?p ~f:Bitboard.((+) !!sq)
-  let clear_square ?p sq = map_square sq ?p ~f:Bitboard.((-) !!sq)
+  let clear_square ?p sq = map_square sq ?p ~f:Bitboard.(fun b -> b - !!sq)
 
   let is_pawn_or_capture sq sq' = State.gets @@ fun pos ->
     let open Bitboard.Syntax in
