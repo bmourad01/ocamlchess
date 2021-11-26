@@ -70,6 +70,8 @@ let find_color pos c =
       which_kind pos sq |> Option.value_map ~default:acc
         ~f:(fun k -> (sq, k) :: acc))
 
+let find_active pos = find_color pos pos.active
+
 let find_kind pos k =
   board_of_kind pos k |> Bitboard.fold ~init:[] ~f:(fun acc sq ->
       which_color pos sq |> Option.value_map ~default:acc
@@ -265,13 +267,26 @@ module Attacks = struct
     | Piece.Bishop -> Pre.bishop sq occupied
     | Piece.Rook -> Pre.rook sq occupied
     | Piece.Queen -> Pre.queen sq occupied
-    | Piece.King -> Pre.king sq 
+    | Piece.King -> Pre.king sq
 
-  let all ?(king_danger = false) pos c =
+  let aux ?(king_danger = false) pos c ~f =
     let open Bitboard.Syntax in
     let occupied = occupied pos c king_danger in
     find_color pos c |> List.fold ~init:Bitboard.empty ~f:(fun acc (sq, k) ->
-        acc + pre_of_kind sq occupied c k) |> ignore_color pos c
+        if f k then acc + pre_of_kind sq occupied c k else acc) |>
+    ignore_color pos c
+
+  let all ?(king_danger = false) pos c =
+    aux pos c ~king_danger ~f:(fun _ -> true)
+
+  let sliding ?(king_danger = false) pos c =
+    aux pos c ~king_danger ~f:(function
+        | Piece.(Bishop | Rook | Queen) -> true
+        | _ -> false)
+
+  let non_sliding pos c = aux pos c ~f:(function
+      | Piece.(Bishop | Rook | Queen) -> false
+      | _ -> true)
 end
 
 module State = Monad.State.Make(T)(Monad.Ident)
@@ -429,3 +444,21 @@ module Update = struct
     (* Prepare for the next move. *)
     update_fullmove >> flip_active
 end
+
+(* Calculate the intersection of the following bitboards:
+   1) The rays of sliding moves that move outward from the king's square.
+   2) All sliding attacks from enemy pieces.
+   3) All pieces of the active color except for the king. *)
+let pinned_pieces_fast ~king_sq ~occupied ~enemy_sliders ~active_board =
+  let open Bitboard.Syntax in
+  let king_slide = Pre.queen king_sq occupied in
+  king_slide & enemy_sliders & (active_board --> king_sq)
+
+let pinned_pieces pos =
+  let king_sq =
+    List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
+  let occupied = all_board pos in
+  let enemy = Piece.Color.opposite pos.active in
+  let enemy_sliders = Attacks.sliding pos enemy ~king_danger:true in
+  let active_board = active_board pos in
+  pinned_pieces_fast ~king_sq ~occupied ~enemy_sliders ~active_board

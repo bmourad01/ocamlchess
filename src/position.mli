@@ -78,6 +78,10 @@ val is_en_passant : t -> Square.t -> bool
     color [c] occupy squares on position [pos]. *)
 val find_color : t -> Piece.color -> (Square.t * Piece.kind) list
 
+(** [find_active pos] returns a list of square-kind pairs where pieces of
+    the active color occupy squares on position [pos]. *)
+val find_active : t -> (Square.t * Piece.kind) list
+
 (** [find_kind pos k] returns a list of square-color pairs where pieces of
     kind [k] occupy squares on position [pos]. *)
 val find_kind : t -> Piece.kind -> (Square.t * Piece.color) list
@@ -150,8 +154,22 @@ module Attacks : sig
   val king : t -> Piece.color -> Bitboard.t
 
   (** [all pos c ~king_danger] returns the bitboard of attacked squares by
-      all pieces of color [c], according position [pos]. [king_danger]
+      all pieces of color [c], according to position [pos]. [king_danger]
       indicates whether the sliding attacks should ignore the enemy king. By
       default, it is [false]. *)
   val all : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+
+  (** [sliding pos c ~king_danger] returns the bitboard of attacked squares
+      by all sliding pieces of color [c], according to position [pos].
+      [king_danger] indicates whether these attacks should ignore the enemy
+      king. By default, it is [false]. *)
+  val sliding : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+
+  (** [non_sliding pos c] returns the bitboard of attacked squares by all
+      non-sliding pieces of color [c], according to position [pos]. *)
+  val non_sliding : t -> Piece.color -> Bitboard.t
 end
+
+(** [pinned_pieces pos] returns the bitboard representing the squares occupied
+    by all pinned pieces for the active color. *)
+val pinned_pieces : t -> Bitboard.t
