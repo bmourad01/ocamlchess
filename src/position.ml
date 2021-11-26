@@ -2,17 +2,18 @@ open Core_kernel
 open Monads.Std
 
 module Pre = Precalculated
+module Bb = Bitboard
 
 module T = struct
   type t = {
-    white : Bitboard.t;
-    black : Bitboard.t;
-    pawn : Bitboard.t;
-    knight : Bitboard.t;
-    bishop : Bitboard.t;
-    rook : Bitboard.t;
-    queen : Bitboard.t;
-    king : Bitboard.t;
+    white : Bb.t;
+    black : Bb.t;
+    pawn : Bb.t;
+    knight : Bb.t;
+    bishop : Bb.t;
+    rook : Bb.t;
+    queen : Bb.t;
+    king : Bb.t;
     active : Piece.color;
     castle : Castling_rights.t;
     en_passant : Square.t option;
@@ -23,9 +24,9 @@ end
 
 include T
 
-(* Bitboard accessors *)
+(* Bb accessors *)
 
-let all_board pos = Bitboard.(pos.white + pos.black)
+let all_board pos = Bb.(pos.white + pos.black)
 
 let board_of_color pos = function
   | Piece.White -> pos.white
@@ -43,20 +44,20 @@ let board_of_kind pos = function
 
 let board_of_piece pos p =
   let c, k = Piece.decomp p in
-  Bitboard.(board_of_color pos c & board_of_kind pos k)
+  Bb.(board_of_color pos c & board_of_kind pos k)
 
 let is_en_passant pos sq = Option.exists pos.en_passant ~f:(Square.equal sq)
 
 (* Piece lookup *)
 
 let which_color pos sq =
-  let open Bitboard.Syntax in
+  let open Bb.Syntax in
   if sq @ pos.white then Some Piece.White
   else if sq @ pos.black then Some Piece.Black
   else None
 
 let which_kind pos sq =
-  let open Bitboard.Syntax in
+  let open Bb.Syntax in
   if sq @ pos.pawn then Some Piece.Pawn
   else if sq @ pos.knight then Some Piece.Knight
   else if sq @ pos.bishop then Some Piece.Bishop
@@ -66,26 +67,26 @@ let which_kind pos sq =
   else None
 
 let find_color pos c =
-  board_of_color pos c |> Bitboard.fold ~init:[] ~f:(fun acc sq ->
+  board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
       which_kind pos sq |> Option.value_map ~default:acc
         ~f:(fun k -> (sq, k) :: acc))
 
 let find_active pos = find_color pos pos.active
 
 let find_kind pos k =
-  board_of_kind pos k |> Bitboard.fold ~init:[] ~f:(fun acc sq ->
+  board_of_kind pos k |> Bb.fold ~init:[] ~f:(fun acc sq ->
       which_color pos sq |> Option.value_map ~default:acc
         ~f:(fun c -> (sq, c) :: acc))
 
 let find_piece pos p =
-  board_of_piece pos p |> Bitboard.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
+  board_of_piece pos p |> Bb.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
 
 let piece_at_square pos sq =
   let open Option.Monad_infix in
   which_color pos sq >>= fun c -> which_kind pos sq >>| Piece.create c
 
 let all_pieces pos =
-  all_board pos |> Bitboard.fold ~init:[] ~f:(fun acc sq ->
+  all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
       piece_at_square pos sq |> Option.value_map ~default:acc
         ~f:(fun p -> (sq, p) :: acc))
 
@@ -95,8 +96,8 @@ module Fen = struct
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
   let parse_placement s =
-    let color_tbl = Array.create Bitboard.empty ~len:Piece.Color.count in
-    let kind_tbl = Array.create Bitboard.empty ~len:Piece.Kind.count in
+    let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
+    let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
     let rec f (rank, file) sym =
       if rank < 0 then invalid_arg @@
         sprintf "Invalid number of ranks %d" (Square.Rank.count - rank)
@@ -124,7 +125,7 @@ module Fen = struct
         let sq = Square.create_exn ~rank ~file in
         match Piece.of_fen sym with
         | Some p ->
-          let open Bitboard.Syntax in
+          let open Bb.Syntax in
           let c = Piece.(color p |> Color.to_int) in
           let k = Piece.(kind p |> Kind.to_int) in
           color_tbl.(c) <- color_tbl.(c) <-- sq;
@@ -222,43 +223,47 @@ end
 let start = Fen.(of_string_exn start)
 
 module Attacks = struct
-  (* Useful when excluding squares that are occupied by our color.  *)
-  let ignore_color pos c b = Bitboard.(b - board_of_color pos c)
+  (* Useful when excluding squares that are occupied by our color. *)
+  let ignore_color pos c b = Bb.(b - board_of_color pos c)
 
   (* Generate for a particular color and kind *)
-  let gen pos c k f =
-    let open Bitboard.Syntax in
-    Piece.create c k |> board_of_piece pos |> Bitboard.fold
-      ~init:Bitboard.empty ~f:(fun acc sq -> acc + f sq) |>
-    ignore_color pos c
+  let gen ?(ignore_same = true) pos c k f =
+    let open Bb.Syntax in
+    Piece.create c k |> board_of_piece pos |> Bb.fold
+      ~init:Bb.empty ~f:(fun acc sq -> acc + f sq) |>
+    fun b -> if ignore_same then ignore_color pos c b else b
 
-  let pawn pos c = gen pos c Pawn @@ fun sq -> Pre.pawn_capture sq c
-  let knight pos c = gen pos c Knight Pre.knight
+  let pawn ?(ignore_same = true) pos c =
+    gen pos c Pawn ~ignore_same @@ fun sq -> Pre.pawn_capture sq c
+
+  let knight ?(ignore_same = true) pos c =
+    gen pos c Knight Pre.knight ~ignore_same
 
   (* Get the occupied squares for the board. `king_danger` indicates that the
      king of the opposite color should be ignored, so that sliding attacks
      can "see through" the enemy king. This is useful when the king is blocking
      the attack of a sliding piece. *)
   let occupied pos c king_danger =
-    let open Bitboard.Syntax in
+    let open Bb.Syntax in
     if king_danger then
       let p = Piece.(create (Color.opposite c) King) in
       all_board pos - board_of_piece pos p
     else all_board pos
 
-  let bishop ?(king_danger = false) pos c =
+  let bishop ?(ignore_same = true) ?(king_danger = false) pos c =
     let occupied = occupied pos c king_danger in
-    gen pos c Bishop @@ fun sq -> Pre.bishop sq occupied
+    gen pos c Bishop ~ignore_same @@ fun sq -> Pre.bishop sq occupied
 
-  let rook ?(king_danger = false) pos c =
+  let rook ?(ignore_same = true) ?(king_danger = false) pos c =
     let occupied = occupied pos c king_danger in
-    gen pos c Rook @@ fun sq -> Pre.rook sq occupied
+    gen pos c Rook ~ignore_same @@ fun sq -> Pre.rook sq occupied
 
-  let queen ?(king_danger = false) pos c =
+  let queen ?(ignore_same = true) ?(king_danger = false) pos c =
     let occupied = occupied pos c king_danger in
-    gen pos c Queen @@ fun sq -> Pre.queen sq occupied
+    gen pos c Queen ~ignore_same @@ fun sq -> Pre.queen sq occupied
 
-  let king pos c = gen pos c King Pre.king
+  let king ?(ignore_same = true) pos c =
+    gen pos c King Pre.king ~ignore_same
 
   let pre_of_kind sq occupied c = function
     | Piece.Pawn -> Pre.pawn_capture sq c
@@ -268,24 +273,25 @@ module Attacks = struct
     | Piece.Queen -> Pre.queen sq occupied
     | Piece.King -> Pre.king sq
 
-  let aux ?(king_danger = false) pos c ~f =
-    let open Bitboard.Syntax in
+  let aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
+    let open Bb.Syntax in
     let occupied = occupied pos c king_danger in
-    find_color pos c |> List.fold ~init:Bitboard.empty ~f:(fun acc (sq, k) ->
+    find_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
         if f k then acc + pre_of_kind sq occupied c k else acc) |>
-    ignore_color pos c
+    fun b -> if ignore_same then ignore_color pos c b else b
 
-  let all ?(king_danger = false) pos c =
-    aux pos c ~king_danger ~f:(fun _ -> true)
+  let all ?(ignore_same = true) ?(king_danger = false) pos c =
+    aux pos c ~ignore_same ~king_danger ~f:(fun _ -> true)
 
-  let sliding ?(king_danger = false) pos c =
-    aux pos c ~king_danger ~f:(function
+  let sliding ?(ignore_same = true) ?(king_danger = false) pos c =
+    aux pos c ~ignore_same ~king_danger ~f:(function
         | Piece.(Bishop | Rook | Queen) -> true
         | _ -> false)
 
-  let non_sliding pos c = aux pos c ~f:(function
-      | Piece.(Bishop | Rook | Queen) -> false
-      | _ -> true)
+  let non_sliding ?(ignore_same = true) pos c =
+    aux pos c ~ignore_same ~f:(function
+        | Piece.(Bishop | Rook | Queen) -> false
+        | _ -> true)
 end
 
 (* Helpers for updating fields. *)
@@ -326,11 +332,11 @@ module Update = struct
       let c, k = piece_fields p in
       map_field c ~f >> map_field k ~f
 
-  let set_square ?p sq = map_square sq ?p ~f:Bitboard.((+) !!sq)
-  let clear_square ?p sq = map_square sq ?p ~f:Bitboard.(fun b -> b - !!sq)
+  let set_square ?p sq = map_square sq ?p ~f:Bb.((+) !!sq)
+  let clear_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b - !!sq)
 
   let is_pawn_or_capture sq sq' = State.gets @@ fun pos ->
-    let open Bitboard.Syntax in
+    let open Bb.Syntax in
     let is_pawn = sq @ pos.pawn in
     let is_capture =
       (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
@@ -430,7 +436,7 @@ module Update = struct
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. *)
-  let _move p m =
+  let move p m =
     Move.decomp m |> fun (sq, sq', promote) ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove sq sq' >>
@@ -450,35 +456,185 @@ module Moves = struct
     type t = {
       pos : T.t;
       king_sq : Square.t;
-      occupied : Bitboard.t;
-      active_board : Bitboard.t;
-      enemy_sliders : Bitboard.t;
-      enemy_attacks : Bitboard.t;
+      enemy : Piece.color;
+      occupied : Bb.t;
+      active_board : Bb.t;
+      enemy_board : Bb.t;
+      enemy_attacks : Bb.t;
+      king_slide : Bb.t;
+      enemy_slide : Bb.t;
+      pinned : Bb.t;
     } [@@deriving fields]
   end
 
-  module Reader = Monad.Reader.Make(Info)(Monad.Ident)
-
-  open Reader.Syntax
-
-  (* Calculate the intersection of the following bitboards:
-     1) The rays of sliding moves that move outward from the king's square.
-     2) All sliding attacks from enemy pieces.
-     3) All pieces of the active color except for the king. *)
-  let pinned_pieces_fast = Reader.read () >>| fun info ->
-    let open Bitboard.Syntax in
-    let king_slide = Pre.queen info.king_sq info.occupied in
-    let no_king = info.active_board --> info.king_sq in
-    king_slide & info.enemy_sliders & no_king
-
-  let pinned_pieces pos =
+  let create_info pos =
     let king_sq =
       List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
-    let occupied = all_board pos in
     let enemy = Piece.Color.opposite pos.active in
-    let enemy_sliders = Attacks.sliding pos enemy in
+    let occupied = all_board pos in
     let active_board = active_board pos in
-    Monad.Reader.run pinned_pieces_fast @@ Info.Fields.create
-      ~pos ~king_sq ~occupied ~active_board ~enemy_sliders
-      ~enemy_attacks:Bitboard.empty
+    let enemy_board = board_of_color pos enemy in
+    let enemy_attacks = Attacks.all pos enemy ~king_danger:true in
+    let king_slide, enemy_slide, pinned =
+      (* Calculate the intersection of the following bitboards:
+         1) The rays of sliding moves that move outward from the king's square.
+         2) All sliding attacks from enemy pieces.
+         If a piece that is not the king is in this intersection, then it is
+         pinned. *)
+      let open Bb.Syntax in
+      let king_slide = Pre.queen king_sq occupied in
+      let enemy_slide = Attacks.sliding pos enemy ~ignore_same:false in
+      let pinned = king_slide & enemy_slide & (active_board --> king_sq) in
+      king_slide, enemy_slide, pinned in
+    Info.Fields.create ~pos ~king_sq ~enemy ~occupied ~active_board
+      ~enemy_board ~enemy_attacks ~king_slide ~enemy_slide ~pinned
+
+  module Reader = Monad.Reader.Make(Info)(Monad.Ident)
+  open Reader.Syntax
+
+  (* Standalone calculation of pinned pieces. *)
+  let pinned_pieces pos = (create_info pos).pinned
+
+  (* Use this mask to restrict the movement of pinned pieces. *)
+  let pin_mask sq = Reader.read () >>|
+    fun {king_slide; enemy_slide; pinned; _} ->
+    Bb.(if sq @ pinned then king_slide & enemy_slide else full)
+
+  let default_accum src acc dst = Move.create src dst :: acc
+
+  module Pawn = struct
+    let push sq = Reader.read () >>| fun {pos; occupied; _} ->
+      let open Bb.Syntax in
+      Pre.pawn_advance sq pos.active & ~~occupied
+
+    let double rank file = Reader.read () >>| fun {pos; _} ->
+      let open Bb.Syntax in
+      match pos.active with
+      | Piece.White when Square.Rank.(rank = two) ->
+        !!(Square.create_exn ~rank:Square.Rank.four ~file)
+      | Piece.Black when Square.Rank.(rank = seven) ->
+        !!(Square.create_exn ~rank:Square.Rank.five ~file)
+      | _ -> Bb.empty
+
+    (* We need to check if an en passant capture will lead to a discovery.
+       There are the following scenarios:
+
+       1) Our pawn is on the king's side of the pin, and the enemy pawn is
+          on the enemy's side of the pin.
+       2) Same as (1), but reversed.
+       3) The enemy pawn is on both sides of the pin. *)
+    let en_passant sq ep diag = Reader.read () >>|
+      fun {king_slide; enemy_slide; _} -> Bb.(
+        if (sq @ king_slide && ep @ enemy_slide)
+        || (sq @ enemy_slide && ep @ king_slide)
+        || (ep @ king_slide && ep @ enemy_slide)
+        then empty else (~~diag & !!ep) + diag)
+
+    let capture sq = Reader.read () >>= fun {pos; enemy_board; _} ->
+      let open Bb.Syntax in
+      let diag = Pre.pawn_capture sq pos.active & enemy_board in
+      match pos.en_passant with
+      | Some ep -> en_passant sq ep diag
+      | None -> Reader.return diag
+
+    (* We need to multiply the move by the number of pieces we can
+       promote to. *)
+    let promote =
+      let kinds = Piece.[Knight; Bishop; Rook; Queen] in
+      fun src dst -> List.map kinds ~f:(fun k ->
+          Move.create src dst ~promote:(Some k))
+
+    (* Accumulator function for all the squares we can move to. We need this
+       in case we have a promotion. *)
+    let move_accum src rank = Reader.read () >>| fun {pos; _} ->
+      if (Piece.Color.(pos.active = White) && Square.Rank.(rank = seven))
+      || (Piece.Color.(pos.active = Black) && Square.Rank.(rank = two))
+      then fun acc dst -> promote src dst @ acc
+      else default_accum src
+  end
+
+  module Knight = struct
+    let jump sq = Reader.read () >>| fun {active_board; _} ->
+      Bb.(Pre.knight sq & ~~active_board)
+  end
+
+  module Bishop = struct
+    let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
+      Bb.(Pre.bishop sq occupied & ~~active_board)
+  end
+
+  module Rook = struct
+    let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
+      Bb.(Pre.rook sq occupied & ~~active_board)
+  end
+
+  module Queen = struct
+    let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
+      Bb.(Pre.queen sq occupied & ~~active_board)
+  end
+
+  module King = struct
+    let move sq = Reader.read () >>| fun {active_board; enemy_attacks; _} ->
+      Bb.(Pre.king sq - active_board - enemy_attacks)
+    
+    let castle = Reader.read () >>| fun {pos; enemy_attacks; _} ->
+      let open Bb.Syntax in
+      let kingside_sq, queenside_sq = match pos.active with
+        | Piece.White -> Square.g1, Square.c1
+        | Piece.Black -> Square.g8, Square.c8 in
+      let kingside =
+        let b = Pre.castle pos.castle pos.active `king - enemy_attacks in
+        if not (kingside_sq @ b) then Bb.empty else b in
+      let queenside =
+        let b = Pre.castle pos.castle pos.active `queen - enemy_attacks in
+        if not (queenside_sq @ b) then Bb.empty else b in
+      kingside + queenside
+  end
+
+  let make sq b ~f =
+    pin_mask sq >>| fun pin -> Bb.(fold (b & pin) ~init:[] ~f)
+
+  (* King cannot be pinned, so do not use the pin mask. *)
+  let make_king sq = Bb.fold ~init:[] ~f:(default_accum sq)
+
+  let pawn sq =
+    let open Pawn in
+    let open Bb.Syntax in
+    let rank, file = Square.decomp sq in
+    push sq >>= fun push ->
+    double rank file >>= fun double ->
+    capture sq >>= fun capture ->
+    move_accum sq rank >>= fun f ->
+    make sq (push + double + capture) ~f
+
+  let knight sq = Knight.jump sq >>= make sq ~f:(default_accum sq)
+  let bishop sq = Bishop.slide sq >>= make sq ~f:(default_accum sq)
+  let rook sq = Rook.slide sq >>= make sq ~f:(default_accum sq)
+  let queen sq = Queen.slide sq >>= make sq ~f:(default_accum sq)
+
+  let king sq =
+    let open King in
+    let open Bb.Syntax in
+    move sq >>= fun move ->
+    castle >>| fun castle ->
+    make_king sq (move + castle)
+
+  (* Get the new positions from the list of moves. *)
+  let exec k moves = Reader.read () >>| fun {pos; _} ->
+    let p = Piece.create pos.active k in
+    List.map moves ~f:(fun m -> m, Monad.State.exec (Update.move p m) pos)
+
+  let piece sq k = begin match k with
+    | Piece.Pawn -> pawn sq
+    | Piece.Knight -> knight sq
+    | Piece.Bishop -> bishop sq
+    | Piece.Rook -> rook sq
+    | Piece.Queen -> queen sq
+    | Piece.King -> king sq
+  end >>= exec k 
+
+  let legal pos =
+    let info = create_info pos in
+    find_active pos |> List.map ~f:(fun (sq, k) ->
+        Monad.Reader.run (piece sq k) info) |> List.concat
 end

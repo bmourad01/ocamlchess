@@ -123,51 +123,74 @@ val start : t
 (** This submodule provides helper functions related to generating attacked
     squares for a particular color. *)
 module Attacks : sig
-  (** [pawn pos c] returns the bitboard of attacked squares by pawns of color
-      [c], according to position [pos]. *)
-  val pawn : t -> Piece.color -> Bitboard.t
+  (** [pawn pos c ~ignore_same] returns the bitboard of attacked squares by
+      pawns of color [c], according to position [pos]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true]. *)
+  val pawn : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [knight pos c] returns the bitboard of attacked squares by knights of
-      color [c], according to position [pos]. *)
-  val knight : t -> Piece.color -> Bitboard.t
+  (** [knight pos c ~ignore_same] returns the bitboard of attacked squares by
+      knights of color [c], according to position [pos]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true]. *)
+  val knight : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [bishop pos c ~king_danger] returns the bitboard of attacked squares by
-      bishops of color [c], according to position [pos]. [king_danger]
-      indicates whether the sliding bishop attack should ignore the enemy
-      king. By default, it is [false]. *)
-  val bishop : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [bishop pos c ~ignore_same ~king_danger] returns the bitboard of attacked
+      squares by bishops of color [c], according to position [pos].
+      [king_danger] indicates whether the sliding bishop attack should ignore
+      the enemy king. By default, it is [false]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true]. *)
+  val bishop :
+    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [rook pos c ~king_danger] returns the bitboard of attacked squares by
-      rooks of color [c], according to position [pos]. [king_danger]
+  (** [rook pos c ~ignore_same ~king_danger] returns the bitboard of attacked
+      squares by rooks of color [c], according to position [pos]. [king_danger]
       indicates whether the sliding rook attack should ignore the enemy king.
-      By default, it is [false]. *)
-  val rook : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+      By default, it is [false]. If [ignore_same] is [false], then pieces of
+      color [c] are not excluded from the set of attacked squares. By default,
+      it is [true]. *)
+  val rook :
+    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [queen pos c ~king_danger] returns the bitboard of attacked squares by
-      queens of color [c], according to position [pos]. [king_danger]
-      indicates whether the sliding queen attack should ignore the enemy
-      king. By default, it is [false]. *)
-  val queen : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [queen pos c ~ignore_same ~king_danger] returns the bitboard of attacked
+      squares by queens of color [c], according to position [pos].
+      [king_danger] indicates whether the sliding queen attack should ignore
+      the enemy king. By default, it is [false]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true].*)
+  val queen :
+    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [king pos c] returns the bitboard of attacked squares by kings of color
-      [c], according to position [pos]. *)
-  val king : t -> Piece.color -> Bitboard.t
+  (** [king pos c ~ignore_same] returns the bitboard of attacked squares by
+      kings of color [c], according to position [pos]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true]. *)
+  val king : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [all pos c ~king_danger] returns the bitboard of attacked squares by
-      all pieces of color [c], according to position [pos]. [king_danger]
-      indicates whether the sliding attacks should ignore the enemy king. By
-      default, it is [false]. *)
-  val all : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [all pos c ~ignore_same ~king_danger] returns the bitboard of attacked
+      squares by all pieces of color [c], according to position [pos].
+      [king_danger] indicates whether the sliding attacks should ignore the
+      enemy king. By default, it is [false]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true]. *)
+  val all :
+    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [sliding pos c ~king_danger] returns the bitboard of attacked squares
-      by all sliding pieces of color [c], according to position [pos].
-      [king_danger] indicates whether these attacks should ignore the enemy
-      king. By default, it is [false]. *)
-  val sliding : ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [sliding pos c ~ignore_same ~king_danger] returns the bitboard of
+      attacked squares by all sliding pieces of color [c], according to
+      position [pos]. [king_danger] indicates whether these attacks should
+      ignore the enemy king. By default, it is [false]. If [ignore_same] is
+      [false], then pieces of color [c] are not excluded from the set of
+      attacked squares. By default, it is [true]. *)
+  val sliding :
+    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
 
-  (** [non_sliding pos c] returns the bitboard of attacked squares by all
-      non-sliding pieces of color [c], according to position [pos]. *)
-  val non_sliding : t -> Piece.color -> Bitboard.t
+  (** [non_sliding pos c ~ignore_same] returns the bitboard of attacked squares
+      by all non-sliding pieces of color [c], according to position [pos].
+      If [ignore_same] is [false], then pieces of color [c] are not excluded
+      from the set of attacked squares. By default, it is [true]. *)
+  val non_sliding : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 end
 
 (** This module provides helper functions related to generating legal moves
@@ -176,4 +199,8 @@ module Moves : sig
   (** [pinned_pieces pos] returns the bitboard representing the squares occupied
       by all pinned pieces for the active color. *)
   val pinned_pieces : t -> Bitboard.t
+
+  (** [legal pos] returns a list of move-position pairs, which represents all
+      of the legal moves for the active color of position [pos]. *)
+  val legal : t -> (Move.t * t) list
 end
