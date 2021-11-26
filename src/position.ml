@@ -131,7 +131,7 @@ module Fen = struct
         | None -> invalid_arg @@
           sprintf "Invalid piece '%c' placed at square '%s'"
             sym (Square.to_string sq) in
-    ignore @@ String.fold s ~init:(7, 0) ~f;
+    ignore @@ String.fold s ~init:(Square.Rank.eight, Square.File.a) ~f;
     Piece.(
       color_tbl.(Color.white),
       color_tbl.(Color.black),
