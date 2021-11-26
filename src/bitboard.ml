@@ -70,10 +70,8 @@ let count = Int64.popcount
 
 (* Higher-order functions. *)
 
-let rev_sq = (Square.h8 :> int)
-
 let fold ?(rev = false) b ~init ~f =
-  let next = if rev then fun b -> rev_sq - Int64.clz b else Int64.ctz in
+  let next = if rev then fun b -> Square.last - Int64.clz b else Int64.ctz in
   let rec aux b acc =
     if b = empty then acc
     else
@@ -83,7 +81,7 @@ let fold ?(rev = false) b ~init ~f =
 
 let fold_until ?(rev = false) b ~init ~f ~finish =
   let open Continue_or_stop in
-  let next = if rev then fun b -> rev_sq - Int64.clz b else Int64.ctz in
+  let next = if rev then fun b -> Square.last - Int64.clz b else Int64.ctz in
   let rec aux b acc =
     if b = empty then finish acc
     else

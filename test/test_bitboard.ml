@@ -3,16 +3,21 @@ open OUnit2
 open Chess
 
 let test_fold_full () =
-  let count =
-    Bitboard.fold Bitboard.full ~init:0 ~f:(fun count _ -> count + 1) in
-  assert_equal count 64 ~cmp:Int.equal
+  let count, l =
+    Bitboard.fold Bitboard.full ~init:(0, [])
+      ~f:(fun (count, l) _ -> count + 1, count :: l) in
+  assert_equal count Square.count ~cmp:Int.equal;
+  assert_equal l (List.init Square.count ~f:ident |> List.rev)
+    ~cmp:(List.equal Int.equal)
 
 let test_fold_full_rev () =
-  let count =
-    Bitboard.fold Bitboard.full ~init:0
-      ~f:(fun count _ -> count + 1)
+  let count, l =
+    Bitboard.fold Bitboard.full ~init:(0, [])
+      ~f:(fun (count, l) _ -> count + 1, count :: l)
       ~rev:true in
-  assert_equal count 64 ~cmp:Int.equal
+  assert_equal count Square.count ~cmp:Int.equal;
+  assert_equal l (List.init Square.count ~f:ident |> List.rev)
+    ~cmp:(List.equal Int.equal)
 
 let test_fold_empty () =
   let count =

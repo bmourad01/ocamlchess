@@ -320,3 +320,9 @@ module File : sig
   (** Number of files. *)
   val count : int
 end
+
+(** The first square that is visited (in integer order). *)
+val first : int
+
+(** The last square that is visited (in integer order). *)
+val last : int 

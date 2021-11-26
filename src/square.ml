@@ -160,3 +160,5 @@ let of_string_exn s = match of_string s with
 let to_string sq = sprintf "%c%c" (file_char sq) (rank_char sq)
 
 include Bits
+
+let first = a1 and last = h8

@@ -169,8 +169,7 @@ module Sliding = struct
           let acc = acc + b in
           Option.value_map j ~default:acc
             ~f:(fun j -> acc - (fst arr.(i)).(j))) in
-    let rev_sq = (Square.h8 :> int) in
-    let l b = rev_sq - Int64.clz b in
+    let l b = Square.last - Int64.clz b in
     let r = Int64.ctz in
     Mask.(gen [|(neast, r); (nwest, r); (seast, l); (swest, l)|],
           gen [|(east,  r); (west,  l); (north, r); (south, l)|])
