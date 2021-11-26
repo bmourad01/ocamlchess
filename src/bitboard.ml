@@ -39,27 +39,19 @@ let edges = 0xFF818181818181FFL
 
 (* Helpers to access rank/file by index. *)
 
-let rank_exn = function
-  | 0 -> rank_1
-  | 1 -> rank_2
-  | 2 -> rank_3
-  | 3 -> rank_4
-  | 4 -> rank_5
-  | 5 -> rank_6
-  | 6 -> rank_7
-  | 7 -> rank_8
-  | i -> invalid_arg @@ sprintf "Integer %d is not a valid rank" i
+let rank_exn =
+  let arr =
+    [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|] in
+  fun i -> if Int.(i < 0 || i >= Square.Rank.count) then invalid_arg @@
+      sprintf "Integer %d is not a valid rank" i
+    else Array.unsafe_get arr i
 
-let file_exn = function
-  | 0 -> file_a
-  | 1 -> file_b
-  | 2 -> file_c
-  | 3 -> file_d
-  | 4 -> file_e
-  | 5 -> file_f
-  | 6 -> file_g
-  | 7 -> file_h
-  | i -> invalid_arg @@ sprintf "Integer %d is not a valid file" i
+let file_exn =
+  let arr =
+    [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|] in
+  fun i -> if Int.(i < 0 || i >= Square.File.count) then invalid_arg @@
+      sprintf "Integer %d is not a valid file" i
+    else Array.unsafe_get arr i
 
 let rank i = Option.try_with @@ fun () -> rank_exn i
 let file i = Option.try_with @@ fun () -> file_exn i
