@@ -84,7 +84,7 @@ module Kind = struct
   let of_int_exn i =
     if Int.(i < 0 || i >= count) then invalid_arg @@
       sprintf "Integer %d is not a valid kind" i
-    else  ((Obj.magic i) : t)
+    else ((Obj.magic i) : t)
 
   let of_int i = Option.try_with @@ fun () -> of_int_exn i
   let to_int k = (Obj.magic (Obj.repr k) : int)
