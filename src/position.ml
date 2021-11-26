@@ -505,7 +505,7 @@ module Moves = struct
   module Pawn = struct
     let push sq = Reader.read () >>| fun {pos; occupied; _} ->
       let open Bb.Syntax in
-      Pre.pawn_advance sq pos.active & ~~occupied
+      Pre.pawn_advance sq pos.active - occupied
 
     let push2 rank file = Reader.read () >>| fun {pos; _} ->
       let open Bb.Syntax in
@@ -557,22 +557,22 @@ module Moves = struct
 
   module Knight = struct
     let jump sq = Reader.read () >>| fun {active_board; _} ->
-      Bb.(Pre.knight sq & ~~active_board)
+      Bb.(Pre.knight sq - active_board)
   end
 
   module Bishop = struct
     let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
-      Bb.(Pre.bishop sq occupied & ~~active_board)
+      Bb.(Pre.bishop sq occupied - active_board)
   end
 
   module Rook = struct
     let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
-      Bb.(Pre.rook sq occupied & ~~active_board)
+      Bb.(Pre.rook sq occupied - active_board)
   end
 
   module Queen = struct
     let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
-      Bb.(Pre.queen sq occupied & ~~active_board)
+      Bb.(Pre.queen sq occupied - active_board)
   end
 
   module King = struct
