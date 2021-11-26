@@ -530,14 +530,14 @@ module Moves = struct
         || (ep @ king_slide && sq @ king_slide)
         || (sq @ king_slide && sq @ enemy_slide)
         || (ep @ king_slide && ep @ enemy_slide)
-        then empty else (~~diag & !!ep) + diag)
+        then diag else diag + !!ep)
 
     let capture sq = Reader.read () >>= fun {pos; enemy_board; _} ->
       let open Bb.Syntax in
       let diag = Pre.pawn_capture sq pos.active & enemy_board in
       match pos.en_passant with
-      | Some ep -> en_passant sq ep diag
-      | None -> Reader.return diag
+      | Some ep when not (ep @ diag) -> en_passant sq ep diag
+      | _ -> Reader.return diag
 
     (* We need to multiply the move by the number of pieces we can
        promote to. *)
