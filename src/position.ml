@@ -507,7 +507,7 @@ module Moves = struct
       let open Bb.Syntax in
       Pre.pawn_advance sq pos.active & ~~occupied
 
-    let double rank file = Reader.read () >>| fun {pos; _} ->
+    let push2 rank file = Reader.read () >>| fun {pos; _} ->
       let open Bb.Syntax in
       match pos.active with
       | Piece.White when Square.Rank.(rank = two) ->
@@ -604,10 +604,10 @@ module Moves = struct
     let open Bb.Syntax in
     let rank, file = Square.decomp sq in
     push sq >>= fun push ->
-    double rank file >>= fun double ->
+    push2 rank file >>= fun push2 ->
     capture sq >>= fun capture ->
     move_accum sq rank >>= fun f ->
-    make sq (push + double + capture) ~f
+    make sq (push + push2 + capture) ~f
 
   let knight sq = Knight.jump sq >>= make sq ~f:(default_accum sq)
   let bishop sq = Bishop.slide sq >>= make sq ~f:(default_accum sq)
