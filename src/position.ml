@@ -145,6 +145,23 @@ module Fen = struct
       kind_tbl.(Kind.queen),
       kind_tbl.(Kind.king))
 
+  (* Reject positions that are impossible to arise from any game. *)
+  let validate_placement white black pawn king =
+    let white_kings = Bb.(count (king & white)) in
+    if white_kings < 1 then
+      invalid_arg "Piece placement is missing a white king"
+    else if white_kings > 1 then
+      invalid_arg "Piece placement has more than one white king";
+    if Bb.(count (pawn & white)) > 8 then
+      invalid_arg "Piece placement has more than eight white pawns"; 
+    let black_kings = Bb.(count (king & black)) in
+    if black_kings < 1 then
+      invalid_arg "Piece placement is missing a black king"
+    else if black_kings > 1 then
+      invalid_arg "Piece placement has more than one black king";
+    if Bb.(count (pawn & black)) > 8 then
+      invalid_arg "Piece placement has more than eight black pawns"
+
   let parse_active = function
     | "w" -> Piece.White
     | "b" -> Piece.Black
@@ -177,6 +194,7 @@ module Fen = struct
     | [placement; active; castle; en_passant; halfmove; fullmove] ->
       let white, black, pawn, knight, bishop, rook, queen, king =
         parse_placement placement in
+      validate_placement white black pawn king;
       Fields.create ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
         ~active:(parse_active active)
         ~castle:(parse_castle castle)
