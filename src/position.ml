@@ -672,7 +672,7 @@ module Moves = struct
          we can move. *)
       if num_checkers > 1 then king sq else any sq k
     end >>= exec k
-    
+
   let legal pos =
     let info = create_info pos in
     find_active pos |> List.map ~f:(fun (sq, k) ->
