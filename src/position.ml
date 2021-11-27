@@ -462,6 +462,7 @@ module Moves = struct
       enemy_board : Bb.t;
       enemy_attacks : Bb.t;
       king_slide : Bb.t;
+      king_knight : Bb.t;
       enemy_slide : Bb.t;
       pinned : Bb.t;
     } [@@deriving fields]
@@ -475,6 +476,7 @@ module Moves = struct
     let active_board = active_board pos in
     let enemy_board = board_of_color pos enemy in
     let enemy_attacks = Attacks.all pos enemy ~king_danger:true in
+    let king_knight = Pre.knight king_sq in
     let king_slide, enemy_slide, pinned =
       (* Calculate the intersection of the following bitboards:
          1) The rays of sliding moves that move outward from the king's square.
@@ -487,7 +489,7 @@ module Moves = struct
       let pinned = king_slide & enemy_slide & (active_board --> king_sq) in
       king_slide, enemy_slide, pinned in
     Info.Fields.create ~pos ~king_sq ~enemy ~occupied ~active_board
-      ~enemy_board ~enemy_attacks ~king_slide ~enemy_slide ~pinned
+      ~enemy_board ~enemy_attacks ~king_slide ~king_knight ~enemy_slide ~pinned
 
   module Reader = Monad.Reader.Make(Info)(Monad.Ident)
   open Reader.Syntax
@@ -634,14 +636,22 @@ module Moves = struct
     let p = Piece.create pos.active k in
     List.map moves ~f:(fun m -> m, Monad.State.exec (Update.move p m) pos)
 
-  let piece sq k = begin match k with
-    | Piece.Pawn -> pawn sq
-    | Piece.Knight -> knight sq
-    | Piece.Bishop -> bishop sq
-    | Piece.Rook -> rook sq
-    | Piece.Queen -> queen sq
-    | Piece.King -> king sq
-  end >>= exec k 
+  (* If the king has more than one attacker, then it is the only piece we
+     can move. *)
+  let count_king_attackers = Reader.read () >>|
+    fun {enemy_board; king_slide; king_knight; _} ->
+    Bb.(count ((king_slide + king_knight) & enemy_board))
+
+  let piece sq k = count_king_attackers >>= begin function
+      | n when n > 1 -> king sq
+      | _ -> match k with
+        | Piece.Pawn -> pawn sq
+        | Piece.Knight -> knight sq
+        | Piece.Bishop -> bishop sq
+        | Piece.Rook -> rook sq
+        | Piece.Queen -> queen sq
+        | Piece.King -> king sq
+    end >>= exec k 
 
   let legal pos =
     let info = create_info pos in
