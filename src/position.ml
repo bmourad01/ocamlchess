@@ -296,8 +296,9 @@ end
 
 (* Helpers for updating fields. *)
 module Update = struct
-  module State = Monad.State.Make(T)(Monad.Ident)
-  open State.Syntax
+  (* P for Position *)
+  module P = Monad.State.Make(T)(Monad.Ident)
+  open P.Syntax
 
   let (>>) m n = m >>= fun _ -> n
 
@@ -320,14 +321,14 @@ module Update = struct
   (* A piece can be optionally provided. If not, then we will look up
      the piece at that square. *)
   let handle_piece ?p sq = match p with
-    | None -> State.gets @@ Fn.flip piece_at_square @@ sq
-    | Some _ -> State.return p
+    | None -> P.gets @@ Fn.flip piece_at_square @@ sq
+    | Some _ -> P.return p
 
-  let map_field field ~f = State.update @@ Field.map field ~f
+  let map_field field ~f = P.update @@ Field.map field ~f
 
   (* Helper for setting both the color and the kind fields of the board. *)
   let map_square ?p sq ~f = handle_piece sq ?p >>= function
-    | None -> State.return ()
+    | None -> P.return ()
     | Some p ->
       let c, k = piece_fields p in
       map_field c ~f >> map_field k ~f
@@ -335,7 +336,7 @@ module Update = struct
   let set_square ?p sq = map_square sq ?p ~f:Bb.((+) !!sq)
   let clear_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b - !!sq)
 
-  let is_pawn_or_capture sq sq' = State.gets @@ fun pos ->
+  let is_pawn_or_capture sq sq' = P.gets @@ fun pos ->
     let open Bb.Syntax in
     let is_pawn = sq @ pos.pawn in
     let is_capture =
@@ -352,67 +353,67 @@ module Update = struct
 
   let white_kingside_castle =
     clear_square Square.h1 >> set_square Square.f1 ~p:Piece.white_rook >>
-    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
 
   let white_queenside_castle =
     clear_square Square.a1 >> set_square Square.d1 ~p:Piece.white_rook >>
-    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
 
   let black_kingside_castle =
     clear_square Square.h8 >> set_square Square.f8 ~p:Piece.black_rook >>
-    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
 
   let black_queenside_castle =
     clear_square Square.a8 >> set_square Square.d8 ~p:Piece.black_rook >>
-    State.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
 
   (* If this move is actually a castling, then we need to move the rook
      as well as clear our rights. *)
-  let king_castled sq sq' = State.gets active >>= function
+  let king_castled sq sq' = P.gets active >>= function
     | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
     | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
     | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
     | Piece.Black when Square.(sq = e8 && sq' = c8) -> black_queenside_castle
-    | _ -> State.return ()
+    | _ -> P.return ()
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
   let rook_moved_or_captured sq = function
-    | Piece.White when Square.(sq = h1) -> State.update @@
+    | Piece.White when Square.(sq = h1) -> P.update @@
       Field.map Fields.castle ~f:(fun x -> CR.(diff x white_kingside))
-    | Piece.White when Square.(sq = a1) -> State.update @@
+    | Piece.White when Square.(sq = a1) -> P.update @@
       Field.map Fields.castle ~f:(fun x -> CR.(diff x white_queenside))
-    | Piece.Black when Square.(sq = h8) -> State.update @@
+    | Piece.Black when Square.(sq = h8) -> P.update @@
       Field.map Fields.castle ~f:(fun x -> CR.(diff x black_kingside))
-    | Piece.Black when Square.(sq = a8) -> State.update @@
+    | Piece.Black when Square.(sq = a8) -> P.update @@
       Field.map Fields.castle ~f:(fun x -> CR.(diff x black_queenside))
-    | _ -> State.return ()
+    | _ -> P.return ()
 
   (* Rook moved from a square. *)
-  let rook_moved sq = State.gets active >>= rook_moved_or_captured sq
+  let rook_moved sq = P.gets active >>= rook_moved_or_captured sq
 
   (* Rook was captured at a square. Assume that it is the enemy's color. *)
   let rook_captured sq = handle_piece sq >>= function
     | Some p when Piece.is_rook p -> rook_moved_or_captured sq @@ Piece.color p
-    | _ -> State.return ()
+    | _ -> P.return ()
 
   (* Handle castling-related details. *)
   let update_castle ?p sq sq' = handle_piece sq ?p >>= function
     | Some p when Piece.is_king p -> king_castled sq sq'
     | Some p when Piece.is_rook p -> rook_moved sq >> rook_captured sq
     | Some _ -> rook_captured sq'
-    | _ -> State.return ()
+    | _ -> P.return ()
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
      that the move is legal. For the check if `p` is a pawn or not, we assume
      that it belongs to the active color.  *)
   let update_en_passant ?p sq sq' = handle_piece sq ?p >>= begin function
-      | None -> State.return None
-      | Some p when not @@ Piece.is_pawn p -> State.return None
+      | None -> P.return None
+      | Some p when not @@ Piece.is_pawn p -> P.return None
       | Some _ ->
         let rank = Square.rank sq and rank', file = Square.decomp sq' in
-        State.gets active >>| function
+        P.gets active >>| function
         | Piece.White when Square.Rank.(rank = two && rank' = four) ->
           Some (Square.create_exn ~rank:(pred rank') ~file)
         | Piece.Black when Square.Rank.(rank = seven && rank' = five) ->
@@ -425,14 +426,14 @@ module Update = struct
 
   (* Since white moves first, increment the fullmove clock after black
      has moved. *)
-  let update_fullmove = State.gets active >>= function
-    | White -> State.return ()
+  let update_fullmove = P.gets active >>= function
+    | White -> P.return ()
     | Black -> map_field Fields.fullmove ~f:succ
 
   (* Update the piece for the destination square if we're promoting. *)
   let do_promote ?p = function
-    | Some k -> State.gets @@ fun pos -> Some (Piece.create pos.active k)
-    | None -> State.return p
+    | Some k -> P.gets @@ fun pos -> Some (Piece.create pos.active k)
+    | None -> P.return p
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. *)
@@ -516,8 +517,9 @@ module Moves = struct
       ~num_checkers
       ~check_mask
 
-  module Reader = Monad.Reader.Make(Info)(Monad.Ident)
-  open Reader.Syntax
+  (* I for Info *)
+  module I = Monad.Reader.Make(Info)(Monad.Ident)
+  open I.Syntax
 
   (* Standalone calculation of pinned pieces. *)
   let pinned_pieces pos = (create_info pos).pinned
@@ -525,11 +527,11 @@ module Moves = struct
   let default_accum src acc dst = Move.create src dst :: acc
 
   module Pawn = struct
-    let push sq = Reader.read () >>| fun {pos; occupied; _} ->
+    let push sq = I.read () >>| fun {pos; occupied; _} ->
       let open Bb.Syntax in
       Pre.pawn_advance sq pos.active - occupied
 
-    let push2 rank file = Reader.read () >>| fun {pos; _} ->
+    let push2 rank file = I.read () >>| fun {pos; _} ->
       let open Bb.Syntax in
       match pos.active with
       | Piece.White when Square.Rank.(rank = two) ->
@@ -550,7 +552,7 @@ module Moves = struct
        the use of `pin_mask`). This function checks for the special case of
        en passant, since it is the only kind of move where we capture a piece
        by moving to a square that is not occupied by that piece. *)
-    let en_passant sq ep diag = Reader.read () >>|
+    let en_passant sq ep diag = I.read () >>|
       fun {king_slide; enemy_slide; _} -> Bb.(
         let sq = !!sq and ep = !!ep in
         let sq_king  = (sq & king_slide)  = sq
@@ -562,12 +564,12 @@ module Moves = struct
         || (ep_king && sq_enemy)
         then diag else diag + ep)
 
-    let capture sq = Reader.read () >>= fun {pos; enemy_board; _} ->
+    let capture sq = I.read () >>= fun {pos; enemy_board; _} ->
       let open Bb.Syntax in
       let diag = Pre.pawn_capture sq pos.active & enemy_board in
       match pos.en_passant with
       | Some ep when not (ep @ diag) -> en_passant sq ep diag
-      | _ -> Reader.return diag
+      | _ -> I.return diag
 
     (* We need to multiply the move by the number of pieces we can
        promote to. *)
@@ -578,7 +580,7 @@ module Moves = struct
 
     (* Accumulator function for all the squares we can move to. We need this
        in case we have a promotion. *)
-    let move_accum src rank = Reader.read () >>| fun {pos; _} ->
+    let move_accum src rank = I.read () >>| fun {pos; _} ->
       if (Piece.Color.(pos.active = White) && Square.Rank.(rank = seven))
       || (Piece.Color.(pos.active = Black) && Square.Rank.(rank = two))
       then fun acc dst -> promote src dst @ acc
@@ -586,32 +588,32 @@ module Moves = struct
   end
 
   module Knight = struct
-    let jump sq = Reader.read () >>| fun {active_board; _} ->
+    let jump sq = I.read () >>| fun {active_board; _} ->
       Bb.(Pre.knight sq - active_board)
   end
 
   module Bishop = struct
-    let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
+    let slide sq = I.read () >>| fun {occupied; active_board; _} ->
       Bb.(Pre.bishop sq occupied - active_board)
   end
 
   module Rook = struct
-    let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
+    let slide sq = I.read () >>| fun {occupied; active_board; _} ->
       Bb.(Pre.rook sq occupied - active_board)
   end
 
   module Queen = struct
-    let slide sq = Reader.read () >>| fun {occupied; active_board; _} ->
+    let slide sq = I.read () >>| fun {occupied; active_board; _} ->
       Bb.(Pre.queen sq occupied - active_board)
   end
 
   module King = struct
     (* Note that `enemy_attacks` includes squares occupied by enemy pieces.
        Therefore, the king may not attack those squares. *)
-    let move sq = Reader.read () >>| fun {active_board; enemy_attacks; _} ->
+    let move sq = I.read () >>| fun {active_board; enemy_attacks; _} ->
       Bb.(Pre.king sq - active_board - enemy_attacks)
 
-    let castle = Reader.read () >>|
+    let castle = I.read () >>|
       fun {pos; occupied; enemy_attacks; num_checkers; _} ->
       if num_checkers > 0 then Bb.empty
       else
@@ -626,18 +628,18 @@ module Moves = struct
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
-  let pin_mask sq = Reader.read () >>|
+  let pin_mask sq = I.read () >>|
     fun {king_slide; enemy_slide; pinned; _} ->
     Bb.(if sq @ pinned then king_slide & enemy_slide else full)
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let check_mask = Reader.read () >>| Info.check_mask
+  let check_mask = I.read () >>| Info.check_mask
 
   (* It is technically illegal to actually capture the enemy king, so let's
      mask it out. We shouldn't need to check this for our king, because it
      would be illegal to even reach a position where our king can capture
      the enemy king. *)
-  let king_mask = Reader.read () >>| fun {pos = {king; _}; enemy_board; _} ->
+  let king_mask = I.read () >>| fun {pos = {king; _}; enemy_board; _} ->
     Bb.(~~(king & enemy_board))
 
   let make sq b ~f =
@@ -672,7 +674,7 @@ module Moves = struct
     make_king sq (move + castle)
 
   (* Get the new positions from the list of moves. *)
-  let exec k moves = Reader.read () >>| fun {pos; _} ->
+  let exec k moves = I.read () >>| fun {pos; _} ->
     let p = Piece.create pos.active k in
     List.map moves ~f:(fun m -> m, Monad.State.exec (Update.move p m) pos)
 
@@ -684,7 +686,7 @@ module Moves = struct
     | Piece.Queen -> queen sq
     | Piece.King -> king sq
 
-  let piece sq k = Reader.read () >>= fun {num_checkers; _} -> begin
+  let piece sq k = I.read () >>= fun {num_checkers; _} -> begin
       (* If the king has more than one attacker, then it is the only piece
          we can move. *)
       if num_checkers > 1 then king sq else any sq k
