@@ -637,7 +637,8 @@ module Moves = struct
      mask it out. We shouldn't need to check this for our king, because it
      would be illegal to even reach a position where our king can capture
      the enemy king. *)
-  let king_mask = Reader.read () >>| fun {pos = {king; _}; _} -> king
+  let king_mask = Reader.read () >>| fun {pos = {king; _}; enemy_board; _} ->
+    Bb.(~~(king & enemy_board))
 
   let make sq b ~f =
     pin_mask sq >>= fun pin ->
