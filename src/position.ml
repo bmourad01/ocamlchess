@@ -631,11 +631,19 @@ module Moves = struct
     Bb.(if sq @ pinned then king_slide & enemy_slide else full)
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let check_mask = Reader.read () >>| Info.check_mask 
+  let check_mask = Reader.read () >>| Info.check_mask
+
+  (* It is technically illegal to actually capture the enemy king, so let's
+     mask it out. We shouldn't need to check this for our king, because it
+     would be illegal to even reach a position where our king can capture
+     the enemy king. *)
+  let king_mask = Reader.read () >>| fun {pos = {king; _}; _} -> king
 
   let make sq b ~f =
-    pin_mask sq >>= fun pin -> check_mask >>| fun chk ->
-    Bb.(fold (b & pin & chk) ~init:[] ~f)
+    pin_mask sq >>= fun pin ->
+    check_mask >>= fun chk ->
+    king_mask >>| fun k ->
+    Bb.(fold (b & pin & chk & k) ~init:[] ~f)
 
   (* King cannot be pinned, so do not use the pin mask. *)
   let make_king sq = Bb.fold ~init:[] ~f:(default_accum sq)
