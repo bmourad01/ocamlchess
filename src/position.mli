@@ -200,4 +200,3 @@ end
 (** [legal_moves pos] returns a list of move-position pairs, which represents
     all of the legal moves for the active color of position [pos]. *)
 val legal_moves : t -> (Move.t * t) list
-
