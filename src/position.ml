@@ -465,6 +465,8 @@ module Moves = struct
       king_knight : Bb.t;
       enemy_slide : Bb.t;
       pinned : Bb.t;
+      num_checkers : int;
+      check_mask : Bb.t;
     } [@@deriving fields]
   end
 
@@ -475,7 +477,11 @@ module Moves = struct
     let occupied = all_board pos in
     let active_board = active_board pos in
     let enemy_board = board_of_color pos enemy in
-    let enemy_attacks = Attacks.all pos enemy ~king_danger:true in
+    (* We're considering attacked squares only for king moves. These squares
+       should include enemy pieces which may block an enemy attack, since it
+       would be illegal for the king to attack those squares. *)
+    let enemy_attacks =
+      Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
     let king_knight = Pre.knight king_sq in
     let king_slide, enemy_slide, pinned =
       (* Calculate the intersection of the following bitboards:
@@ -488,19 +494,28 @@ module Moves = struct
       let enemy_slide = Attacks.sliding pos enemy ~ignore_same:false in
       let pinned = king_slide & enemy_slide & (active_board --> king_sq) in
       king_slide, enemy_slide, pinned in
+    (* Attacks of all piece kinds, starting from the king, intersected with the
+       squares occupied by enemy pieces. *)
+    let checkers = Bb.((king_knight + king_slide) & enemy_board) in
+    let num_checkers = Bb.count checkers in
+    let check_mask =
+      if num_checkers = 1 then
+        (* Test if the checker is a sliding piece. If so, then we can try to
+           block the attack. Otherwise, they may only be captured. *)
+        Bb.fold_until checkers ~init:checkers ~finish:ident
+          ~f:(fun acc sq -> match which_kind pos sq with
+              | Some Piece.(Bishop | Rook | Queen) -> Stop king_slide
+              | _ -> Continue acc)
+      else Bb.full in
     Info.Fields.create ~pos ~king_sq ~enemy ~occupied ~active_board
       ~enemy_board ~enemy_attacks ~king_slide ~king_knight ~enemy_slide ~pinned
+      ~num_checkers ~check_mask
 
   module Reader = Monad.Reader.Make(Info)(Monad.Ident)
   open Reader.Syntax
 
   (* Standalone calculation of pinned pieces. *)
   let pinned_pieces pos = (create_info pos).pinned
-
-  (* Use this mask to restrict the movement of pinned pieces. *)
-  let pin_mask sq = Reader.read () >>|
-    fun {king_slide; enemy_slide; pinned; _} ->
-    Bb.(if sq @ pinned then king_slide & enemy_slide else full)
 
   let default_accum src acc dst = Move.create src dst :: acc
 
@@ -603,8 +618,17 @@ module Moves = struct
       kingside + queenside
   end
 
+  (* Use this mask to restrict the movement of pinned pieces. *)
+  let pin_mask sq = Reader.read () >>|
+    fun {king_slide; enemy_slide; pinned; _} ->
+    Bb.(if sq @ pinned then king_slide & enemy_slide else full)
+
+  (* Use this mask to restrict the movement of pieces when we are in check. *)
+  let check_mask = Reader.read () >>| Info.check_mask 
+
   let make sq b ~f =
-    pin_mask sq >>| fun pin -> Bb.(fold (b & pin) ~init:[] ~f)
+    pin_mask sq >>= fun pin -> check_mask >>| fun chk ->
+    Bb.(fold (b & pin & chk) ~init:[] ~f)
 
   (* King cannot be pinned, so do not use the pin mask. *)
   let make_king sq = Bb.fold ~init:[] ~f:(default_accum sq)
@@ -636,23 +660,20 @@ module Moves = struct
     let p = Piece.create pos.active k in
     List.map moves ~f:(fun m -> m, Monad.State.exec (Update.move p m) pos)
 
-  (* If the king has more than one attacker, then it is the only piece we
-     can move. *)
-  let count_king_attackers = Reader.read () >>|
-    fun {enemy_board; king_slide; king_knight; _} ->
-    Bb.(count ((king_slide + king_knight) & enemy_board))
+  let any sq = function
+    | Piece.Pawn -> pawn sq
+    | Piece.Knight -> knight sq
+    | Piece.Bishop -> bishop sq
+    | Piece.Rook -> rook sq
+    | Piece.Queen -> queen sq
+    | Piece.King -> king sq
 
-  let piece sq k = count_king_attackers >>= begin function
-      | n when n > 1 -> king sq
-      | _ -> match k with
-        | Piece.Pawn -> pawn sq
-        | Piece.Knight -> knight sq
-        | Piece.Bishop -> bishop sq
-        | Piece.Rook -> rook sq
-        | Piece.Queen -> queen sq
-        | Piece.King -> king sq
-    end >>= exec k 
-
+  let piece sq k = Reader.read () >>= fun {num_checkers; _} -> begin
+      (* If the king has more than one attacker, then it is the only piece
+         we can move. *)
+      if num_checkers > 1 then king sq else any sq k
+    end >>= exec k
+    
   let legal pos =
     let info = create_info pos in
     find_active pos |> List.map ~f:(fun (sq, k) ->
