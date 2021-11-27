@@ -112,9 +112,9 @@ module Fen : sig
   val of_string_exn : ?reject_invalid:bool -> string -> t
 
   (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
-      representation. Returns [None] if [s] is not a valid FEN string. If
-      [reject_invalid] is [true], then illegal positions will return [None]. By
-      default, it is [false]. *)
+      representation. Returns [None] if [s] is not a syntactically valid FEN
+      string. If [reject_invalid] is [true], then illegal positions will return
+      [None]. By default, it is [false]. *)
   val of_string : ?reject_invalid:bool -> string -> t option
 
   (** [to_string fen] returns a string representation of [fen]. *)
