@@ -611,7 +611,7 @@ module Moves = struct
       let c sq s =
         let b =
           Pre.castle pos.castle pos.active s - occupied - enemy_attacks in
-        if sq @ b then b else Bb.empty in
+        if sq @ b then !!sq else Bb.empty in
       match pos.active with
       | Piece.White -> c Square.g1 `king + c Square.c1 `queen
       | Piece.Black -> c Square.g8 `king + c Square.c8 `queen
