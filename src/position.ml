@@ -217,9 +217,7 @@ module Fen = struct
         let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
         let acc = if rank > 0 then acc ^ "/" else acc in
         aux (rank - 1) 0 0 acc
-      else
-        let sq = Square.create_exn ~rank ~file in
-        match piece_at_square pos sq with
+      else match piece_at_square pos @@ Square.create_exn ~rank ~file with
         | None -> aux rank (file + 1) (skip + 1) acc
         | Some p ->
           let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
