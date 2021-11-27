@@ -455,14 +455,11 @@ module Moves = struct
   module Info = struct
     type t = {
       pos : T.t;
-      king_sq : Square.t;
-      enemy : Piece.color;
       occupied : Bb.t;
       active_board : Bb.t;
       enemy_board : Bb.t;
       enemy_attacks : Bb.t;
       king_slide : Bb.t;
-      king_knight : Bb.t;
       enemy_slide : Bb.t;
       pinned : Bb.t;
       num_checkers : int;
@@ -507,9 +504,17 @@ module Moves = struct
               | Some Piece.(Bishop | Rook | Queen) -> Stop king_slide
               | _ -> Continue acc)
       else Bb.full in
-    Info.Fields.create ~pos ~king_sq ~enemy ~occupied ~active_board
-      ~enemy_board ~enemy_attacks ~king_slide ~king_knight ~enemy_slide ~pinned
-      ~num_checkers ~check_mask
+    Info.Fields.create
+      ~pos
+      ~occupied
+      ~active_board
+      ~enemy_board
+      ~enemy_attacks
+      ~king_slide
+      ~enemy_slide
+      ~pinned
+      ~num_checkers
+      ~check_mask
 
   module Reader = Monad.Reader.Make(Info)(Monad.Ident)
   open Reader.Syntax
