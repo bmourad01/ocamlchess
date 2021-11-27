@@ -601,21 +601,20 @@ module Moves = struct
   end
 
   module King = struct
+    (* Note that `enemy_attacks` includes squares occupied by enemy pieces.
+       Therefore, the king may not attack those squares. *)
     let move sq = Reader.read () >>| fun {active_board; enemy_attacks; _} ->
       Bb.(Pre.king sq - active_board - enemy_attacks)
 
-    let castle = Reader.read () >>| fun {pos; enemy_attacks; _} ->
+    let castle = Reader.read () >>| fun {pos; occupied; enemy_attacks; _} ->
       let open Bb.Syntax in
-      let kingside_sq, queenside_sq = match pos.active with
-        | Piece.White -> Square.g1, Square.c1
-        | Piece.Black -> Square.g8, Square.c8 in
-      let kingside =
-        let b = Pre.castle pos.castle pos.active `king - enemy_attacks in
-        if not (kingside_sq @ b) then Bb.empty else b in
-      let queenside =
-        let b = Pre.castle pos.castle pos.active `queen - enemy_attacks in
-        if not (queenside_sq @ b) then Bb.empty else b in
-      kingside + queenside
+      let c sq s =
+        let b =
+          Pre.castle pos.castle pos.active s - occupied - enemy_attacks in
+        if sq @ b then b else Bb.empty in
+      match pos.active with
+      | Piece.White -> c Square.g1 `king + c Square.c1 `queen
+      | Piece.Black -> c Square.g8 `king + c Square.c8 `queen
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
