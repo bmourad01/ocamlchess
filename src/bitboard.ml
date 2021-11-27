@@ -112,8 +112,8 @@ module Syntax = struct
   let (~~) = compl
   let (-) = diff
   let (!!) = singleton
-  let (<--) = set
-  let (-->) = clear
+  let (++) = set
+  let (--) = clear
   let (@) sq b = mem b sq
 end
 

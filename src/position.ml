@@ -128,8 +128,8 @@ module Fen = struct
           let open Bb.Syntax in
           let c = Piece.(color p |> Color.to_int) in
           let k = Piece.(kind p |> Kind.to_int) in
-          color_tbl.(c) <- color_tbl.(c) <-- sq;
-          kind_tbl.(k) <- kind_tbl.(k) <-- sq;
+          color_tbl.(c) <- color_tbl.(c) ++ sq;
+          kind_tbl.(k) <- kind_tbl.(k) ++ sq;
           rank, succ file
         | None -> invalid_arg @@
           sprintf "Invalid piece '%c' placed at square '%s'"
@@ -489,7 +489,7 @@ module Moves = struct
       let open Bb.Syntax in
       let king_slide = Pre.queen king_sq occupied in
       let enemy_slide = Attacks.sliding pos enemy ~ignore_same:false in
-      let pinned = king_slide & enemy_slide & (active_board --> king_sq) in
+      let pinned = king_slide & enemy_slide & (active_board -- king_sq) in
       king_slide, enemy_slide, pinned in
     (* Attacks of all piece kinds, starting from the king, intersected with the
        squares occupied by enemy pieces. *)

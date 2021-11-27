@@ -167,11 +167,11 @@ module Syntax : sig
   (** [!!sq] is equivalent to [singleton sq]. *)
   val (!!) : Square.t -> t
 
-  (** [b <-- sq] is equivalent to [set b sq]. *)
-  val (<--) : t -> Square.t -> t
+  (** [b ++ sq] is equivalent to [set b sq]. *)
+  val (++) : t -> Square.t -> t
 
-  (** [b --> sq] is equivalent to [clear b sq]. *)
-  val (-->) : t -> Square.t -> t
+  (** [b -- sq] is equivalent to [clear b sq]. *)
+  val (--) : t -> Square.t -> t
 
   (** [sq @ b] is equivalent to [mem b sq]. *)
   val (@) : Square.t -> t -> bool

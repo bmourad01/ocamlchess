@@ -235,10 +235,10 @@ let castle =
   let open Bitboard in
   let open Castling_rights in
   let valid = [
-    Piece.White, `king, empty <-- Square.f1 <-- Square.g1;
-    Piece.White, `queen, empty <-- Square.c1 <-- Square.d1;
-    Piece.Black, `king, empty <-- Square.f8 <-- Square.g8;
-    Piece.Black, `queen, empty <-- Square.c8 <-- Square.d8;
+    Piece.White, `king, empty ++ Square.f1 ++ Square.g1;
+    Piece.White, `queen, empty ++ Square.c1 ++ Square.d1;
+    Piece.Black, `king, empty ++ Square.f8 ++ Square.g8;
+    Piece.Black, `queen, empty ++ Square.c8 ++ Square.d8;
   ] in
   let tbl = Array.init (1 lsl bits) ~f:(fun i ->
       let x = of_int_exn i in
