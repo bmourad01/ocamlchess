@@ -206,7 +206,7 @@ module Fen = struct
       if reject_invalid then validate pos; pos
     | _ -> invalid_arg @@
       sprintf "Invalid number of sections in FEN string '%s'" s
- 
+
   let of_string ?(reject_invalid = false) s =
     Option.try_with @@ fun () -> of_string_exn s ~reject_invalid
 
@@ -241,6 +241,8 @@ module Fen = struct
 end
 
 let start = Fen.(of_string_exn start)
+
+(* Handling moves *)
 
 module Attacks = struct
   (* Useful when excluding squares that are occupied by our color. *)
@@ -314,8 +316,7 @@ module Attacks = struct
         | _ -> true)
 end
 
-(* Helpers for updating fields. *)
-module Update = struct
+module Apply = struct
   (* P for Position *)
   module P = Monad.State.Make(T)(Monad.Ident)
   open P.Syntax
@@ -488,6 +489,7 @@ module Moves = struct
     } [@@deriving fields]
   end
 
+  (* Populates the relevant info about our position for generating moves. *)
   let create_info pos =
     let king_sq =
       List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
@@ -541,9 +543,8 @@ module Moves = struct
   module I = Monad.Reader.Make(Info)(Monad.Ident)
   open I.Syntax
 
-  (* Standalone calculation of pinned pieces. *)
-  let pinned_pieces pos = (create_info pos).pinned
-
+  (* Accumulate moves with a cons. We use this for every kind of move except
+     for a pawn promotion. *)
   let default_accum src acc dst = Move.create src dst :: acc
 
   module Pawn = struct
@@ -696,7 +697,7 @@ module Moves = struct
   (* Get the new positions from the list of moves. *)
   let exec k moves = I.read () >>| fun {pos; _} ->
     let p = Piece.create pos.active k in
-    List.map moves ~f:(fun m -> m, Monad.State.exec (Update.move p m) pos)
+    List.map moves ~f:(fun m -> m, Monad.State.exec (Apply.move p m) pos)
 
   let any sq = function
     | Piece.Pawn -> pawn sq
@@ -711,9 +712,9 @@ module Moves = struct
          we can move. *)
       if num_checkers > 1 then king sq else any sq k
     end >>= exec k
-
-  let legal pos =
-    let info = create_info pos in
-    find_active pos |> List.map ~f:(fun (sq, k) ->
-        Monad.Reader.run (piece sq k) info) |> List.concat
 end
+
+let legal_moves pos =
+  let info = Moves.create_info pos in
+  find_active pos |> List.map ~f:(fun (sq, k) ->
+      Monad.Reader.run (Moves.piece sq k) info) |> List.concat

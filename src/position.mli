@@ -197,14 +197,7 @@ module Attacks : sig
   val non_sliding : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 end
 
-(** This module provides helper functions related to generating legal moves
-    from a position. *)
-module Moves : sig
-  (** [pinned_pieces pos] returns the bitboard representing the squares occupied
-      by all pinned pieces for the active color. *)
-  val pinned_pieces : t -> Bitboard.t
+(** [legal_moves pos] returns a list of move-position pairs, which represents
+    all of the legal moves for the active color of position [pos]. *)
+val legal_moves : t -> (Move.t * t) list
 
-  (** [legal pos] returns a list of move-position pairs, which represents all
-      of the legal moves for the active color of position [pos]. *)
-  val legal : t -> (Move.t * t) list
-end
