@@ -606,15 +606,18 @@ module Moves = struct
     let move sq = Reader.read () >>| fun {active_board; enemy_attacks; _} ->
       Bb.(Pre.king sq - active_board - enemy_attacks)
 
-    let castle = Reader.read () >>| fun {pos; occupied; enemy_attacks; _} ->
-      let open Bb.Syntax in
-      let c sq s =
-        let b =
-          Pre.castle pos.castle pos.active s - occupied - enemy_attacks in
-        if sq @ b then !!sq else Bb.empty in
-      match pos.active with
-      | Piece.White -> c Square.g1 `king + c Square.c1 `queen
-      | Piece.Black -> c Square.g8 `king + c Square.c8 `queen
+    let castle = Reader.read () >>|
+      fun {pos; occupied; enemy_attacks; num_checkers; _} ->
+      if num_checkers > 0 then Bb.empty
+      else
+        let open Bb.Syntax in
+        let c sq s =
+          let b =
+            Pre.castle pos.castle pos.active s - occupied - enemy_attacks in
+          if sq @ b then !!sq else Bb.empty in
+        match pos.active with
+        | Piece.White -> c Square.g1 `king + c Square.c1 `queen
+        | Piece.Black -> c Square.g8 `king + c Square.c8 `queen
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
