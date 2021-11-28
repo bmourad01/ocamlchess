@@ -65,13 +65,13 @@ let poll window pos legal sel prev =
 let rec main_loop window pos legal sel prev =
   if Window.is_open window then begin
     let pos', legal, sel, prev = poll window pos legal sel prev in
-    if Position.(pos' <> pos) then (
+    if Position.(pos' <> pos) then begin
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
         (Position.Fen.to_string pos');
       printf "%d legal moves\n%!" (List.length legal);
-      printf "\n%!";
-    );
+      printf "\n%!"
+    end;
     let bb, sq = match sel with
       | None -> Bitboard.(to_int64 empty), None
       | Some (sq, moves) ->
