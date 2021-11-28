@@ -64,7 +64,14 @@ let poll window pos legal sel prev =
 
 let rec main_loop window pos legal sel prev =
   if Window.is_open window then begin
-    let pos, legal, sel, prev = poll window pos legal sel prev in
+    let pos', legal, sel, prev = poll window pos legal sel prev in
+    if Position.(pos' <> pos) then (
+      printf "%s: %s\n%!"
+        (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
+        (Position.Fen.to_string pos');
+      printf "%d legal moves\n%!" (List.length legal);
+      printf "\n%!";
+    );
     let bb, sq = match sel with
       | None -> Bitboard.(to_int64 empty), None
       | Some (sq, moves) ->
@@ -73,9 +80,9 @@ let rec main_loop window pos legal sel prev =
               Bitboard.(acc ++ Move.dst m)) in
         Bitboard.to_int64 bb, Some sq in
     Window.clear window;
-    Window.paint_board window pos bb sq prev;
+    Window.paint_board window pos' bb sq prev;
     Window.display window;
-    main_loop window pos legal sel prev
+    main_loop window pos' legal sel prev
   end
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
@@ -88,6 +95,12 @@ external init_fonts : unit -> bool = "ml_init_fonts"
 let () =
   if init_fonts () then
     let window = Window.create window_size window_size "chess" in
-    let pos = Position.start in
+    let pos =
+      if Array.length Sys.argv > 1
+      then Position.Fen.of_string_exn Sys.argv.(1)
+      else Position.start in
     let legal = Position.legal_moves pos in
+    printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
+    printf "%d legal moves\n%!" (List.length legal);
+    printf "\n%!";
     main_loop window pos legal None None
