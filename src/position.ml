@@ -457,7 +457,8 @@ module Apply = struct
     | None -> P.return p
 
   let move_or_capture ?p sq' ep =
-    set_square sq' ?p >>    
+    set_square sq' ?p >>
+    (* Check if this was an en passant capture. *)
     if Option.exists ep ~f:(Square.equal sq')
     && Option.exists p ~f:Piece.is_pawn
     then
