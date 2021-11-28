@@ -3,6 +3,8 @@ open Base
 (** Representation of a chess position. *)
 type t [@@deriving compare, equal, hash, sexp]
 
+include Comparable.S with type t := t
+
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
 val white : t -> Bitboard.t

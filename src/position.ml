@@ -505,6 +505,7 @@ module Moves = struct
 
   (* Populates the relevant info about our position for generating moves. *)
   let create_info pos =
+    let open Bb.Syntax in
     let king_sq =
       List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
     let enemy = Piece.Color.opposite pos.active in
@@ -516,21 +517,34 @@ module Moves = struct
        would be illegal for the king to attack those squares. *)
     let enemy_attacks =
       Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
-    let king_knight = Pre.knight king_sq in
     let king_slide, enemy_slide, pinned =
       (* Calculate the intersection of the following bitboards:
          1) The rays of sliding moves that move outward from the king's square.
          2) All sliding attacks from enemy pieces.
          If a piece that is not the king is in this intersection, then it is
          pinned. *)
-      let open Bb.Syntax in
       let king_slide = Pre.queen king_sq occupied in
       let enemy_slide = Attacks.sliding pos enemy ~ignore_same:false in
       let pinned = king_slide & enemy_slide & (active_board -- king_sq) in
       king_slide, enemy_slide, pinned in
     (* Attacks of all piece kinds, starting from the king, intersected with the
        squares occupied by enemy pieces. *)
-    let checkers = Bb.((king_knight + king_slide) & enemy_board) in
+    let checkers =
+      let pawn_attacks =
+        Pre.pawn_capture king_sq pos.active & pos.pawn & enemy_board in
+      let knight_attacks = Pre.knight king_sq & pos.knight & enemy_board in
+      let bishop = Pre.bishop king_sq occupied in
+      let rook = Pre.rook king_sq occupied in
+      let bishop_attacks = bishop & pos.bishop & enemy_board in
+      let rook_attacks = rook & pos.rook & enemy_board in
+      let queen_attacks = (bishop + rook) & pos.queen & enemy_board in
+      let king_attacks = Pre.king king_sq & pos.king & enemy_board in
+      pawn_attacks +
+      knight_attacks +
+      bishop_attacks +
+      rook_attacks +
+      queen_attacks +
+      king_attacks in
     let num_checkers = Bb.count checkers in
     let check_mask =
       if num_checkers = 1 then
@@ -538,7 +552,8 @@ module Moves = struct
            block the attack. Otherwise, they may only be captured. *)
         Bb.fold_until checkers ~init:checkers ~finish:ident
           ~f:(fun acc sq -> match which_kind pos sq with
-              | Some Piece.(Bishop | Rook | Queen) -> Stop king_slide
+              | Some Piece.(Bishop | Rook | Queen) ->
+                Stop (king_slide & (enemy_slide + acc))
               | _ -> Continue acc)
       else Bb.full in
     Info.Fields.create
@@ -566,13 +581,13 @@ module Moves = struct
       let open Bb.Syntax in
       Pre.pawn_advance sq pos.active - occupied
 
-    let push2 rank file = I.read () >>| fun {pos; _} ->
+    let push2 rank file = I.read () >>| fun {pos; occupied; _} ->
       let open Bb.Syntax in
       match pos.active with
       | Piece.White when Square.Rank.(rank = two) ->
-        !!(Square.create_exn ~rank:Square.Rank.four ~file)
+        !!(Square.create_exn ~rank:Square.Rank.four ~file) - occupied
       | Piece.Black when Square.Rank.(rank = seven) ->
-        !!(Square.create_exn ~rank:Square.Rank.five ~file)
+        !!(Square.create_exn ~rank:Square.Rank.five ~file) - occupied
       | _ -> Bb.empty
 
     (* We need to check if an en passant capture will lead to a discovery.
@@ -691,8 +706,10 @@ module Moves = struct
     let open Pawn in
     let open Bb.Syntax in
     let rank, file = Square.decomp sq in
-    push sq >>= fun push ->
-    push2 rank file >>= fun push2 ->
+    push sq >>= fun push -> begin
+      (* Only allow double push if a single push is available. *)
+      if Bb.(push = empty) then I.return push else push2 rank file
+    end >>= fun push2 ->
     capture sq >>= fun capture ->
     move_accum sq rank >>= fun f ->
     make sq (push + push2 + capture) ~f
@@ -733,3 +750,5 @@ let legal_moves pos =
   let info = Moves.create_info pos in
   find_active pos |> List.map ~f:(fun (sq, k) ->
       Monad.Reader.run (Moves.piece sq k) info) |> List.concat
+
+include Comparable.Make(T)
