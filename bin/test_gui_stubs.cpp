@@ -131,21 +131,24 @@ extern "C" {
     CAMLreturn(Val_unit);
   }
 
+  enum Color : int {White, Black};
+  enum Kind : int {Pawn, Knight, Bishop, Rook, Queen, King};
+
   static wchar_t piece_unicode(int color, int kind) {
-    auto is_white = color != 0b1;
+    auto is_white = color == White;
     switch (kind) {
-    case 0b000:
+    case Pawn:
       return is_white ? L'\u2659' : L'\u265F';
-    case 0b011:
-      return is_white ? L'\u2656' : L'\u265C';
-    case 0b010:
-      return is_white ? L'\u2657' : L'\u265D';
-    case 0b001:
+    case Knight:
       return is_white ? L'\u2658' : L'\u265E';
-    case 0b101:
-      return is_white ? L'\u2654' : L'\u265A';
-    case 0b100:
+    case Bishop:
+      return is_white ? L'\u2657' : L'\u265D';
+    case Rook:
+      return is_white ? L'\u2656' : L'\u265C';
+    case Queen:
       return is_white ? L'\u2655' : L'\u265B';
+    case King:
+      return is_white ? L'\u2654' : L'\u265A';
     default:
       assert(false);
     }
