@@ -600,17 +600,10 @@ module Moves = struct
 
     let capture sq = I.read () >>= fun {pos; enemy_board; _} ->
       let open Bb.Syntax in
-      let diag = Pre.pawn_capture sq pos.active & enemy_board in
+      let diag' = Pre.pawn_capture sq pos.active in
+      let diag = diag' & enemy_board in
       match pos.en_passant with
-      | Some ep when not (ep @ diag) -> begin
-          let rank = Square.rank sq in
-          match pos.active with
-          | Piece.White when Square.Rank.(rank = five) ->
-            en_passant sq ep diag
-          | Piece.Black when Square.Rank.(rank = four) ->
-            en_passant sq ep diag
-          | _ -> I.return diag
-        end
+      | Some ep when ep @ diag' -> en_passant sq ep diag
       | _ -> I.return diag
 
     (* We need to multiply the move by the number of pieces we can
