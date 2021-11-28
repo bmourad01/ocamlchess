@@ -1,0 +1,12 @@
+(executable
+ (name test_gui)
+ (libraries core chess)
+ (ocamlopt_flags -O3 -unbox-closures)
+ (foreign_stubs
+  (language cxx)
+  (names test_gui_stubs))
+ (link_flags ((-cclib -lstdc++)
+              (-cclib -lrt)
+              (-cclib -lsfml-graphics)
+              (-cclib -lsfml-system)
+              (-cclib -lsfml-window))))
