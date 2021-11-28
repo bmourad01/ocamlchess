@@ -456,17 +456,30 @@ module Apply = struct
     | Some k -> P.gets @@ fun pos -> Some (Piece.create pos.active k)
     | None -> P.return p
 
+  let move_or_capture ?p sq' ep =
+    set_square sq' ?p >>    
+    if Option.exists ep ~f:(Square.equal sq')
+    && Option.exists p ~f:Piece.is_pawn
+    then
+      let rank, file = Square.decomp sq' in
+      begin P.gets @@ fun {active; _} -> match active with
+        | Piece.White -> Square.create_exn ~rank:(rank - 1) ~file
+        | Piece.Black -> Square.create_exn ~rank:(rank + 1) ~file
+      end >>= clear_square
+    else P.return ()
+
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. *)
   let move p m =
     Move.decomp m |> fun (sq, sq', promote) ->
+    P.gets en_passant >>= fun ep ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove sq sq' >>
     update_en_passant sq sq' ~p >>
     update_castle sq sq' ~p >>
     (* Move the piece. *)
     clear_square sq ~p >> clear_square sq' >>
-    do_promote promote ~p >>= fun p -> set_square sq' ?p >>
+    do_promote promote ~p >>= fun p -> move_or_capture sq' ep ?p >>
     (* Prepare for the next move. *)
     update_fullmove >> flip_active
 end
@@ -589,7 +602,15 @@ module Moves = struct
       let open Bb.Syntax in
       let diag = Pre.pawn_capture sq pos.active & enemy_board in
       match pos.en_passant with
-      | Some ep when not (ep @ diag) -> en_passant sq ep diag
+      | Some ep when not (ep @ diag) -> begin
+          let rank = Square.rank sq in
+          match pos.active with
+          | Piece.White when Square.Rank.(rank = five) ->
+            en_passant sq ep diag
+          | Piece.Black when Square.Rank.(rank = four) ->
+            en_passant sq ep diag
+          | _ -> I.return diag
+        end
       | _ -> I.return diag
 
     (* We need to multiply the move by the number of pieces we can
