@@ -31,3 +31,7 @@ val king : Square.t -> Bitboard.t
     squares w.r.t. [rights] for color [c] and side [side]. *)
 val castle :
   Castling_rights.t -> Piece.color -> Castling_rights.side -> Bitboard.t
+
+(** [between sq sq'] returns a bitboard of all squares between [sq] and [sq']
+    w.r.t. a sliding move. *)
+val between : Square.t -> Square.t -> Bitboard.t
