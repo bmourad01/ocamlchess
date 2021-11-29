@@ -554,7 +554,7 @@ module Moves = struct
         Bb.fold_until checkers ~init:checkers ~finish:ident
           ~f:(fun acc sq -> match which_kind pos sq with
               | Some Piece.(Bishop | Rook | Queen) ->
-                Stop (king_slide & (enemy_slide + acc))
+                Stop (Pre.between king_sq sq + acc)
               | _ -> Continue acc)
       else Bb.full in
     let pin_mask =
