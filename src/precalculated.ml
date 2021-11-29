@@ -126,8 +126,8 @@ end
 module Mask = struct
   (* Direction to move in when starting from a particular square. *)
   let dir r f =
-    Simple.make @@ fun rank file ->
-    List.init ((Square.count lsr 3) - 1) ~f:(fun i -> r rank (i + 1), f file (i + 1))
+    Simple.make @@ fun rank file -> List.init ((Square.count lsr 3) - 1)
+      ~f:(fun i -> r rank (i + 1), f file (i + 1))
 
   (* All 8 directions. *)
   let east = dir const (+)
