@@ -68,7 +68,7 @@ let is_insufficient_material pos =
   let occupied = Position.all_board pos in
   Bitboard.((king = occupied) || ((king & active) = king))
 
-let is_fifty_moves pos = Position.halfmove pos >= 100
+let is_fifty_move pos = Position.halfmove pos >= 100
 
 let is_checkmate pos =
   let active_board = Position.active_board pos in
@@ -76,40 +76,53 @@ let is_checkmate pos =
   let enemy = Piece.Color.opposite @@ Position.active pos in
   let attacks = Position.Attacks.all pos enemy ~ignore_same:true in
   Bitboard.((active_board & king & attacks) <> empty)
-  
 
-let rec main_loop window pos legal sel prev =
-  if Window.is_open window then
-    let pos', legal, sel, prev = poll window pos legal sel prev in
-    if is_insufficient_material pos' then
-      printf "Draw by insufficient material\n%!"
-    else if is_fifty_moves pos' then
-      printf "Draw by fifty-move rule\n%!"
-    else if List.is_empty legal then
-      if is_checkmate pos' then
-        let enemy = Position.active pos' |> Piece.Color.opposite in
-        printf "Checkmate, %s wins\n%!" (Piece.Color.to_string_hum enemy);
-      else printf "Draw by dead position\n%!"
-    else begin
-      if Position.(pos' <> pos) then begin
-        printf "%s: %s\n%!"
-          (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
-          (Position.Fen.to_string pos');
-        printf "%d legal moves\n%!" (List.length legal);
-        printf "\n%!"
-      end;
-      let bb, sq = match sel with
-        | None -> Bitboard.(to_int64 empty), None
-        | Some (sq, moves) ->
-          let bb =
-            List.fold moves ~init:Bitboard.empty ~f:(fun acc (m, _) ->
-                Bitboard.(acc ++ Move.dst m)) in
-          Bitboard.to_int64 bb, Some sq in
-      Window.clear window;
-      Window.paint_board window pos' bb sq prev;
-      Window.display window;
-      main_loop window pos' legal sel prev
-    end
+let print_endgame = function
+  | `Insufficient_material -> printf "Draw by insufficient material\n%!"
+  | `Fifty_move -> printf "Draw by fifty-move rule\n%!"
+  | `Checkmate c -> printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
+  | `Dead -> printf "Draw by dead position\n%!"
+
+
+let check_endgame pos legal =
+  if is_insufficient_material pos then Some `Insufficient_material
+  else if is_fifty_move pos then Some `Fifty_move
+  else if List.is_empty legal then
+    if is_checkmate pos
+    then Some (`Checkmate (Position.active pos |> Piece.Color.opposite))
+    else Some `Dead
+  else None 
+
+let rec main_loop window pos legal sel prev endgame =
+  if Window.is_open window then begin
+    let pos', legal, sel, prev =
+      if Option.is_some endgame then pos, legal, sel, prev
+      else poll window pos legal sel prev in
+    let endgame = match endgame with
+      | Some _ -> endgame
+      | None ->
+        let endgame = check_endgame pos' legal in
+        Option.iter endgame ~f:print_endgame;
+        endgame in
+    if Position.(pos' <> pos) then begin
+      printf "%s: %s\n%!"
+        (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
+        (Position.Fen.to_string pos');
+      printf "%d legal moves\n%!" (List.length legal);
+      printf "\n%!"
+    end;
+    let bb, sq = match sel with
+      | None -> Bitboard.(to_int64 empty), None
+      | Some (sq, moves) ->
+        let bb =
+          List.fold moves ~init:Bitboard.empty ~f:(fun acc (m, _) ->
+              Bitboard.(acc ++ Move.dst m)) in
+        Bitboard.to_int64 bb, Some sq in
+    Window.clear window;
+    Window.paint_board window pos' bb sq prev;
+    Window.display window;
+    main_loop window pos' legal sel prev endgame
+  end
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
@@ -129,4 +142,4 @@ let () =
     printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
     printf "%d legal moves\n%!" (List.length legal);
     printf "\n%!";
-    main_loop window pos legal None None
+    main_loop window pos legal None None None
