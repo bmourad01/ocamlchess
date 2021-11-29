@@ -70,7 +70,7 @@ let is_insufficient_material pos =
 
 let is_fifty_move pos = Position.halfmove pos >= 100
 
-let is_checkmate pos =
+let in_check pos =
   let active_board = Position.active_board pos in
   let king = Position.king pos in
   let enemy = Piece.Color.opposite @@ Position.active pos in
@@ -81,16 +81,15 @@ let print_endgame = function
   | `Insufficient_material -> printf "Draw by insufficient material\n%!"
   | `Fifty_move -> printf "Draw by fifty-move rule\n%!"
   | `Checkmate c -> printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
-  | `Dead -> printf "Draw by dead position\n%!"
-
+  | `Stalemate -> printf "Draw by stalemate\n%!"
 
 let check_endgame pos legal =
   if is_insufficient_material pos then Some `Insufficient_material
   else if is_fifty_move pos then Some `Fifty_move
   else if List.is_empty legal then
-    if is_checkmate pos
+    if in_check pos
     then Some (`Checkmate (Position.active pos |> Piece.Color.opposite))
-    else Some `Dead
+    else Some `Stalemate
   else None 
 
 let rec main_loop window pos legal sel prev endgame =
