@@ -247,72 +247,31 @@ let castle =
   fun rights c s -> tbl.(to_int @@ inter rights @@ singleton c s)
 
 module Between = struct
-  (* XXX: clean this up *)
-  let tbl =
-    Array.init Square.count ~f:(fun sq ->
-        let sq = Square.of_int_exn sq in
-        let rank, file = Square.decomp sq in
-        Array.init Square.count ~f:(fun sq' ->
-            let sq' = Square.of_int_exn sq' in
-            let rank', file' = Square.decomp sq' in
-            let rec east i acc =
-              let file = file + i in
-              if file > 7 then Bitboard.empty
-              else if file = file' then acc
-              else east (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec west i acc =
-              let file = file - i in
-              if file < 0 then Bitboard.empty
-              else if file = file' then acc
-              else west (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec north i acc =
-              let rank = rank + i in
-              if rank > 7 then Bitboard.empty
-              else if rank = rank' then acc
-              else north (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec south i acc =
-              let rank = rank - i in
-              if rank < 0 then Bitboard.empty
-              else if rank = rank' then acc
-              else south (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec northeast i acc =
-              let rank = rank + i and file = file + i in
-              if rank > 7 || file > 7 then Bitboard.empty
-              else if rank = rank' && file = file' then acc
-              else northeast (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec southeast i acc =
-              let rank = rank - i and file = file + i in
-              if rank < 0 || file > 7 then Bitboard.empty
-              else if rank = rank' && file = file' then acc
-              else southeast (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec northwest i acc =
-              let rank = rank + i and file = file - i in
-              if rank > 7 || file < 0 then Bitboard.empty
-              else if rank = rank' && file = file' then acc
-              else northwest (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            let rec southwest i acc =
-              let rank = rank - i and file = file - i in
-              if rank < 0 || file < 0 then Bitboard.empty
-              else if rank = rank' && file = file' then acc
-              else southwest (i + 1) @@
-                Bitboard.set acc (Square.create_exn ~rank ~file) in
-            Bitboard.(east 1 empty +
-                      west 1 empty +
-                      north 1 empty +
-                      south 1 empty +
-                      northeast 1 empty +
-                      southeast 1 empty +
-                      northwest 1 empty +
-                      southwest 1 empty)))
 end
 
-let between sq sq' =
-  let i = Square.to_int sq and i' = Square.to_int sq' in
-  Between.tbl.(i).(i')
+let between =
+  let tbl =
+    Array.init Square.count ~f:(fun i ->
+        let sq = Square.of_int_exn i in
+        Array.init Square.count ~f:(fun i' ->
+            let open Bitboard in
+            (* Use the singleton bitboard of the target square as the
+               blocker mask. *)
+            let s = !!Square.(of_int_exn i') in
+            let straight m =
+              let b = rook sq s & m in
+              if (b & s) <> empty then b - s else empty in
+            let diagonal m =
+              let b = bishop sq s & m in
+              if (b & s) <> empty then b - s else empty in
+            (* Use the pre-generated directional masks. *)
+            let east = straight Mask.east.(i) in
+            let west = straight Mask.west.(i) in
+            let north = straight Mask.north.(i) in
+            let south = straight Mask.south.(i) in
+            let neast = diagonal Mask.neast.(i) in
+            let nwest = diagonal Mask.nwest.(i) in
+            let seast = diagonal Mask.seast.(i) in
+            let swest = diagonal Mask.swest.(i) in
+            east + west + north+ south + neast + nwest + seast + swest)) in
+  fun sq sq' -> Square.(tbl.(to_int sq).(to_int sq'))
