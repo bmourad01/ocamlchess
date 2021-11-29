@@ -273,5 +273,7 @@ let between =
             let nwest = diagonal Mask.nwest.(i) in
             let seast = diagonal Mask.seast.(i) in
             let swest = diagonal Mask.swest.(i) in
-            east + west + north+ south + neast + nwest + seast + swest)) in
+            (* We're getting the union of all directions, even though only
+               one of them will be valid. *)
+            east + west + north + south + neast + nwest + seast + swest)) in
   fun sq sq' -> Square.(tbl.(to_int sq).(to_int sq'))
