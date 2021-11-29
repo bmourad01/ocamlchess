@@ -24,7 +24,7 @@ end
 
 include T
 
-(* Bb accessors *)
+(* Bitboard accessors *)
 
 let all_board pos = Bb.(pos.white + pos.black)
 
@@ -500,6 +500,7 @@ module Moves = struct
       pinned : Bb.t;
       num_checkers : int;
       check_mask : Bb.t;
+      pin_mask : Bb.t;
     } [@@deriving fields]
   end
 
@@ -556,6 +557,15 @@ module Moves = struct
                 Stop (king_slide & (enemy_slide + acc))
               | _ -> Continue acc)
       else Bb.full in
+    let pin_mask =
+      let occupied = occupied - pinned in
+      let king_slide = Pre.queen king_sq occupied in
+      find_color pos enemy |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
+          match k with
+          | Piece.Bishop -> acc + (Pre.bishop sq occupied & king_slide)
+          | Piece.Rook -> acc + (Pre.rook sq occupied & king_slide)
+          | Piece.Queen -> acc + (Pre.queen sq occupied & king_slide)
+          | _ -> acc) in
     Info.Fields.create
       ~pos
       ~occupied
@@ -567,6 +577,7 @@ module Moves = struct
       ~pinned
       ~num_checkers
       ~check_mask
+      ~pin_mask
 
   (* I for Info *)
   module I = Monad.Reader.Make(Info)(Monad.Ident)
@@ -596,23 +607,33 @@ module Moves = struct
        1) Our pawn is on the king's side of the pin, and the enemy pawn is
           on the enemy's side of the pin.
        2) Same as (1), but reversed.
-       3) The enemy pawn is on both sides of the pin.
+       3) The enemy pawn is on both sides of the pin, but the en passant
+          square isn't intersected by the "pin ray".
 
        We don't have to check if our pawn is on both sides of the pin (see
        the use of `pin_mask`). This function checks for the special case of
        en passant, since it is the only kind of move where we capture a piece
        by moving to a square that is not occupied by that piece. *)
     let en_passant sq ep diag = I.read () >>|
-      fun {king_slide; enemy_slide; _} -> Bb.(
-        let sq = !!sq and ep = !!ep in
+      fun {pos; king_slide; enemy_slide; _} ->
+        let pw =
+          (* Get the position of the pawn which made a double advance. *)
+          let rank, file = Square.decomp ep in
+          match pos.active with
+          | Piece.White -> Square.create_exn ~rank:(rank - 1) ~file
+          | Piece.Black -> Square.create_exn ~rank:(rank + 1) ~file in
+        let open Bb in
+        let sq = !!sq and pw = !!pw and ep = !!ep in
         let sq_king  = (sq & king_slide)  = sq
         and sq_enemy = (sq & enemy_slide) = sq
+        and pw_king  = (pw & king_slide)  = pw
+        and pw_enemy = (pw & enemy_slide) = pw
         and ep_king  = (ep & king_slide)  = ep
         and ep_enemy = (ep & enemy_slide) = ep in
-        if (ep_king && ep_enemy)
-        || (sq_king && ep_enemy)
-        || (ep_king && sq_enemy)
-        then diag else diag + ep)
+        if (sq_king && pw_enemy)
+        || (pw_king && sq_enemy)
+        || (pw_king && pw_enemy && not (ep_king || ep_enemy))
+        then diag else diag + ep
 
     let capture sq = I.read () >>= fun {pos; enemy_board; _} ->
       let open Bb.Syntax in
@@ -679,9 +700,8 @@ module Moves = struct
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
-  let pin_mask sq = I.read () >>|
-    fun {king_slide; enemy_slide; pinned; _} ->
-    Bb.(if sq @ pinned then king_slide & enemy_slide else full)
+  let pin_mask sq = I.read () >>| fun {pinned; pin_mask; _} ->
+    Bb.(if sq @ pinned then pin_mask else full)
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
   let check_mask = I.read () >>| Info.check_mask
