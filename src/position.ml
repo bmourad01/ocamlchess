@@ -491,6 +491,7 @@ module Moves = struct
   module Info = struct
     type t = {
       pos : T.t;
+      king_sq : Square.t;
       occupied : Bb.t;
       active_board : Bb.t;
       enemy_board : Bb.t;
@@ -580,6 +581,7 @@ module Moves = struct
           | _ -> acc) in
     Info.Fields.create
       ~pos
+      ~king_sq
       ~occupied
       ~active_board
       ~enemy_board
@@ -619,7 +621,7 @@ module Moves = struct
        En passant moves arise rarely across all chess positions, so we can
        do a bit of heavy calculation here. *)
     let en_passant sq ep diag = I.read () >>|
-      fun {pos; occupied; enemy_pieces; _} ->
+      fun {pos; king_sq; occupied; enemy_pieces; _} ->
       (* Get the position of the pawn which made a double advance. *)
       let pw =
         let rank, file = Square.decomp ep in
@@ -629,8 +631,6 @@ module Moves = struct
       let open Bb in
       (* Remove our pawn and the captured pawn from the board. *)
       let occupied = occupied -- sq -- pw in
-      let king_sq =
-        List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
       let init = diag + !!ep and finish = ident in
       List.fold_until enemy_pieces ~init ~finish ~f:(fun acc (sq, k) ->
           (* Check if an appropriate diagonal attack from the king would reach
