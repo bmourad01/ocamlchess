@@ -65,6 +65,10 @@ module Color = struct
   let to_int c = (Obj.magic (Obj.repr c) : int)
   let opposite_int c = to_int c lxor 1
   let opposite c = ((Obj.magic @@ opposite_int c) : t)
+
+  let to_string_hum = function
+    | White -> "white"
+    | Black -> "black"
 end
 
 type kind = Pawn | Knight | Bishop | Rook | Queen | King
@@ -88,6 +92,14 @@ module Kind = struct
 
   let of_int i = Option.try_with @@ fun () -> of_int_exn i
   let to_int k = (Obj.magic (Obj.repr k) : int)
+
+  let to_string_hum = function
+    | Pawn -> "pawn"
+    | Knight -> "knight"
+    | Bishop -> "bishop"
+    | Rook -> "rook"
+    | Queen -> "queen"
+    | King -> "king"
 end
 
 module T = struct

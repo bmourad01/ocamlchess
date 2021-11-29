@@ -56,6 +56,10 @@ val halfmove : t -> int
 (** [fullmove pos] returns then number of full moves that have been made. *)
 val fullmove : t -> int
 
+(** [all_board pos] returns the bitboard of all occupied squares for position
+    [pos]. *)
+val all_board : t -> Bitboard.t  
+
 (** [board_of_color pos c] returns the bitboard of color [c] from position
     [pos]. *)
 val board_of_color : t -> Piece.color -> Bitboard.t

@@ -42,10 +42,13 @@ module Color : sig
 
   (** [opposite c] returns the opposite color of [c]. *)
   val opposite : t -> t
-    
+
   (** [opposite_int c] returns the integer representation of the opposite
       color of [c]. *)
   val opposite_int : t -> int
+
+  (** [to_string_hum c] returns the human-readable string of color [c]. *)
+  val to_string_hum : t -> string
 end
 
 (** The kind of a piece *)
@@ -88,6 +91,9 @@ module Kind : sig
 
   (** [to_int p] returns the integer associated with piece [p]. *)
   val to_int : t -> int
+
+  (** [to_string_hum k] returns the human-readable string of kind [k]. *)
+  val to_string_hum : t -> string
 end
 
 (** Representation of a Chess piece as an unboxed integer, which includes its
