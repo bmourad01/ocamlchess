@@ -495,12 +495,11 @@ module Moves = struct
       active_board : Bb.t;
       enemy_board : Bb.t;
       enemy_attacks : Bb.t;
-      king_slide : Bb.t;
-      enemy_slide : Bb.t;
       pinned : Bb.t;
       num_checkers : int;
       check_mask : Bb.t;
       pin_mask : Bb.t;
+      enemy_pieces : (Square.t * Piece.kind) list;
     } [@@deriving fields]
   end
 
@@ -518,16 +517,30 @@ module Moves = struct
        would be illegal for the king to attack those squares. *)
     let enemy_attacks =
       Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
-    let king_slide, enemy_slide, pinned =
-      (* Calculate the intersection of the following bitboards:
-         1) The rays of sliding moves that move outward from the king's square.
-         2) All sliding attacks from enemy pieces.
-         If a piece that is not the king is in this intersection, then it is
+    let enemy_pieces = find_color pos enemy in
+    let pinned =
+      (* For each enemy sliding piece, calculate its attack set. Then,
+         intersect it with the same attack set from our king's square.
+         Then, intersect with the squares between the sliding piece and our
+         king. Any of our pieces that are in this intersection are thus
          pinned. *)
-      let king_slide = Pre.queen king_sq occupied in
-      let enemy_slide = Attacks.sliding pos enemy ~ignore_same:false in
-      let pinned = king_slide & enemy_slide & (active_board -- king_sq) in
-      king_slide, enemy_slide, pinned in
+      let mask = active_board -- king_sq in
+      List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
+          let mask = mask & Pre.between king_sq sq in
+          match k with
+          | Piece.Bishop ->
+            let pre = Pre.bishop sq occupied in
+            let pre' = Pre.bishop king_sq occupied in
+            acc + (pre & pre' & mask)
+          | Piece.Rook ->
+            let pre = Pre.rook sq occupied in
+            let pre' = Pre.rook king_sq occupied in
+            acc + (pre & pre' & mask)
+          | Piece.Queen ->
+            let pre = Pre.queen sq occupied in
+            let pre' = Pre.queen king_sq occupied in
+            acc + (pre & pre' & mask)
+          | _ -> acc) in
     (* Attacks of all piece kinds, starting from the king, intersected with the
        squares occupied by enemy pieces. *)
     let checkers =
@@ -559,12 +572,11 @@ module Moves = struct
       else Bb.full in
     let pin_mask =
       let occupied = occupied - pinned in
-      let king_slide = Pre.queen king_sq occupied in
-      find_color pos enemy |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
-          match k with
-          | Piece.Bishop -> acc + (Pre.bishop sq occupied & king_slide)
-          | Piece.Rook -> acc + (Pre.rook sq occupied & king_slide)
-          | Piece.Queen -> acc + (Pre.queen sq occupied & king_slide)
+      let mask = Pre.queen king_sq occupied in
+      List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) -> match k with
+          | Piece.Bishop -> acc + (Pre.bishop sq occupied & mask)
+          | Piece.Rook -> acc + (Pre.rook sq occupied & mask)
+          | Piece.Queen -> acc + (Pre.queen sq occupied & mask)
           | _ -> acc) in
     Info.Fields.create
       ~pos
@@ -572,12 +584,11 @@ module Moves = struct
       ~active_board
       ~enemy_board
       ~enemy_attacks
-      ~king_slide
-      ~enemy_slide
       ~pinned
       ~num_checkers
       ~check_mask
       ~pin_mask
+      ~enemy_pieces
 
   (* I for Info *)
   module I = Monad.Reader.Make(Info)(Monad.Ident)
@@ -601,39 +612,34 @@ module Moves = struct
         !!(Square.create_exn ~rank:Square.Rank.five ~file) - occupied
       | _ -> Bb.empty
 
-    (* We need to check if an en passant capture will lead to a discovery.
-       There are the following scenarios:
+    (* Check if our pawn or the captured pawn are along a pin ray. If so,
+       then this capture would be illegal, since it would lead to a discovery
+       on the king.
 
-       1) Our pawn is on the king's side of the pin, and the enemy pawn is
-          on the enemy's side of the pin.
-       2) Same as (1), but reversed.
-       3) The enemy pawn is on both sides of the pin, but the en passant
-          square isn't intersected by the "pin ray".
-
-       We don't have to check if our pawn is on both sides of the pin (see
-       the use of `pin_mask`). This function checks for the special case of
-       en passant, since it is the only kind of move where we capture a piece
-       by moving to a square that is not occupied by that piece. *)
+       En passant moves arise rarely across all chess positions, so we can
+       do a bit of heavy calculation here. *)
     let en_passant sq ep diag = I.read () >>|
-      fun {pos; king_slide; enemy_slide; _} ->
-        let pw =
-          (* Get the position of the pawn which made a double advance. *)
-          let rank, file = Square.decomp ep in
-          match pos.active with
-          | Piece.White -> Square.create_exn ~rank:(rank - 1) ~file
-          | Piece.Black -> Square.create_exn ~rank:(rank + 1) ~file in
-        let open Bb in
-        let sq = !!sq and pw = !!pw and ep = !!ep in
-        let sq_king  = (sq & king_slide)  = sq
-        and sq_enemy = (sq & enemy_slide) = sq
-        and pw_king  = (pw & king_slide)  = pw
-        and pw_enemy = (pw & enemy_slide) = pw
-        and ep_king  = (ep & king_slide)  = ep
-        and ep_enemy = (ep & enemy_slide) = ep in
-        if (sq_king && pw_enemy)
-        || (pw_king && sq_enemy)
-        || (pw_king && pw_enemy && not (ep_king || ep_enemy))
-        then diag else diag + ep
+      fun {pos; occupied; enemy_pieces; _} ->
+      (* Get the position of the pawn which made a double advance. *)
+      let pw =
+        let rank, file = Square.decomp ep in
+        match pos.active with
+        | Piece.White -> Square.create_exn ~rank:(rank - 1) ~file
+        | Piece.Black -> Square.create_exn ~rank:(rank + 1) ~file in
+      let open Bb in
+      (* Remove our pawn and the captured pawn from the board. *)
+      let occupied = occupied -- sq -- pw in
+      let king_sq =
+        List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
+      let init = diag + !!ep and finish = ident in
+      List.fold_until enemy_pieces ~init ~finish ~f:(fun acc (sq, k) ->
+          (* Check if an appropriate diagonal attack from the king would reach
+             that corresponding piece. *)
+          match k with
+          | Piece.Bishop when sq @ (Pre.bishop king_sq occupied) -> Stop diag
+          | Piece.Rook when sq @ (Pre.rook king_sq occupied) -> Stop diag
+          | Piece.Queen when sq @ (Pre.queen king_sq occupied) -> Stop diag
+          | _ -> Continue acc)
 
     let capture sq = I.read () >>= fun {pos; enemy_board; _} ->
       let open Bb.Syntax in
