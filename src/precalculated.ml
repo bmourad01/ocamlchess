@@ -246,9 +246,6 @@ let castle =
           if mem x c s then b + b' else b)) in
   fun rights c s -> tbl.(to_int @@ inter rights @@ singleton c s)
 
-module Between = struct
-end
-
 let between =
   let tbl =
     Array.init Square.count ~f:(fun i ->
