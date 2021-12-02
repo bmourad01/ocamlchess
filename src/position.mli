@@ -201,5 +201,6 @@ module Attacks : sig
 end
 
 (** [legal_moves pos] returns a list of move-position pairs, which represents
-    all of the legal moves for the active color of position [pos]. *)
+    all of the legal moves for the active color of position [pos]. It is
+    assumed that [pos] is reachable from the starting position. *)
 val legal_moves : t -> (Move.t * t) list
