@@ -113,11 +113,12 @@ module Fen : sig
 
   (** [of_string_exn s] attempts to parse a FEN string [s] into a position.
       Raises [Invalid_argument] if [s] is not a syntactically valid FEN
-      string. *)
+      string. The resulting position is not guaranteed to be legal. *)
   val of_string_exn : string -> t
 
   (** [of_string_exn s] attempts to parse a FEN string [s] into a position.
-      Returns [None] if [s] is not a syntactically valid FEN string. *)
+      Returns [None] if [s] is not a syntactically valid FEN string. The
+      resulting position is not guaranteed to be legal. *)
   val of_string : string -> t option
 
   (** [to_string fen] returns a string representation of [fen]. *)
