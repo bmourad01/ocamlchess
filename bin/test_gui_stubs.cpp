@@ -32,16 +32,17 @@ extern "C" {
   value ml_init_fonts(value dummy) {
     CAMLparam1(dummy);
     CAMLlocal1(result);
-    result = Val_bool(true);
+    
     if (!_piece_font.loadFromFile(_piece_font_filename)) {
       fprintf(stderr, "couldn't load font %s\n", _piece_font_filename);
-      result = Val_bool(false);
+      CAMLreturn(Val_bool(false));
     }
     if (!_text_font.loadFromFile(_text_font_filename)) {
       fprintf(stderr, "couldn't load font %s\n", _text_font_filename);
-      result = Val_bool(false);
+      CAMLreturn(Val_bool(false));
     }
-    CAMLreturn(result);
+    
+    CAMLreturn(Val_bool(true));
   }
 
   static void sfml_finalize_window(value window) {
@@ -68,13 +69,14 @@ extern "C" {
     CAMLparam3(w, h, name);
     CAMLlocal1(window);
     
-    int width = Int_val(w);
-    int height = Int_val(h);
-    const char *name_ptr = String_val(name);
+    auto sf_window =
+        new sf::RenderWindow(sf::VideoMode(Int_val(w), Int_val(h)),
+                             String_val(name),
+                             sf::Style::Titlebar | sf::Style::Close);
     
-    auto sf_window = new sf::RenderWindow(sf::VideoMode(width, height), name_ptr);
     window = caml_alloc_custom(&sfml_window_custom_ops,
                                sizeof(sf::RenderWindow *), 0, 1);
+    
     Sfml_window_val(window) = sf_window;
     CAMLreturn(window);
   }
