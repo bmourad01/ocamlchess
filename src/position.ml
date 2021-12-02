@@ -172,43 +172,22 @@ module Fen = struct
       else fullmove
     with Failure _ -> invalid_arg @@ sprintf "Invalid halfmove count '%s'" s
 
-  (* Reject positions that are impossible to arise from any game. *)
-  let validate pos =
-    let white_kings = Bb.(count (pos.king & pos.white)) in
-    if white_kings < 1 then
-      invalid_arg "Piece placement is missing a white king"
-    else if white_kings > 1 then
-      invalid_arg "Piece placement has more than one white king";
-    let white_pawns = Bb.(count (pos.pawn & pos.white)) in
-    if white_pawns > 8 then
-      invalid_arg "Piece placement has more than eight white pawns"; 
-    let black_kings = Bb.(count (pos.king & pos.black)) in
-    if black_kings < 1 then
-      invalid_arg "Piece placement is missing a black king"
-    else if black_kings > 1 then
-      invalid_arg "Piece placement has more than one black king";
-    let black_pawns = Bb.(count (pos.pawn & pos.black)) in
-    if black_pawns > 8 then
-      invalid_arg "Piece placement has more than eight black pawns"
-
-  let of_string_exn ?(reject_invalid = false) s =
+  let of_string_exn s =
     match String.split s ~on:' ' with
     | [placement; active; castle; en_passant; halfmove; fullmove] ->
       let white, black, pawn, knight, bishop, rook, queen, king =
         parse_placement placement in
-      let pos = Fields.create
-          ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
-          ~active:(parse_active active)
-          ~castle:(parse_castle castle)
-          ~en_passant:(parse_en_passant en_passant)
-          ~halfmove:(parse_halfmove halfmove)
-          ~fullmove:(parse_fullmove fullmove) in
-      if reject_invalid then validate pos; pos
+      Fields.create
+        ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
+        ~active:(parse_active active)
+        ~castle:(parse_castle castle)
+        ~en_passant:(parse_en_passant en_passant)
+        ~halfmove:(parse_halfmove halfmove)
+        ~fullmove:(parse_fullmove fullmove)
     | _ -> invalid_arg @@
       sprintf "Invalid number of sections in FEN string '%s'" s
 
-  let of_string ?(reject_invalid = false) s =
-    Option.try_with @@ fun () -> of_string_exn s ~reject_invalid
+  let of_string s = Option.try_with @@ fun () -> of_string_exn s
 
   let string_of_placement pos =
     let rec aux rank file skip acc =

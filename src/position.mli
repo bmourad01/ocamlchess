@@ -111,17 +111,14 @@ module Fen : sig
   (** String representation of the starting position. *)
   val start : string
 
-  (** [of_string_exn s ~reject_invalid] attempts to parse a FEN string [s] into
-      a valid position. Raises [Invalid_argument] if [s] is not a syntactically
-      valid FEN string. If [reject_invalid] is [true], then illegal positions
-      will raise [Invalid_argument]. By default, it is [false]. *)
-  val of_string_exn : ?reject_invalid:bool -> string -> t
+  (** [of_string_exn s] attempts to parse a FEN string [s] into a position.
+      Raises [Invalid_argument] if [s] is not a syntactically valid FEN
+      string. *)
+  val of_string_exn : string -> t
 
-  (** [of_string_exn s] attempts to parse a FEN string [s] into a valid
-      representation. Returns [None] if [s] is not a syntactically valid FEN
-      string. If [reject_invalid] is [true], then illegal positions will return
-      [None]. By default, it is [false]. *)
-  val of_string : ?reject_invalid:bool -> string -> t option
+  (** [of_string_exn s] attempts to parse a FEN string [s] into a position.
+      Returns [None] if [s] is not a syntactically valid FEN string. *)
+  val of_string : string -> t option
 
   (** [to_string fen] returns a string representation of [fen]. *)
   val to_string : t -> string
