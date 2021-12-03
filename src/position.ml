@@ -550,9 +550,15 @@ module Moves = struct
       let occupied = occupied - pinned in
       let mask = Pre.queen king_sq occupied in
       List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) -> match k with
-          | Piece.Bishop -> acc + ((Pre.bishop sq occupied ++ sq) & mask)
-          | Piece.Rook -> acc + ((Pre.rook sq occupied ++ sq) & mask)
-          | Piece.Queen -> acc + ((Pre.queen sq occupied ++ sq) & mask)
+          | Piece.Bishop ->
+            let b = Pre.between king_sq sq in
+            acc + (((Pre.bishop sq occupied & b) ++ sq) & mask)
+          | Piece.Rook ->
+            let b = Pre.between king_sq sq in
+            acc + (((Pre.rook sq occupied & b) ++ sq) & mask)
+          | Piece.Queen ->
+            let b = Pre.between king_sq sq in
+            acc + (((Pre.queen sq occupied & b) ++ sq) & mask)
           | _ -> acc) in
     Info.Fields.create
       ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks ~pinned
