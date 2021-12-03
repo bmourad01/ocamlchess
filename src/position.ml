@@ -694,89 +694,88 @@ end = struct
     end >>= exec k
 end
 
-(* Populates the relevant info about our position for generating moves. *)
-let create_move_info pos =
-  let open Bb.Syntax in
-  (* Most general info. *)
-  let king_sq =
-    List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
-  let enemy = Piece.Color.opposite pos.active in
-  let occupied = all_board pos in
-  let active_board = active_board pos in
-  let enemy_board = board_of_color pos enemy in
-  (* We're considering attacked squares only for king moves. These squares
-     should include enemy pieces which may block an enemy attack, since it
-     would be illegal for the king to attack those squares. *)
-  let enemy_attacks =
-    Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
-  (* For each enemy sliding piece, calculate its attack set. Then,
-     intersect it with the same attack set from our king's square.
-     Then, intersect with the squares between the sliding piece and our
-     king. Any of our pieces that are in this intersection are thus
-     pinned. *)
-  let enemy_pieces = find_color pos enemy in
-  let pinned =
-    let mask = active_board -- king_sq in
-    List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
-        let mask = mask & Pre.between king_sq sq in
-        match k with
-        | Piece.Bishop ->
-          let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
-          acc + (b & k & mask)
-        | Piece.Rook ->
-          let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
-          acc + (r & k & mask)
-        | Piece.Queen ->
-          let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
-          acc + (q & k & mask)
-        | _ -> acc) in
-  (* Attacks of all piece kinds, starting from the king, intersected with the
-     squares occupied by enemy pieces. *)
-  let checkers =
-    let p =
-      Pre.pawn_capture king_sq pos.active & pos.pawn & enemy_board in
-    let n = Pre.knight king_sq & pos.knight & enemy_board in
-    let bishop = Pre.bishop king_sq occupied in
-    let rook = Pre.rook king_sq occupied in
-    let b = bishop & pos.bishop & enemy_board in
-    let r = rook & pos.rook & enemy_board in
-    let q = (bishop + rook) & pos.queen & enemy_board in
-    let k = Pre.king king_sq & pos.king & enemy_board in
-    p + n + b + r + q + k in
-  (* Number of checkers is important for how we can decide to get out of
-     check. *)
-  let num_checkers = Bb.count checkers in
-  let check_mask =
-    if num_checkers = 1 then
-      (* Test if the checker is a sliding piece. If so, then we can try to
-         block the attack. Otherwise, they may only be captured. *)
-      Bb.fold_until checkers ~init:checkers ~finish:ident
-        ~f:(fun acc sq -> match which_kind pos sq with
-            | Some Piece.(Bishop | Rook | Queen) ->
-              Stop (Pre.between king_sq sq + acc)
-            | _ -> Continue acc)
-    else Bb.full in
-  (* Get the union of all "pin rays" while ignoring the pinned pieces. *)
-  let pin_mask =
-    let occupied = occupied - pinned in
-    let mask = Pre.queen king_sq occupied in
-    List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) -> match k with
-        | Piece.Bishop ->
-          let b = Pre.between king_sq sq in
-          acc + (((Pre.bishop sq occupied & b) ++ sq) & mask)
-        | Piece.Rook ->
-          let b = Pre.between king_sq sq in
-          acc + (((Pre.rook sq occupied & b) ++ sq) & mask)
-        | Piece.Queen ->
-          let b = Pre.between king_sq sq in
-          acc + (((Pre.queen sq occupied & b) ++ sq) & mask)
-        | _ -> acc) in
-  Info.Fields.create
-    ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks ~pinned
-    ~num_checkers ~check_mask ~pin_mask ~enemy_pieces
-
 let legal_moves pos =
-  let info = create_move_info pos in
+  (* Populate info needed for generating legal moves. *)
+  let info =
+    let open Bb.Syntax in
+    (* Most general info. *)
+    let king_sq =
+      List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
+    let enemy = Piece.Color.opposite pos.active in
+    let occupied = all_board pos in
+    let active_board = active_board pos in
+    let enemy_board = board_of_color pos enemy in
+    (* We're considering attacked squares only for king moves. These squares
+       should include enemy pieces which may block an enemy attack, since it
+       would be illegal for the king to attack those squares. *)
+    let enemy_attacks =
+      Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
+    (* For each enemy sliding piece, calculate its attack set. Then,
+       intersect it with the same attack set from our king's square.
+       Then, intersect with the squares between the sliding piece and our
+       king. Any of our pieces that are in this intersection are thus
+       pinned. *)
+    let enemy_pieces = find_color pos enemy in
+    let pinned =
+      let mask = active_board -- king_sq in
+      List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
+          let mask = mask & Pre.between king_sq sq in
+          match k with
+          | Piece.Bishop ->
+            let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
+            acc + (b & k & mask)
+          | Piece.Rook ->
+            let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
+            acc + (r & k & mask)
+          | Piece.Queen ->
+            let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
+            acc + (q & k & mask)
+          | _ -> acc) in
+    (* Attacks of all piece kinds, starting from the king, intersected with the
+       squares occupied by enemy pieces. *)
+    let checkers =
+      let p =
+        Pre.pawn_capture king_sq pos.active & pos.pawn & enemy_board in
+      let n = Pre.knight king_sq & pos.knight & enemy_board in
+      let bishop = Pre.bishop king_sq occupied in
+      let rook = Pre.rook king_sq occupied in
+      let b = bishop & pos.bishop & enemy_board in
+      let r = rook & pos.rook & enemy_board in
+      let q = (bishop + rook) & pos.queen & enemy_board in
+      let k = Pre.king king_sq & pos.king & enemy_board in
+      p + n + b + r + q + k in
+    (* Number of checkers is important for how we can decide to get out of
+       check. *)
+    let num_checkers = Bb.count checkers in
+    let check_mask =
+      if num_checkers = 1 then
+        (* Test if the checker is a sliding piece. If so, then we can try to
+           block the attack. Otherwise, they may only be captured. *)
+        Bb.fold_until checkers ~init:checkers ~finish:ident
+          ~f:(fun acc sq -> match which_kind pos sq with
+              | Some Piece.(Bishop | Rook | Queen) ->
+                Stop (Pre.between king_sq sq + acc)
+              | _ -> Continue acc)
+      else Bb.full in
+    (* Get the union of all "pin rays" while ignoring the pinned pieces. *)
+    let pin_mask =
+      let occupied = occupied - pinned in
+      let mask = Pre.queen king_sq occupied in
+      List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) -> match k with
+          | Piece.Bishop ->
+            let b = Pre.between king_sq sq in
+            acc + (((Pre.bishop sq occupied & b) ++ sq) & mask)
+          | Piece.Rook ->
+            let b = Pre.between king_sq sq in
+            acc + (((Pre.rook sq occupied & b) ++ sq) & mask)
+          | Piece.Queen ->
+            let b = Pre.between king_sq sq in
+            acc + (((Pre.queen sq occupied & b) ++ sq) & mask)
+          | _ -> acc) in
+    Info.Fields.create
+      ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks ~pinned
+      ~num_checkers ~check_mask ~pin_mask ~enemy_pieces
+  in
   find_active pos |> List.map ~f:(fun (sq, k) ->
       Monad.Reader.run (Moves.piece sq k) info) |> List.concat
 
