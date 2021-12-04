@@ -783,11 +783,11 @@ let legal_moves pos =
       if num_checkers = 1 then
         (* Test if the checker is a sliding piece. If so, then we can try to
            block the attack. Otherwise, they may only be captured. *)
-        Bb.fold_until checkers ~init:checkers ~finish:ident
-          ~f:(fun acc sq -> match which_kind pos sq with
-              | Some Piece.(Bishop | Rook | Queen) ->
-                Stop (Pre.between king_sq sq + acc)
-              | _ -> Continue acc)
+        let sq = Bb.first_set_exn checkers in
+        match which_kind pos sq with
+        | Some Piece.(Bishop | Rook | Queen) -> checkers + Pre.between king_sq sq
+        | Some _ -> checkers
+        | None -> assert false
       else Bb.full in
     Info.Fields.create
       ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 

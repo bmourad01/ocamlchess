@@ -109,7 +109,7 @@ let first_set_exn ?(rev = false) b =
     ~finish:(fun () -> invalid_arg "Find first set on empty bitboard")
 
 let first_set ?(rev = false) b =
-  Option.try_with (fun () -> first_set_exn b ~rev)
+  Option.try_with @@ fun () -> first_set_exn b ~rev
 
 (* Infix operators. *)
 
