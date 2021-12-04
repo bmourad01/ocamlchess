@@ -378,10 +378,10 @@ end = struct
 
   let clear_white_castling_rights =
     P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
-  
+
   let clear_black_castling_rights =
     P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
-  
+
   let white_kingside_castle =
     clear_square Square.h1 >>
     set_square Square.f1 ~p:Piece.white_rook >>
@@ -511,10 +511,9 @@ module Info = struct
     active_board : Bb.t;
     enemy_board : Bb.t;
     enemy_attacks : Bb.t;
-    pinned : Bb.t;
+    pinners : (Square.t, Bb.t) Hashtbl.t;
     num_checkers : int;
     check_mask : Bb.t;
-    pin_mask : Bb.t;
     enemy_pieces : (Square.t * Piece.kind) list;
   } [@@deriving fields]
 end
@@ -647,8 +646,15 @@ end = struct
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
-  let pin_mask sq = I.read () >>| fun {pinned; pin_mask; _} ->
-    Bb.(if sq @ pinned then pin_mask else full)
+  let pin_mask sq = I.read () >>| fun {king_sq; pinners; _} ->
+    match Hashtbl.find pinners sq with
+    | None -> Bb.full
+    | Some p ->
+      if Bb.count p > 1 then Bb.empty
+      else
+        let sq' = Bb.first_set_exn p in
+        let mask = Pre.between king_sq sq' in
+        Bb.(mask ++ sq')
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
   let check_mask = I.read () >>| Info.check_mask
@@ -735,21 +741,28 @@ let legal_moves pos =
        king. Any of our pieces that are in this intersection are thus
        pinned. *)
     let enemy_pieces = find_color pos enemy in
-    let pinned =
+    let pinners =
+      let pinners = Hashtbl.create (module Square) in
+      let update sq p k mask = match Bb.first_set (p & k & mask) with
+        | None -> ()
+        | Some sq' -> Hashtbl.change pinners sq' ~f:(function
+            | None -> Some (!!sq)
+            | Some b -> Some (b ++ sq)) in
       let mask = active_board -- king_sq in
-      List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
+      List.iter enemy_pieces ~f:(fun (sq, k) ->
           let mask = mask & Pre.between king_sq sq in
           match k with
           | Piece.Bishop ->
             let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
-            acc + (b & k & mask)
+            update sq b k mask
           | Piece.Rook ->
             let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
-            acc + (r & k & mask)
+            update sq r k mask
           | Piece.Queen ->
             let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
-            acc + (q & k & mask)
-          | _ -> acc) in
+            update sq q k mask
+          | _ -> ());
+      pinners in
     (* Attacks of all piece kinds, starting from the king, intersected with the
        squares occupied by enemy pieces. *)
     let checkers =
@@ -776,24 +789,9 @@ let legal_moves pos =
                 Stop (Pre.between king_sq sq + acc)
               | _ -> Continue acc)
       else Bb.full in
-    (* Get the union of all "pin rays" while ignoring the pinned pieces. *)
-    let pin_mask =
-      let occupied = occupied - pinned in
-      let mask = Pre.queen king_sq occupied in
-      List.fold enemy_pieces ~init:Bb.empty ~f:(fun acc (sq, k) -> match k with
-          | Piece.Bishop ->
-            let b = Pre.between king_sq sq in
-            acc + (((Pre.bishop sq occupied & b) ++ sq) & mask)
-          | Piece.Rook ->
-            let b = Pre.between king_sq sq in
-            acc + (((Pre.rook sq occupied & b) ++ sq) & mask)
-          | Piece.Queen ->
-            let b = Pre.between king_sq sq in
-            acc + (((Pre.queen sq occupied & b) ++ sq) & mask)
-          | _ -> acc) in
     Info.Fields.create
-      ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks ~pinned
-      ~num_checkers ~check_mask ~pin_mask ~enemy_pieces
+      ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
+      ~pinners ~num_checkers ~check_mask ~enemy_pieces
   in
   find_active pos |> List.map ~f:(fun (sq, k) ->
       Monad.Reader.run (Moves.piece sq k) info) |> List.concat

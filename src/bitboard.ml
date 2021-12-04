@@ -104,6 +104,13 @@ let find ?(rev = false) b ~f = fold_until b ~init:None
     ~f:(fun acc sq -> if f sq then Stop (Some sq) else Continue acc)
     ~finish:ident ~rev
 
+let first_set_exn ?(rev = false) b =
+  fold_until b ~rev ~init:() ~f:(fun _ sq -> Stop sq)
+    ~finish:(fun () -> invalid_arg "Find first set on empty bitboard")
+
+let first_set ?(rev = false) b =
+  Option.try_with (fun () -> first_set_exn b ~rev)
+
 (* Infix operators. *)
 
 module Syntax = struct

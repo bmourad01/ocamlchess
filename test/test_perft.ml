@@ -38,6 +38,7 @@ let test_position_2 () =
     1, 48L;
     2, 2039L;
     3, 97_862L;
+    4, 4_085_603L;
   ] ~f:(fun (depth, expected) -> expect pos depth expected)
 
 let suite = "Test perft" >::: [

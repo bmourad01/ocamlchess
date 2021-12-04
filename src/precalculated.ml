@@ -251,30 +251,29 @@ let castle =
   fun rights c s -> tbl.(to_int @@ inter rights @@ singleton c s)
 
 let between =
-  let tbl =
-    Array.init Square.count ~f:(fun i ->
-        let sq = Square.of_int_exn i in
-        Array.init Square.count ~f:(fun i' ->
-            let open Bitboard in
-            (* Use the singleton bitboard of the target square as the
+  let tbl = Array.init Square.count ~f:(fun i ->
+      let sq = Square.of_int_exn i in
+      Array.init Square.count ~f:(fun i' ->
+          let open Bitboard in
+          (* Use the singleton bitboard of the target square as the
                blocker mask. *)
-            let s = !!Square.(of_int_exn i') in
-            let straight m =
-              let b = rook sq s & m in
-              if (b & s) <> empty then b - s else empty in
-            let diagonal m =
-              let b = bishop sq s & m in
-              if (b & s) <> empty then b - s else empty in
-            (* Use the pre-generated directional masks. *)
-            let east = straight Mask.east.(i) in
-            let west = straight Mask.west.(i) in
-            let north = straight Mask.north.(i) in
-            let south = straight Mask.south.(i) in
-            let neast = diagonal Mask.neast.(i) in
-            let nwest = diagonal Mask.nwest.(i) in
-            let seast = diagonal Mask.seast.(i) in
-            let swest = diagonal Mask.swest.(i) in
-            (* We're getting the union of all directions, even though only
+          let s = !!Square.(of_int_exn i') in
+          let straight m =
+            let b = rook sq s & m in
+            if (b & s) <> empty then b - s else empty in
+          let diagonal m =
+            let b = bishop sq s & m in
+            if (b & s) <> empty then b - s else empty in
+          (* Use the pre-generated directional masks. *)
+          let east = straight Mask.east.(i) in
+          let west = straight Mask.west.(i) in
+          let north = straight Mask.north.(i) in
+          let south = straight Mask.south.(i) in
+          let neast = diagonal Mask.neast.(i) in
+          let nwest = diagonal Mask.nwest.(i) in
+          let seast = diagonal Mask.seast.(i) in
+          let swest = diagonal Mask.swest.(i) in
+          (* We're getting the union of all directions, even though only
                one of them will be valid. *)
-            east + west + north + south + neast + nwest + seast + swest)) in
+          east + west + north + south + neast + nwest + seast + swest)) in
   fun sq sq' -> Square.(tbl.(to_int sq).(to_int sq'))

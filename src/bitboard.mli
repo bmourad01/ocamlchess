@@ -151,6 +151,16 @@ val filter : t -> f:(Square.t -> bool) -> t
     square h8, otherwise from a1. *)
 val find : ?rev:bool -> t -> f:(Square.t -> bool) -> Square.t option
 
+(** [first_set_exn b] returns the first square [sq] of [b], if it exists.
+    Otherwise, [Invalid_argument] is raised. If [rev] is [true], then iteration
+    starts from square h8, otherwise from a1. *)
+val first_set_exn : ?rev:bool -> t -> Square.t
+
+(** [first_set b] returns the first square [sq] of [b], if it exists.
+    Otherwise, [None] is returned. If [rev] is [true], then iteration starts
+    from square h8, otherwise from a1. *)
+val first_set : ?rev:bool -> t -> Square.t option
+
 module Syntax : sig
   (** [x & y] is equivalent to [inter x y]. *)
   val (&) : t -> t -> t
