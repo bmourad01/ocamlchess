@@ -27,10 +27,14 @@ val queen : Square.t -> Bitboard.t -> Bitboard.t
     square [sq]. *)
 val king : Square.t -> Bitboard.t
 
-(** [castle rights c side] returns a bitboard of potentially valid castling
-    squares w.r.t. [rights] for color [c] and side [side]. *)
+(** [castle rights c side] returns the mask and corresponding squares,
+    respectively, for color [c] to castle on side [side], with respect to
+    rights [rights]. *)
 val castle :
-  Castling_rights.t -> Piece.color -> Castling_rights.side -> Bitboard.t
+  Castling_rights.t ->
+  Piece.color ->
+  Castling_rights.side ->
+  Bitboard.t * Bitboard.t
 
 (** [between sq sq'] returns a bitboard of all squares between [sq] and [sq']
     w.r.t. a sliding move. *)

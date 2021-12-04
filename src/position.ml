@@ -376,30 +376,41 @@ end = struct
 
   module CR = Castling_rights
 
-  let white_kingside_castle =
-    clear_square Square.h1 >> set_square Square.f1 ~p:Piece.white_rook >>
+  let clear_white_castling_rights =
     P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+  
+  let clear_black_castling_rights =
+    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+  
+  let white_kingside_castle =
+    clear_square Square.h1 >>
+    set_square Square.f1 ~p:Piece.white_rook >>
+    clear_white_castling_rights
 
   let white_queenside_castle =
-    clear_square Square.a1 >> set_square Square.d1 ~p:Piece.white_rook >>
-    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+    clear_square Square.a1 >>
+    set_square Square.d1 ~p:Piece.white_rook >>
+    clear_white_castling_rights
 
   let black_kingside_castle =
-    clear_square Square.h8 >> set_square Square.f8 ~p:Piece.black_rook >>
-    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+    clear_square Square.h8 >>
+    set_square Square.f8 ~p:Piece.black_rook >>
+    clear_black_castling_rights
 
   let black_queenside_castle =
-    clear_square Square.a8 >> set_square Square.d8 ~p:Piece.black_rook >>
-    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+    clear_square Square.a8 >>
+    set_square Square.d8 ~p:Piece.black_rook >>
+    clear_black_castling_rights
 
   (* If this move is actually a castling, then we need to move the rook
      as well as clear our rights. *)
-  let king_castled sq sq' = P.gets active >>= function
+  let king_moved_or_castled sq sq' = P.gets active >>= function
     | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
     | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
     | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
     | Piece.Black when Square.(sq = e8 && sq' = c8) -> black_queenside_castle
-    | _ -> P.return ()
+    | Piece.White -> clear_white_castling_rights
+    | Piece.Black -> clear_black_castling_rights
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
@@ -424,7 +435,7 @@ end = struct
 
   (* Handle castling-related details. *)
   let update_castle ?p sq sq' = handle_piece sq ?p >>= function
-    | Some p when Piece.is_king p -> king_castled sq sq'
+    | Some p when Piece.is_king p -> king_moved_or_castled sq sq'
     | Some p when Piece.is_rook p -> rook_moved sq >> rook_captured sq
     | Some _ -> rook_captured sq'
     | _ -> P.return ()
@@ -484,7 +495,8 @@ end = struct
     update_castle sq sq' ~p >>
     (* Move the piece. *)
     clear_square sq ~p >> clear_square sq' >>
-    do_promote promote ~p >>= fun p -> move_or_capture sq' ep ?p >>
+    do_promote promote ~p >>= fun p ->
+    move_or_capture sq' ep ?p >>
     (* Prepare for the next move. *)
     update_fullmove >> flip_active
 end
@@ -619,9 +631,16 @@ end = struct
       else
         let open Bb.Syntax in
         let c sq s =
-          let b =
-            Pre.castle pos.castle pos.active s - occupied - enemy_attacks in
-          if Bb.count b = 2 then !!sq else Bb.empty in
+          let m, b = Pre.castle pos.castle pos.active s in
+          (* Check the actual squares to move our pieces to. *)
+          let ok = Bb.count (b - occupied - enemy_attacks) = 2 in
+          let ok = match s with
+            | `king -> ok
+            | `queen ->
+              (* For queenside, the extra b-file square needs to be
+                 unoccupied, so check the mask. *)
+              ok && Bb.count (m - occupied) = 3 in
+          if ok then !!sq else Bb.empty in
         match pos.active with
         | Piece.White -> c Square.g1 `king + c Square.c1 `queen
         | Piece.Black -> c Square.g8 `king + c Square.c8 `queen

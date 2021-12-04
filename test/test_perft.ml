@@ -2,6 +2,9 @@ open Core_kernel
 open OUnit2
 open Chess
 
+(* The tests here can be found at:
+   https://www.chessprogramming.org/Perft_Results *)
+
 let rec perft pos depth =
   if depth <= 0 then 1L
   else
@@ -19,7 +22,6 @@ let expect pos depth expected =
 let test_starting_position () =
   let pos = Position.start in
   List.iter [
-    0, 1L;
     1, 20L;
     2, 400L;
     3, 8_902L;
@@ -29,8 +31,18 @@ let test_starting_position () =
     (* 7, 3_195_901_860L; *)
   ] ~f:(fun (depth, expected) -> expect pos depth expected)
 
+let test_position_2 () =
+  let pos = Position.Fen.of_string_exn
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1" in
+  List.iter [
+    1, 48L;
+    2, 2039L;
+    3, 97_862L;
+  ] ~f:(fun (depth, expected) -> expect pos depth expected)
+
 let suite = "Test perft" >::: [
     ("Starting position" >:: fun _ -> test_starting_position ());
+    ("Position 2" >:: fun _ -> test_position_2 ());
   ]
 
 let () = run_test_tt_main suite

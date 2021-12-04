@@ -234,16 +234,20 @@ let king sq = Simple.king.(Square.to_int sq)
 let castle =
   let open Bitboard in
   let open Castling_rights in
+  let wk = Square.(!!f1 + !!g1) in
+  let wq = Square.(!!b1 + !!c1 + !!d1) in
+  let bk = Square.(!!f8 + !!g8) in
+  let bq = Square.(!!b8 + !!c8 + !!d8) in
   let valid = [
-    Piece.White, `king,  Square.(!!f1 + !!g1);
-    Piece.White, `queen, Square.(!!c1 + !!d1);
-    Piece.Black, `king,  Square.(!!f8 + !!g8);
-    Piece.Black, `queen, Square.(!!c8 + !!d8);
+    Piece.White, `king,  (wk, wk);
+    Piece.White, `queen, (wq, wq -- Square.b1);
+    Piece.Black, `king,  (bk, bk);
+    Piece.Black, `queen, (bq, bq -- Square.b8);
   ] in
   let tbl = Array.init (1 lsl bits) ~f:(fun i ->
       let x = of_int_exn i in
-      List.fold valid ~init:empty ~f:(fun b (c, s, b') ->
-          if mem x c s then b + b' else b)) in
+      List.fold valid ~init:(empty, empty) ~f:(fun (m, b) (c, s, (m', b')) ->
+          if mem x c s then (m + m', b + b') else (m, b))) in
   fun rights c s -> tbl.(to_int @@ inter rights @@ singleton c s)
 
 let between =
