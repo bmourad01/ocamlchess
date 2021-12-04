@@ -525,7 +525,7 @@ module I = struct
 end
 
 module Moves : sig
-  val piece : Square.t -> Piece.kind -> (Move.t * t) list I.t
+  val go : (Move.t * t) list I.t
 end = struct
   open I.Syntax
 
@@ -712,11 +712,13 @@ end = struct
     | Piece.Queen -> queen sq
     | Piece.King -> king sq
 
-  let piece sq k = I.read () >>= fun {num_checkers; _} -> begin
-      (* If the king has more than one attacker, then it is the only piece
-         we can move. *)
-      if num_checkers > 1 then king sq else any sq k
-    end >>= exec k
+  let go = I.read () >>= fun {pos; king_sq; num_checkers; _} ->
+    (* If the king has more than one attacker, then it is the only piece
+       we can move. *)
+    if num_checkers > 1 then king king_sq >>= exec King
+    else
+      find_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
+          any sq k >>= exec k >>| fun moves -> moves @ acc)
 end
 
 let legal_moves pos =
@@ -793,7 +795,6 @@ let legal_moves pos =
       ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
       ~pinners ~num_checkers ~check_mask ~enemy_pieces
   in
-  find_active pos |> List.map ~f:(fun (sq, k) ->
-      Monad.Reader.run (Moves.piece sq k) info) |> List.concat
+  Monad.Reader.run Moves.go info
 
 include Comparable.Make(T)
