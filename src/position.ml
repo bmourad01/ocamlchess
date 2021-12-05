@@ -795,11 +795,8 @@ let legal_moves pos =
         | Some (Bishop | Rook | Queen) ->
           checkers + Pre.between king_sq sq, Bb.empty
         | Some Pawn ->
-          (* Edge case for being able to get out of check via en passant.
-             We don't need to explicitly check if it is a pawn checking us.
-             Instead, we will check if the en passant square exists at the
-             square "behind" it. If so, then it must have been a double pawn
-             push by the enemy. *)
+          (* Edge case for being able to get out of check via en passant
+             capture. *)
           let rank, file = Square.decomp sq in
           let ep = match enemy with
             | White -> Square.create ~rank:(pred rank) ~file
