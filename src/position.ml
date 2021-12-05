@@ -514,6 +514,7 @@ module Info = struct
     pinners : Bb.t Map.M(Square).t;
     num_checkers : int;
     check_mask : Bb.t;
+    en_passant_check_mask : Bb.t;
     enemy_pieces : (Square.t * Piece.kind) list;
   } [@@deriving fields]
 end
@@ -658,24 +659,10 @@ end = struct
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
   let check_mask ?(capture = Bb.empty) k = I.read () >>|
-    fun {pos = {active; en_passant; _}; num_checkers; check_mask; _} ->
+    fun {num_checkers; check_mask; en_passant_check_mask; _} ->
     if num_checkers <> 1 then check_mask
     else match k with
-      | Piece.Pawn ->
-        (* Edge case for being able to get out of check via en passant.
-           We don't need to explicitly check if it is a pawn checking us.
-           Instead, we will check if the en passant square exists at the
-           square "behind" it. If so, then it must have been a double pawn
-           push by the enemy. *)
-        let open Bb.Syntax in
-        let rank, file = Square.decomp @@ Bb.first_set_exn check_mask in
-        let sq' = match Piece.Color.opposite active with
-          | White -> Square.create ~rank:(pred rank) ~file
-          | Black -> Square.create ~rank:(succ rank) ~file in
-        Option.value_map sq' ~default:check_mask ~f:(fun sq' ->
-            if Option.exists en_passant ~f:(Square.equal sq') && sq' @ capture
-            then check_mask ++ sq'
-            else check_mask)
+      | Piece.Pawn -> Bb.(check_mask + (capture & en_passant_check_mask))
       | _ -> check_mask      
 
   (* It is technically illegal to actually capture the enemy king, so let's
@@ -799,21 +786,35 @@ let legal_moves pos =
     (* Number of checkers is important for how we can decide to get out of
        check. *)
     let num_checkers = Bb.count checkers in
-    let check_mask =
+    let check_mask, en_passant_check_mask =
       if num_checkers = 1 then
         (* Test if the checker is a sliding piece. If so, then we can try to
            block the attack. Otherwise, they may only be captured. *)
         let sq = Bb.first_set_exn checkers in
         match which_kind pos sq with
-        | Some (Bishop | Rook | Queen) -> checkers + Pre.between king_sq sq
-        | Some _ -> checkers
+        | Some (Bishop | Rook | Queen) ->
+          checkers + Pre.between king_sq sq, Bb.empty
+        | Some Pawn ->
+          (* Edge case for being able to get out of check via en passant.
+             We don't need to explicitly check if it is a pawn checking us.
+             Instead, we will check if the en passant square exists at the
+             square "behind" it. If so, then it must have been a double pawn
+             push by the enemy. *)
+          let rank, file = Square.decomp sq in
+          let ep = match enemy with
+            | White -> Square.create ~rank:(pred rank) ~file
+            | Black -> Square.create ~rank:(succ rank) ~file in
+          checkers, Option.value_map ep ~default:Bb.empty ~f:(fun ep ->
+              if Option.exists pos.en_passant ~f:(Square.equal ep)
+              then !!ep else Bb.empty)
+        | Some _ -> checkers, Bb.empty
         | None -> failwith @@
           (sprintf "Expected to find first set square in bitboard %016LX" @@
            Bb.to_int64 checkers)
-      else Bb.full in
+      else Bb.full, Bb.empty in
     Info.Fields.create
       ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
-      ~pinners ~num_checkers ~check_mask ~enemy_pieces
+      ~pinners ~num_checkers ~check_mask ~en_passant_check_mask ~enemy_pieces
   in
   Monad.Reader.run Moves.go info
 
