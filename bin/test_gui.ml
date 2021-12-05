@@ -39,6 +39,21 @@ let screen_to_sq window mx my =
       | Some _ as sq -> sq in
   loop_y 0
 
+let promote_prompt () =
+  eprintf "Choose promotion piece (n|b|r|q): %!"
+
+let rec promote () =
+  try
+    match In_channel.(input_line stdin) with
+    | Some "n" -> Piece.Knight
+    | Some "b" -> Piece.Bishop
+    | Some "r" -> Piece.Rook
+    | Some "q" -> Piece.Queen
+    | _ -> assert false
+  with _ ->
+    eprintf "Invalid promotion, try again: %!";
+    promote ()
+
 let poll window pos legal sel prev =
   match Window.poll_event window with
   | None -> pos, legal, sel, prev
@@ -59,6 +74,14 @@ let poll window pos legal sel prev =
         match move with
         | None -> pos, legal, sel, prev
         | Some (m, pos) ->
+          let m, pos = match Move.promote m with
+            | None -> m, pos
+            | Some _ ->
+              promote_prompt ();
+              let k = promote () in
+              List.find_exn moves ~f:(fun (m, _) ->
+                  Square.(sq = Move.dst m) &&
+                  Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)) in
           let legal = Position.legal_moves pos in
           pos, legal, None, Some m
 
