@@ -511,7 +511,7 @@ module Info = struct
     active_board : Bb.t;
     enemy_board : Bb.t;
     enemy_attacks : Bb.t;
-    pinners : (Square.t, Bb.t) Hashtbl.t;
+    pinners : Bb.t Map.M(Square).t;
     num_checkers : int;
     check_mask : Bb.t;
     enemy_pieces : (Square.t * Piece.kind) list;
@@ -564,7 +564,7 @@ end = struct
       let open Bb in
       (* Remove our pawn and the captured pawn from the board. *)
       let occupied = occupied -- sq -- pw in
-      let init = diag + !!ep and finish = ident in
+      let init = diag ++ ep and finish = ident in
       List.fold_until enemy_pieces ~init ~finish ~f:(fun acc (sq, k) ->
           (* Check if an appropriate diagonal attack from the king would reach
              that corresponding piece. *)
@@ -647,7 +647,7 @@ end = struct
 
   (* Use this mask to restrict the movement of pinned pieces. *)
   let pin_mask sq = I.read () >>| fun {king_sq; pinners; _} ->
-    match Hashtbl.find pinners sq with
+    match Map.find pinners sq with
     | None -> Bb.full
     | Some p ->
       if Bb.count p > 1 then Bb.empty
@@ -662,10 +662,13 @@ end = struct
     if num_checkers <> 1 then check_mask
     else match k with
       | Piece.Pawn ->
-        (* Edge case for being able to get out of check via en passant. *)
+        (* Edge case for being able to get out of check via en passant.
+           We don't need to explicitly check if it is a pawn checking us.
+           Instead, we will check if the en passant square exists at the
+           square "behind" it. If so, then it must have been a double pawn
+           push by the enemy. *)
         let open Bb.Syntax in
-        let sq = Bb.first_set_exn check_mask in
-        let rank, file = Square.decomp sq in
+        let rank, file = Square.decomp @@ Bb.first_set_exn check_mask in
         let sq' = match Piece.Color.opposite active with
           | White -> Square.create ~rank:(pred rank) ~file
           | Black -> Square.create ~rank:(succ rank) ~file in
@@ -760,27 +763,26 @@ let legal_moves pos =
        pinned. *)
     let enemy_pieces = find_color pos enemy in
     let pinners =
-      let pinners = Hashtbl.create (module Square) in
-      let update sq p k mask = match Bb.first_set (p & k & mask) with
-        | None -> ()
-        | Some sq' -> Hashtbl.change pinners sq' ~f:(function
+      let update pinners sq p k mask = match Bb.first_set (p & k & mask) with
+        | None -> pinners
+        | Some sq' -> Map.change pinners sq' ~f:(function
             | None -> Some (!!sq)
             | Some b -> Some (b ++ sq)) in
-      let mask = active_board -- king_sq in
-      List.iter enemy_pieces ~f:(fun (sq, k) ->
+      let mask = active_board -- king_sq
+      and init = Map.empty (module Square) in
+      List.fold enemy_pieces ~init ~f:(fun pinners (sq, k) ->
           let mask = mask & Pre.between king_sq sq in
           match k with
           | Piece.Bishop ->
             let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
-            update sq b k mask
+            update pinners sq b k mask
           | Piece.Rook ->
             let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
-            update sq r k mask
+            update pinners sq r k mask
           | Piece.Queen ->
             let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
-            update sq q k mask
-          | _ -> ());
-      pinners in
+            update pinners sq q k mask
+          | _ -> pinners) in
     (* Attacks of all piece kinds, starting from the king, intersected with the
        squares occupied by enemy pieces. *)
     let checkers =
@@ -805,7 +807,9 @@ let legal_moves pos =
         match which_kind pos sq with
         | Some (Bishop | Rook | Queen) -> checkers + Pre.between king_sq sq
         | Some _ -> checkers
-        | None -> assert false
+        | None -> failwith @@
+          (sprintf "Expected to find first set square in bitboard %016LX" @@
+           Bb.to_int64 checkers)
       else Bb.full in
     Info.Fields.create
       ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
