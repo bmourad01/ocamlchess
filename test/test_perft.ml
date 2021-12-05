@@ -18,8 +18,8 @@ let expect pos depth expected =
     ~msg:(sprintf "At depth %d, expected %Ld nodes, got %Ld nodes"
             depth expected nodes)
 
-let go pos tests =
-  List.iter tests ~f:(fun (depth, expected) -> expect pos depth expected)
+let go pos =
+  List.iter ~f:(fun (depth, expected) -> expect pos depth expected)
 
 (* Depth 6 passes, but is very slow. Have not tried depth 7. *)
 let test_starting_position () =
