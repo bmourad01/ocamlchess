@@ -77,6 +77,18 @@ let test_position_5 () =
     (* 5, 89_941_194L; *)
   ]
 
+(* Depth 5 passes, but is very slow. *)
+let test_position_6 () =
+  let pos = Position.Fen.of_string_exn
+      "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10" in
+  go pos [
+    1, 46L;
+    2, 2_079L;
+    3, 89_890L;
+    4, 3_894_594L;
+    (* 5, 164_075_551L; *)
+  ]
+  
 let suite = "Test perft" >::: [
     ("Starting position" >:: fun _ -> test_starting_position ());
     ("Position 2" >:: fun _ -> test_position_2 ());
