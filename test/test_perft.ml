@@ -93,6 +93,9 @@ let suite = "Test perft" >::: [
     ("Starting position" >:: fun _ -> test_starting_position ());
     ("Position 2" >:: fun _ -> test_position_2 ());
     ("Position 3" >:: fun _ -> test_position_3 ());
+    ("Position 4" >:: fun _ -> test_position_4 ());
+    ("Position 5" >:: fun _ -> test_position_5 ());
+    ("Position 6" >:: fun _ -> test_position_6 ());
   ]
 
 let () = run_test_tt_main suite
