@@ -106,8 +106,8 @@ let find ?(rev = false) b ~f = fold_until b ~init:None
 
 let first_set_exn ?(rev = false) b =
   if b = empty then invalid_arg "Find first set on an empty bitboard"
-  else
-    Square.of_int_exn @@ if rev then Square.last - Int64.clz b else Int64.ctz b
+  else Square.of_int_exn @@
+    if rev then Square.last - Int64.clz b else Int64.ctz b
 
 let first_set ?(rev = false) b =
   Option.try_with @@ fun () -> first_set_exn b ~rev
