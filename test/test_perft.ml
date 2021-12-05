@@ -21,7 +21,7 @@ let expect pos depth expected =
 let go pos tests =
   List.iter tests ~f:(fun (depth, expected) -> expect pos depth expected)
 
-(* Depth 6 is currently correct, but very slow. Have not tried depth 7. *)
+(* Depth 6 passes, but is very slow. Have not tried depth 7. *)
 let test_starting_position () =
   go Position.start [
     1, 20L;
@@ -64,6 +64,18 @@ let test_position_4 () =
     4, 422_333L;
     5, 15_833_292L;
   ] 
+
+(* Depth 5 passes, but is very slow. *)
+let test_position_5 () =
+  let pos = Position.Fen.of_string_exn
+      "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8" in
+  go pos [
+    1, 44L;
+    2, 1_486L;
+    3, 62_379L;
+    4, 2_103_487L;
+    (* 5, 89_941_194L; *)
+  ]
 
 let suite = "Test perft" >::: [
     ("Starting position" >:: fun _ -> test_starting_position ());
