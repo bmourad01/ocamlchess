@@ -657,7 +657,23 @@ end = struct
         Bb.(mask ++ sq')
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let check_mask = I.read () >>| Info.check_mask
+  let check_mask ?(capture = Bb.empty) k = I.read () >>|
+    fun {pos = {active; en_passant; _}; num_checkers; check_mask; _} ->
+    if num_checkers <> 1 then check_mask
+    else match k with
+      | Piece.Pawn ->
+        (* Edge case for being able to get out of check via en passant. *)
+        let open Bb.Syntax in
+        let sq = Bb.first_set_exn check_mask in
+        let rank, file = Square.decomp sq in
+        let sq' = match Piece.Color.opposite active with
+          | White -> Square.create ~rank:(pred rank) ~file
+          | Black -> Square.create ~rank:(succ rank) ~file in
+        Option.value_map sq' ~default:check_mask ~f:(fun sq' ->
+            if Option.exists en_passant ~f:(Square.equal sq') && sq' @ capture
+            then check_mask ++ sq'
+            else check_mask)
+      | _ -> check_mask      
 
   (* It is technically illegal to actually capture the enemy king, so let's
      mask it out. We shouldn't need to check this for our king, because it
@@ -666,9 +682,9 @@ end = struct
   let king_mask = I.read () >>| fun {pos = {king; _}; enemy_board; _} ->
     Bb.(~~(king & enemy_board))
 
-  let make sq b ~f =
+  let make ?(capture = Bb.empty) sq k b ~f =
     pin_mask sq >>= fun pin ->
-    check_mask >>= fun chk ->
+    check_mask k ~capture >>= fun chk ->
     king_mask >>| fun k ->
     Bb.(fold (b & pin & chk & k) ~init:[] ~f)
 
@@ -685,12 +701,12 @@ end = struct
     end >>= fun push2 ->
     capture sq >>= fun capture ->
     move_accum sq rank >>= fun f ->
-    make sq (push + push2 + capture) ~f
+    make sq Pawn (push + push2 + capture) ~f ~capture
 
-  let knight sq = Knight.jump sq >>= make sq ~f:(default_accum sq)
-  let bishop sq = Bishop.slide sq >>= make sq ~f:(default_accum sq)
-  let rook sq = Rook.slide sq >>= make sq ~f:(default_accum sq)
-  let queen sq = Queen.slide sq >>= make sq ~f:(default_accum sq)
+  let knight sq = Knight.jump sq >>= make sq Knight ~f:(default_accum sq)
+  let bishop sq = Bishop.slide sq >>= make sq Bishop ~f:(default_accum sq)
+  let rook sq = Rook.slide sq >>= make sq Rook ~f:(default_accum sq)
+  let queen sq = Queen.slide sq >>= make sq Queen ~f:(default_accum sq)
 
   let king sq =
     let open King in
@@ -787,7 +803,7 @@ let legal_moves pos =
            block the attack. Otherwise, they may only be captured. *)
         let sq = Bb.first_set_exn checkers in
         match which_kind pos sq with
-        | Some Piece.(Bishop | Rook | Queen) -> checkers + Pre.between king_sq sq
+        | Some (Bishop | Rook | Queen) -> checkers + Pre.between king_sq sq
         | Some _ -> checkers
         | None -> assert false
       else Bb.full in

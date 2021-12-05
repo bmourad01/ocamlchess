@@ -41,9 +41,21 @@ let test_position_2 () =
     4, 4_085_603L;
   ] ~f:(fun (depth, expected) -> expect pos depth expected)
 
+let test_position_3 () =
+  let pos = Position.Fen.of_string_exn
+      "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1" in
+  List.iter [
+    1, 14L;
+    2, 191L;
+    3, 2_812L;
+    4, 43_238L;
+    5, 674_624L;
+  ] ~f:(fun (depth, expected) -> expect pos depth expected)
+
 let suite = "Test perft" >::: [
     ("Starting position" >:: fun _ -> test_starting_position ());
     ("Position 2" >:: fun _ -> test_position_2 ());
+    ("Position 3" >:: fun _ -> test_position_3 ());
   ]
 
 let () = run_test_tt_main suite
