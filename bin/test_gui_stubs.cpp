@@ -19,10 +19,10 @@ static const char *const _text_font_filename =
 static sf::Font _piece_font;
 static sf::Font _text_font;
 
-#define Sfml_window_val(v)                                                     \
+#define Sfml_window_val(v)                                          \
   (*reinterpret_cast<sf::RenderWindow **>(Data_custom_val(window)))
 
-#define Make_square(x, y) ((unsigned)(((y) << 3) | (x)))
+#define Make_square(x, y) (static_cast<unsigned>(((y) << 3) | (x)))
 #define Move_src(m) (Int_val(m) & 0b111111)
 #define Move_dst(m) ((Int_val(m) >> 6) & 0b111111)
 #define Piece_color(p) ((Int_val(p) >> 3) & 0b1)
@@ -47,8 +47,7 @@ extern "C" {
 
   static void sfml_finalize_window(value window) {
     CAMLparam1(window);
-    auto sf_window = Sfml_window_val(window);
-    delete sf_window;
+    delete Sfml_window_val(window);
     CAMLreturn0;
   }
   
