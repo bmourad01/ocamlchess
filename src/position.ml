@@ -731,87 +731,90 @@ let legal_moves pos =
   (* Populate info needed for generating legal moves. *)
   let info =
     let open Bb.Syntax in
-    (* Most general info. *)
-    let king_sq =
-      List.hd_exn @@ find_piece pos @@ Piece.create pos.active King in
-    let enemy = Piece.Color.opposite pos.active in
-    let occupied = all_board pos in
-    let active_board = active_board pos in
-    let enemy_board = board_of_color pos enemy in
-    (* We're considering attacked squares only for king moves. These squares
-       should include enemy pieces which may block an enemy attack, since it
-       would be illegal for the king to attack those squares. *)
-    let enemy_attacks =
-      Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
-    (* For each enemy sliding piece, calculate its attack set. Then,
-       intersect it with the same attack set from our king's square.
-       Then, intersect with the squares between the sliding piece and our
-       king. Any of our pieces that are in this intersection are thus
-       pinned. *)
-    let enemy_pieces = find_color pos enemy in
-    let pinners =
-      let update pinners sq p k mask = match Bb.first_set (p & k & mask) with
-        | None -> pinners
-        | Some sq' -> Map.change pinners sq' ~f:(function
-            | None -> Some (!!sq)
-            | Some b -> Some (b ++ sq)) in
-      let mask = active_board -- king_sq
-      and init = Map.empty (module Square) in
-      List.fold enemy_pieces ~init ~f:(fun pinners (sq, k) ->
-          let mask = mask & Pre.between king_sq sq in
-          match k with
-          | Piece.Bishop ->
-            let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
-            update pinners sq b k mask
-          | Piece.Rook ->
-            let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
-            update pinners sq r k mask
-          | Piece.Queen ->
-            let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
-            update pinners sq q k mask
-          | _ -> pinners) in
-    (* Attacks of all piece kinds, starting from the king, intersected with the
-       squares occupied by enemy pieces. *)
-    let checkers =
-      let p =
-        Pre.pawn_capture king_sq pos.active & pos.pawn & enemy_board in
-      let n = Pre.knight king_sq & pos.knight & enemy_board in
-      let bishop = Pre.bishop king_sq occupied in
-      let rook = Pre.rook king_sq occupied in
-      let b = bishop & pos.bishop & enemy_board in
-      let r = rook & pos.rook & enemy_board in
-      let q = (bishop + rook) & pos.queen & enemy_board in
-      let k = Pre.king king_sq & pos.king & enemy_board in
-      p + n + b + r + q + k in
-    (* Number of checkers is important for how we can decide to get out of
-       check. *)
-    let num_checkers = Bb.count checkers in
-    let check_mask, en_passant_check_mask =
-      if num_checkers = 1 then
-        (* Test if the checker is a sliding piece. If so, then we can try to
-           block the attack. Otherwise, they may only be captured. *)
-        let sq = Bb.first_set_exn checkers in
-        match which_kind pos sq with
-        | Some (Bishop | Rook | Queen) ->
-          checkers + Pre.between king_sq sq, Bb.empty
-        | Some Pawn ->
-          (* Edge case for being able to get out of check via en passant
-             capture. *)
-          let rank, file = Square.decomp sq in
-          let ep = match enemy with
-            | White -> Square.create ~rank:(pred rank) ~file
-            | Black -> Square.create ~rank:(succ rank) ~file in
-          checkers, Option.value_map ep ~default:Bb.empty ~f:(fun ep ->
-              if Option.exists pos.en_passant ~f:(Square.equal ep)
-              then !!ep else Bb.empty)
-        | Some _ -> checkers, Bb.empty
-        | None -> failwith @@
-          (sprintf "Expected to find first set square in bitboard %016LX" @@
-           Bb.to_int64 checkers)
-      else Bb.full, Bb.empty in
-    Info.Fields.create
-      ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
-      ~pinners ~num_checkers ~check_mask ~en_passant_check_mask ~enemy_pieces
+    (* First, find our king. *)
+    match find_piece pos @@ Piece.create pos.active King with
+    | [king_sq] ->
+      (* Most general info. *)
+      let enemy = Piece.Color.opposite pos.active in
+      let occupied = all_board pos in
+      let active_board = active_board pos in
+      let enemy_board = board_of_color pos enemy in
+      (* We're considering attacked squares only for king moves. These squares
+         should include enemy pieces which may block an enemy attack, since it
+         would be illegal for the king to attack those squares. *)
+      let enemy_attacks =
+        Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
+      (* For each enemy sliding piece, calculate its attack set. Then,
+         intersect it with the same attack set from our king's square.
+         Then, intersect with the squares between the sliding piece and our
+         king. Any of our pieces that are in this intersection are thus
+         pinned. *)
+      let enemy_pieces = find_color pos enemy in
+      let pinners =
+        let update pinners sq p k mask =
+          match Bb.first_set (p & k & mask) with
+          | None -> pinners
+          | Some sq' -> Map.change pinners sq' ~f:(function
+              | None -> Some (!!sq)
+              | Some b -> Some (b ++ sq))
+        and mask = active_board -- king_sq
+        and init = Map.empty (module Square) in
+        List.fold enemy_pieces ~init ~f:(fun pinners (sq, k) ->
+            let mask = mask & Pre.between king_sq sq in
+            match k with
+            | Piece.Bishop ->
+              let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
+              update pinners sq b k mask
+            | Piece.Rook ->
+              let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
+              update pinners sq r k mask
+            | Piece.Queen ->
+              let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
+              update pinners sq q k mask
+            | _ -> pinners) in
+      (* Attacks of all piece kinds, starting from the king, intersected with
+         the squares occupied by enemy pieces. *)
+      let checkers =
+        let p =
+          Pre.pawn_capture king_sq pos.active & pos.pawn & enemy_board in
+        let n = Pre.knight king_sq & pos.knight & enemy_board in
+        let bishop = Pre.bishop king_sq occupied in
+        let rook = Pre.rook king_sq occupied in
+        let b = bishop & pos.bishop & enemy_board in
+        let r = rook & pos.rook & enemy_board in
+        let q = (bishop + rook) & pos.queen & enemy_board in
+        let k = Pre.king king_sq & pos.king & enemy_board in
+        p + n + b + r + q + k in
+      (* Number of checkers is important for how we can decide to get out of
+         check. *)
+      let num_checkers = Bb.count checkers in
+      let check_mask, en_passant_check_mask =
+        if num_checkers = 1 then
+          (* Test if the checker is a sliding piece. If so, then we can try to
+             block the attack. Otherwise, they may only be captured. *)
+          let sq = Bb.first_set_exn checkers in
+          match which_kind pos sq with
+          | Some (Bishop | Rook | Queen) ->
+            checkers + Pre.between king_sq sq, Bb.empty
+          | Some Pawn ->
+            (* Edge case for being able to get out of check via en passant
+               capture. *)
+            let rank, file = Square.decomp sq in
+            let ep = match enemy with
+              | White -> Square.create ~rank:(pred rank) ~file
+              | Black -> Square.create ~rank:(succ rank) ~file in
+            checkers, Option.value_map ep ~default:Bb.empty ~f:(fun ep ->
+                if Option.exists pos.en_passant ~f:(Square.equal ep)
+                then !!ep else Bb.empty)
+          | Some _ -> checkers, Bb.empty
+          | None -> failwith @@
+            (sprintf "Expected to find first set square in bitboard %016LX" @@
+             Bb.to_int64 checkers)
+        else Bb.full, Bb.empty in
+      Info.Fields.create
+        ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
+        ~pinners ~num_checkers ~check_mask ~en_passant_check_mask ~enemy_pieces
+    | _ -> invalid_arg "Expected exactly one king of active color"
   in
   Monad.Reader.run Moves.go info
 

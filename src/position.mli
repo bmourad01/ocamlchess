@@ -203,5 +203,6 @@ end
 
 (** [legal_moves pos] returns a list of move-position pairs, which represents
     all of the legal moves for the active color of position [pos]. It is
-    assumed that [pos] is reachable from the starting position. *)
+    assumed that [pos] is reachable from the starting position. May raise
+    if [pos] is not valid. *)
 val legal_moves : t -> (Move.t * t) list
