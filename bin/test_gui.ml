@@ -120,15 +120,18 @@ let check_endgame pos legal =
 
 let rec main_loop window pos legal sel prev endgame =
   if Window.is_open window then begin
+    (* Process input if the game is still playable. *)
     let pos', legal, sel, prev =
       if Option.is_some endgame then pos, legal, sel, prev
       else poll window pos legal sel prev in
+    (* Check if the game is over. *)
     let endgame = match endgame with
       | Some _ -> endgame
       | None ->
         let endgame = check_endgame pos' legal in
         Option.iter endgame ~f:print_endgame;
         endgame in
+    (* Print information about position change. *)
     if Position.(pos' <> pos) then begin
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
@@ -136,6 +139,7 @@ let rec main_loop window pos legal sel prev endgame =
       printf "%d legal moves\n%!" (List.length legal);
       printf "\n%!"
     end;
+    (* Get the valid squares for our selected piece to move to. *)
     let bb, sq = match sel with
       | None -> Bitboard.(to_int64 empty), None
       | Some (sq, moves) ->
@@ -143,6 +147,7 @@ let rec main_loop window pos legal sel prev endgame =
           List.fold moves ~init:Bitboard.empty ~f:(fun acc (m, _) ->
               Bitboard.(acc ++ Move.dst m)) in
         Bitboard.to_int64 bb, Some sq in
+    (* Display the board. *)
     Window.clear window;
     Window.paint_board window pos' bb sq prev;
     Window.display window;
