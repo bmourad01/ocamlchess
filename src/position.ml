@@ -358,21 +358,20 @@ end = struct
       let c, k = piece_fields p in
       map_field c ~f >> map_field k ~f
 
-  let set_square ?p sq = map_square sq ?p ~f:Bb.((+) !!sq)
-  let clear_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b - !!sq)
+  let set_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b ++ sq)
+  let clear_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b -- sq)
 
   let is_pawn_or_capture sq sq' = P.gets @@ fun pos ->
     let open Bb.Syntax in
     let is_pawn = sq @ pos.pawn in
     let is_capture =
       (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
-    is_pawn, is_capture
+    is_pawn || is_capture
 
   (* The halfmove clock is reset after captures or pawn moves, and
      incremented otherwise. *)
-  let update_halfmove sq sq' = is_pawn_or_capture sq sq' >>=
-    fun (is_pawn, is_capture) -> map_field Fields.halfmove ~f:(fun n ->
-      if is_pawn || is_capture then 0 else succ n)
+  let update_halfmove sq sq' = is_pawn_or_capture sq sq' >>= fun cnd ->
+    map_field Fields.halfmove ~f:(fun n -> if cnd then 0 else succ n)
 
   module CR = Castling_rights
 
@@ -507,6 +506,7 @@ module Info = struct
   type t = {
     pos : T.t;
     king_sq : Square.t;
+    king_mask : Bb.t;
     occupied : Bb.t;
     active_board : Bb.t;
     enemy_board : Bb.t;
@@ -669,8 +669,7 @@ end = struct
      mask it out. We shouldn't need to check this for our king, because it
      would be illegal to even reach a position where our king can capture
      the enemy king. *)
-  let king_mask = I.read () >>| fun {pos = {king; _}; enemy_board; _} ->
-    Bb.(~~(king & enemy_board))
+  let king_mask = I.read () >>| Info.king_mask
 
   let make ?(capture = Bb.empty) sq k b ~f =
     pin_mask sq >>= fun pin ->
@@ -739,6 +738,7 @@ let legal_moves pos =
       let occupied = all_board pos in
       let active_board = active_board pos in
       let enemy_board = board_of_color pos enemy in
+      let king_mask = ~~(pos.king & enemy_board) in
       (* We're considering attacked squares only for king moves. These squares
          should include enemy pieces which may block an enemy attack, since it
          would be illegal for the king to attack those squares. *)
@@ -812,7 +812,7 @@ let legal_moves pos =
              Bb.to_int64 checkers)
         else Bb.full, Bb.empty in
       Info.Fields.create
-        ~pos ~king_sq ~occupied ~active_board ~enemy_board ~enemy_attacks 
+        ~pos ~king_sq ~king_mask ~occupied ~active_board ~enemy_board ~enemy_attacks 
         ~pinners ~num_checkers ~check_mask ~en_passant_check_mask ~enemy_pieces
     | _ -> invalid_arg "Expected exactly one king of active color"
   in
