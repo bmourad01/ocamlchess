@@ -131,7 +131,7 @@ value ml_window_poll_event(value window) {
       break;
     case sf::Event::MouseButtonPressed:
       result = caml_alloc(2, 0);
-      Store_field(result, 0, Val_int(hash_variant("MouseButtonPressed")));
+      Store_field(result, 0, Val_int(hash_variant("Mouse_button_pressed")));
       mouse_coords = caml_alloc_tuple(2);
       Store_field(mouse_coords, 0, Val_int(event.mouseButton.x));
       Store_field(mouse_coords, 1, Val_int(event.mouseButton.y));

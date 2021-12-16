@@ -6,7 +6,7 @@ module Window = struct
   type t
 
   type event = [
-    | `MouseButtonPressed of int * int
+    | `Mouse_button_pressed of int * int
   ]
 
   external create : int -> int -> string -> t = "ml_window_create"
@@ -48,6 +48,8 @@ end
 
 open State.Syntax
 
+let (>>) m n = m >>= fun _ -> n
+
 let screen_to_sq window mx my =
   let sx, sy = Window.size window in
   let tw, th = sx / Square.File.count, sy / Square.Rank.count in
@@ -84,6 +86,10 @@ let rec promote () = try match In_channel.(input_line stdin) with
 
 let find_move sq (m, _) = Square.(sq = Move.dst m)
 
+let find_promote sq k (m, _) =
+  Square.(sq = Move.dst m) &&
+  Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)
+
 let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
   match screen_to_sq window mx my with
   | None -> st
@@ -102,15 +108,13 @@ let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
           | Some _ ->
             promote_prompt ();
             let k = promote () in
-            List.find_exn moves ~f:(fun (m, _) ->
-                Square.(sq = Move.dst m) &&
-                Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)) in
+            List.find_exn moves ~f:(find_promote sq k) in
         let legal = Position.legal_moves pos in
         {st with pos; legal; sel = None; prev = Some m}
 
 let poll = State.(gets window) >>= fun window ->
   match Window.poll_event window with
-  | Some (`MouseButtonPressed (mx, my)) -> click mx my
+  | Some (`Mouse_button_pressed (mx, my)) -> click mx my
   | None -> State.return ()
 
 let is_insufficient_material pos =
@@ -121,11 +125,12 @@ let is_insufficient_material pos =
 
 let is_fifty_move pos = Position.halfmove pos >= 100
 
+let enemy pos = Piece.Color.opposite @@ Position.active pos
+
 let in_check pos =
   let active_board = Position.active_board pos in
   let king = Position.king pos in
-  let enemy = Piece.Color.opposite @@ Position.active pos in
-  let attacks = Position.Attacks.all pos enemy ~ignore_same:true in
+  let attacks = Position.Attacks.all pos (enemy pos) ~ignore_same:true in
   Bitboard.((active_board & king & attacks) <> empty)
 
 let print_endgame = function
@@ -140,23 +145,21 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
     else if is_fifty_move pos then Some `Fifty_move
     else if List.is_empty legal then
       if in_check pos
-      then Some (`Checkmate (Position.active pos |> Piece.Color.opposite))
+      then Some (`Checkmate (enemy pos))
       else Some `Stalemate
     else None in
   {st with endgame}
 
 let rec main_loop () = State.(gets window) >>= fun window ->
-  if Window.is_open window then begin
+  if Window.is_open window then
     (* Process input if the game is still playable. *)
     State.(gets pos) >>= fun pos ->
     State.(gets endgame) >>= begin function
       | Some _ -> State.return ()
-      | None -> poll >>= fun () ->
+      | None -> poll >>
         (* Check if the game is over. *)
-        check_endgame >>= fun () ->
-        State.(gets endgame) >>| fun endgame ->
-        Option.iter endgame ~f:print_endgame
-    end >>= fun () ->
+        check_endgame >> State.(gets endgame) >>| Option.iter ~f:print_endgame
+    end >>
     State.(gets pos) >>= fun pos' ->
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
@@ -182,7 +185,7 @@ let rec main_loop () = State.(gets window) >>= fun window ->
     Window.paint_board window pos' bb sq prev;
     Window.display window;
     main_loop ()
-  end else State.return ()
+  else State.return ()
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
