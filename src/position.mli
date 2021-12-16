@@ -1,7 +1,7 @@
 open Base
 
 (** Representation of a chess position. *)
-type t [@@deriving compare, equal, hash, sexp]
+type t [@@deriving compare, equal, sexp]
 
 include Comparable.S with type t := t
 

@@ -18,8 +18,8 @@ module T = struct
     castle : Castling_rights.t;
     en_passant : Square.t option;
     halfmove : int;
-    fullmove : int
-  } [@@deriving compare, equal, fields, hash, sexp]
+    fullmove : int;
+  } [@@deriving compare, equal, fields, sexp]
 end
 
 include T
