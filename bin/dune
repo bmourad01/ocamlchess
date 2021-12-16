@@ -1,8 +1,9 @@
 (executable
  (name test_gui)
  (modules test_gui)
- (libraries core chess)
+ (libraries core chess monads)
  (ocamlopt_flags -O3 -unbox-closures)
+ (preprocess (pps ppx_fields_conv))
  (foreign_stubs
   (language cxx)
   (names test_gui_stubs))

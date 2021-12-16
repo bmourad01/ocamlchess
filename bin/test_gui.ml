@@ -1,5 +1,6 @@
 open Core_kernel
 open Chess
+open Monads.Std
 
 module Window = struct
   type t
@@ -19,6 +20,33 @@ module Window = struct
     t -> Position.t -> int64 -> Square.t option -> Move.t option -> unit =
     "ml_window_paint_board"
 end
+
+type moves = (Move.t * Position.t) list
+
+type endgame = [
+  | `Checkmate of Piece.color
+  | `Insufficient_material
+  | `Fifty_move
+  | `Stalemate
+]
+
+module State = struct
+  module T = struct
+    type t = {
+      window : Window.t;
+      pos : Position.t;
+      legal : moves;
+      sel : (Square.t * moves) option;
+      prev : Move.t option;
+      endgame : endgame option;
+    } [@@deriving fields]
+  end
+
+  include T
+  include Monad.State.Make(T)(Monad.Ident)
+end
+
+open State.Syntax
 
 let screen_to_sq window mx my =
   let sx, sy = Window.size window in
@@ -54,22 +82,20 @@ let rec promote () = try match In_channel.(input_line stdin) with
     eprintf "Invalid promotion, try again: %!";
     promote ()
 
-let click window pos legal sel prev mx my =
+let find_move sq (m, _) = Square.(sq = Move.dst m)
+
+let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
   match screen_to_sq window mx my with
-  | None -> pos, legal, sel, prev
+  | None -> st
   | Some sq -> match sel with
+    | Some (sq', _) when Square.(sq = sq') -> {st with sel = None}
     | None ->
       let moves =
         List.filter legal ~f:(fun (m, _) -> Square.(sq = Move.src m)) in
       let sel = if List.is_empty moves then None else Some (sq, moves) in
-      pos, legal, sel, prev
-    | Some (sq', _) when Square.(sq = sq') ->
-      pos, legal, None, prev
-    | Some (_, moves) ->
-      let move =
-        List.find moves ~f:(fun (m, _) -> Square.(sq = Move.dst m)) in
-      match move with
-      | None -> pos, legal, sel, prev
+      {st with sel}
+    | Some (_, moves) -> match List.find moves ~f:(find_move sq) with
+      | None -> st
       | Some (m, pos) ->
         let m, pos = match Move.promote m with
           | None -> m, pos
@@ -80,13 +106,12 @@ let click window pos legal sel prev mx my =
                 Square.(sq = Move.dst m) &&
                 Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)) in
         let legal = Position.legal_moves pos in
-        pos, legal, None, Some m
+        {st with pos; legal; sel = None; prev = Some m}
 
-let poll window pos legal sel prev =
+let poll = State.(gets window) >>= fun window ->
   match Window.poll_event window with
-  | None -> pos, legal, sel, prev
-  | Some (`MouseButtonPressed (mx, my)) ->
-    click window pos legal sel prev mx my
+  | Some (`MouseButtonPressed (mx, my)) -> click mx my
+  | None -> State.return ()
 
 let is_insufficient_material pos =
   let king = Position.king pos in
@@ -109,28 +134,32 @@ let print_endgame = function
   | `Checkmate c -> printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
   | `Stalemate -> printf "Draw by stalemate\n%!"
 
-let check_endgame pos legal =
-  if is_insufficient_material pos then Some `Insufficient_material
-  else if is_fifty_move pos then Some `Fifty_move
-  else if List.is_empty legal then
-    if in_check pos
-    then Some (`Checkmate (Position.active pos |> Piece.Color.opposite))
-    else Some `Stalemate
-  else None 
+let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
+  let endgame =
+    if is_insufficient_material pos then Some `Insufficient_material
+    else if is_fifty_move pos then Some `Fifty_move
+    else if List.is_empty legal then
+      if in_check pos
+      then Some (`Checkmate (Position.active pos |> Piece.Color.opposite))
+      else Some `Stalemate
+    else None in
+  {st with endgame}
 
-let rec main_loop window pos legal sel prev endgame =
+let rec main_loop () = State.(gets window) >>= fun window ->
   if Window.is_open window then begin
     (* Process input if the game is still playable. *)
-    let pos', legal, sel, prev =
-      if Option.is_some endgame then pos, legal, sel, prev
-      else poll window pos legal sel prev in
-    (* Check if the game is over. *)
-    let endgame = match endgame with
-      | Some _ -> endgame
-      | None ->
-        let endgame = check_endgame pos' legal in
-        Option.iter endgame ~f:print_endgame;
-        endgame in
+    State.(gets pos) >>= fun pos ->
+    State.(gets endgame) >>= begin function
+      | Some _ -> State.return ()
+      | None -> poll >>= fun () ->
+        (* Check if the game is over. *)
+        check_endgame >>= fun () ->
+        State.(gets endgame) >>| fun endgame ->
+        Option.iter endgame ~f:print_endgame
+    end >>= fun () ->
+    State.(gets pos) >>= fun pos' ->
+    State.(gets legal) >>= fun legal ->
+    State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
     if Position.(pos' <> pos) then begin
       printf "%s: %s\n%!"
@@ -140,19 +169,20 @@ let rec main_loop window pos legal sel prev endgame =
       printf "\n%!"
     end;
     (* Get the valid squares for our selected piece to move to. *)
-    let bb, sq = match sel with
-      | None -> Bitboard.(to_int64 empty), None
+    State.(gets sel) >>= begin function
+      | None -> State.return (Bitboard.(to_int64 empty), None)
       | Some (sq, moves) ->
         let bb =
           List.fold moves ~init:Bitboard.empty ~f:(fun acc (m, _) ->
               Bitboard.(acc ++ Move.dst m)) in
-        Bitboard.to_int64 bb, Some sq in
+        State.return (Bitboard.to_int64 bb, Some sq)
+    end >>= fun (bb, sq) ->
     (* Display the board. *)
     Window.clear window;
     Window.paint_board window pos' bb sq prev;
     Window.display window;
-    main_loop window pos' legal sel prev endgame
-  end
+    main_loop ()
+  end else State.return ()
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
@@ -172,4 +202,6 @@ let () =
     printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
     printf "%d legal moves\n%!" (List.length legal);
     printf "\n%!";
-    main_loop window pos legal None None None
+    Monad.State.eval (main_loop ()) @@
+    State.Fields.create ~window ~pos ~legal
+      ~sel:None ~prev:None ~endgame:None
