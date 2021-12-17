@@ -707,16 +707,15 @@ end
    the squares occupied by enemy pieces. *)
 let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
   let open Bb.Syntax in
-  let p =
-    Pre.pawn_capture king_sq pos.active & pos.pawn & enemy_board in
-  let n = Pre.knight king_sq & pos.knight & enemy_board in
+  let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
+  let n = Pre.knight king_sq & pos.knight in
   let bishop = Pre.bishop king_sq occupied in
   let rook = Pre.rook king_sq occupied in
-  let b = bishop & pos.bishop & enemy_board in
-  let r = rook & pos.rook & enemy_board in
-  let q = (bishop + rook) & pos.queen & enemy_board in
-  let k = Pre.king king_sq & pos.king & enemy_board in
-  p + n + b + r + q + k 
+  let b = bishop & pos.bishop in
+  let r = rook & pos.rook in
+  let q = (bishop + rook) & pos.queen in
+  let k = Pre.king king_sq & pos.king in
+  (p + n + b + r + q + k) & enemy_board
 
 (* For each enemy sliding piece, calculate its attack set. Then,
    intersect it with the same attack set from our king's square.
