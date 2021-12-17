@@ -17,7 +17,7 @@ let of_int_exn i =
   else i
 
 let of_int i = Option.try_with @@ fun () -> of_int_exn i
-let to_int = ident
+let[@inline] to_int sq = sq
 
 module Bits = struct
   module Rank = struct
@@ -114,7 +114,7 @@ module Bits = struct
   (* Extract the bits *)
   let rank sq = sq lsr 3
   let file sq = sq land 0b111
-  let decomp sq = rank sq, file sq
+  let[@inline] decomp sq = rank sq, file sq
 end
 
 let create_exn ~rank ~file =

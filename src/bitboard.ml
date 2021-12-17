@@ -1,7 +1,7 @@
 open Core_kernel
 
 module T = struct
-  type t = Int64.t [@@deriving compare, equal, hash, sexp]
+  type t = int64 [@@deriving compare, equal, hash, sexp]
 end
 
 include T
@@ -9,8 +9,8 @@ include Comparable.Make (T)
 
 (* Conversions. *)
 
-let of_int64 = ident
-let to_int64 = ident
+let[@inline] of_int64 b = b
+let[@inline] to_int64 b = b
 
 (* Generic constants. *)
 

@@ -748,10 +748,12 @@ let[@inline] pinners ~active_board ~king_sq ~enemy_pieces ~occupied =
 
 (* Generate the masks which may restrict movement in the event of a check. *)
 let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
-  let open Bb.Syntax in
-  if num_checkers = 1 then
+  if num_checkers <> 1
+  then Bb.full, Bb.empty
+  else
     (* Test if the checker is a sliding piece. If so, then we can try to
        block the attack. Otherwise, they may only be captured. *)
+    let open Bb.Syntax in
     let sq = Bb.first_set_exn checkers in
     match which_kind pos sq with
     | Some (Bishop | Rook | Queen) ->
@@ -768,9 +770,8 @@ let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
           then !!ep else Bb.empty)
     | Some _ -> checkers, Bb.empty
     | None -> failwith @@
-      (sprintf "Expected to find first set square in bitboard %016LX" @@
-       Bb.to_int64 checkers)
-  else Bb.full, Bb.empty 
+      sprintf "Expected to find first set square in bitboard %016LX"
+        (checkers :> int64)
 
 (* Populate info needed for generating legal moves. *)
 let[@inline] create_info pos =

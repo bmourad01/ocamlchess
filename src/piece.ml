@@ -114,7 +114,7 @@ include Bits.Pieces
 
 let color p = Color.of_int_exn @@ Bits.color p
 let kind p = Kind.of_int_exn @@ Bits.kind p
-let decomp p = color p, kind p
+let[@inline] decomp p = color p, kind p
 
 let create color kind =
   (Color.to_int color lsl kind_bits) lor Kind.to_int kind
@@ -143,7 +143,7 @@ let of_int_exn i =
     else i
 
 let of_int i = Option.try_with @@ fun () -> of_int_exn i
-let to_int = ident
+let[@inline] to_int p = p
 
 (* FEN string representation *)
 

@@ -1,5 +1,7 @@
 open Core_kernel
 
+module Bb = Bitboard
+
 (* Magic shift constants. *)
 module Shift = struct
   let diagonal = [|
@@ -84,7 +86,7 @@ module Simple = struct
       let sq = of_int_exn i in
       f (rank sq) (file sq) |>
       List.filter_map ~f:(fun (rank, file) -> create ~rank ~file) |>
-      List.fold ~init:Bitboard.empty ~f:Bitboard.set)
+      List.fold ~init:Bb.empty ~f:Bb.set)
 
   let white_pawn_advance = make @@ fun rank file -> [rank + 1, file]
   let black_pawn_advance = make @@ fun rank file -> [rank - 1, file]
@@ -96,7 +98,7 @@ module Simple = struct
 
   let black_pawn_capture = make @@ fun rank file -> [
       rank - 1, file + 1;
-      rank - 1, file - 1
+      rank - 1, file - 1;
     ]
 
   let knight = make @@ fun rank file -> [
@@ -130,8 +132,8 @@ module Mask = struct
       ~f:(fun i -> r rank (i + 1), f file (i + 1))
 
   (* All 8 directions. *)
-  let east = dir const (+)
-  and west = dir const (-)
+  let east  = dir const (+)
+  and west  = dir const (-)
   and north = dir (+) const
   and south = dir (-) const
   and neast = dir (+) (+)
@@ -140,11 +142,11 @@ module Mask = struct
   and swest = dir (-) (-)
 
   (* Combine all diagonal directions, minus the edges. *)
-  let diagonal = Array.init Square.count ~f:(fun i -> Bitboard.(
+  let diagonal = Array.init Square.count ~f:(fun i -> Bb.(
       neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges))
 
   (* Combine all straight directions, minus the edges. *)
-  let straight = Array.init Square.count ~f:(fun i -> Bitboard.(
+  let straight = Array.init Square.count ~f:(fun i -> Bb.(
       (east.(i)  - file_h) +
       (west.(i)  - file_a) +
       (north.(i) - rank_8) +
@@ -157,7 +159,7 @@ module Sliding = struct
      starting square and the set of occupied squares. *)
   let diagonal, straight =
     let gen arr i occupied =
-      let open Bitboard in
+      let open Bb in
       let occupied = of_int64 occupied in
       Array.map arr ~f:(fun (tbl, f) ->
           let b = tbl.(i) in
@@ -176,7 +178,7 @@ module Sliding = struct
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
-    let mask = Bitboard.to_int64 mask in
+    let mask = Bb.to_int64 mask in
     Int64.popcount mask |> Array.init ~f:ident |> Array.fold ~init:(0L, mask)
       ~f:(fun (blockers, mask) i ->
           let blockers =
@@ -192,7 +194,7 @@ module Sliding = struct
   let bishop, rook =
     let go len shift mask magic gen =
       let tbl = Array.init Square.count
-          ~f:(fun _ -> Array.create ~len Bitboard.empty) in
+          ~f:(fun _ -> Array.create ~len Bb.empty) in
       for i = 0 to Square.count - 1 do
         let shift = shift.(i) and mask = mask.(i)
         and magic = magic.(i) and t = tbl.(i) in
@@ -220,19 +222,19 @@ let knight sq = Simple.knight.(Square.to_int sq)
 
 let bishop sq occupied =
   let i = Square.to_int sq in
-  let occupied = Bitboard.(to_int64 (occupied & Mask.diagonal.(i))) in
+  let occupied = Bb.(to_int64 (occupied & Mask.diagonal.(i))) in
   Sliding.(bishop.(i).(hash occupied Magic.bishop.(i) Shift.diagonal.(i)))
 
 let rook sq occupied =
   let i = Square.to_int sq in
-  let occupied = Bitboard.(to_int64 (occupied & Mask.straight.(i))) in
+  let occupied = Bb.(to_int64 (occupied & Mask.straight.(i))) in
   Sliding.(rook.(i).(hash occupied Magic.rook.(i) Shift.straight.(i)))
 
-let queen sq occupied = Bitboard.(bishop sq occupied + rook sq occupied)
+let queen sq occupied = Bb.(bishop sq occupied + rook sq occupied)
 let king sq = Simple.king.(Square.to_int sq)
 
 let castle =
-  let open Bitboard in
+  let open Bb in
   let open Castling_rights in
   let wk = Square.(!!f1 + !!g1) in
   let wq = Square.(!!b1 + !!c1 + !!d1) in
@@ -254,7 +256,7 @@ let between =
   let tbl = Array.init Square.count ~f:(fun i ->
       let sq = Square.of_int_exn i in
       Array.init Square.count ~f:(fun i' ->
-          let open Bitboard in
+          let open Bb in
           (* Use the singleton bitboard of the target square as the
                blocker mask. *)
           let s = !!Square.(of_int_exn i') in

@@ -3,15 +3,15 @@ open Base
 (** Representation of the board as a 64-bit number. Each set bit represents
     an occupied square. The LSB represents the a1 square, while the MSB
     represents the h8 square. *)
-type t = private Int64.t [@@deriving compare, equal, hash, sexp]
+type t = private int64 [@@deriving compare, equal, hash, sexp]
 
 include Comparable.S with type t := t
 
 (** [of_int64 i] creates a bitboard with the bit representation [i]. *)
-val of_int64 : Int64.t -> t
+val of_int64 : int64 -> t
 
 (** [to_int64 b] returns the underlying bit representation of [b]. *)
-val to_int64 : t -> Int64.t
+val to_int64 : t -> int64
 
 (** [empty] is the empty board. *)
 val empty : t

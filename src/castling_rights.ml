@@ -19,7 +19,7 @@ let of_int_exn i =
   else i
 
 let of_int i = Option.try_with @@ fun () -> of_int_exn i
-let to_int = ident
+let[@inline] to_int cr = cr
 
 (* Predefined constants. *)
 
