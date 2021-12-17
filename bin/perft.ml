@@ -20,4 +20,3 @@ let () =
     else Position.Fen.of_string_exn Sys.argv.(2) in
   let n = perft pos depth ~first:true in
   printf "\nNodes searched: %Ld\n%!" n
-  

@@ -1,8 +1,9 @@
 (tests
- (names test_fen
-        test_bitboard
-        test_move
-        test_precalculated
-        test_perft)
- (ocamlopt_flags -O3 -unbox-closures)
- (libraries ounit2 chess))
+ (names
+   test_fen
+   test_bitboard
+   test_move
+   test_precalculated
+   test_perft)
+ (libraries ounit2 chess)
+ (ocamlopt_flags -O3))

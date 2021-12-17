@@ -2,7 +2,7 @@
  (name test_gui)
  (modules test_gui)
  (libraries core chess monads)
- (ocamlopt_flags -O3 -unbox-closures)
+ (ocamlopt_flags -O3)
  (preprocess (pps ppx_fields_conv))
  (foreign_stubs
   (language cxx)
@@ -18,4 +18,4 @@
  (name perft)
  (modules perft)
  (libraries core chess)
- (ocamlopt_flags -O3 -unbox-closures))
+ (ocamlopt_flags -O3))
