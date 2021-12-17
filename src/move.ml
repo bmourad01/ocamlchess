@@ -20,7 +20,7 @@ let square_mask = (1 lsl Square.bits) - 1
 let src m = m land square_mask |> Square.of_int_exn
 let dst m = (m lsr Square.bits) land square_mask |> Square.of_int_exn
 let promote m = m lsr (Square.bits * 2) |> Piece.Kind.of_int
-let decomp m = src m, dst m, promote m
+let[@inline] decomp m = src m, dst m, promote m
 
 let to_string m =
   sprintf "%s%s%s"
@@ -29,8 +29,7 @@ let to_string m =
     (promote m |> Option.value_map ~default:"" ~f:(fun kind ->
          Piece.create Black kind |> Piece.to_fen |> Char.to_string))
 
-let of_string_exn s =
-  try
+let of_string_exn s = try
     let src = String.subo s ~len:2 |> Square.of_string_exn in
     let dst = String.subo s ~pos:2 ~len:2 |> Square.of_string_exn in
     let promote = match String.length s with
