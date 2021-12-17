@@ -11,7 +11,12 @@
 
 #include <SFML/Graphics.hpp>
 
-// XXX: should we load assets like this locally?
+/*
+  Assets
+  
+  XXX: don't rely on system installation for these
+*/
+
 static const char *const _piece_font_filename =
     "/usr/share/fonts/TTF/FreeSerif.ttf";
 static const char *const _text_font_filename =
@@ -19,33 +24,7 @@ static const char *const _text_font_filename =
 
 static sf::Font _piece_font, _text_font;
 
-#define Sfml_window_val(v)                                          \
-  (*reinterpret_cast<sf::RenderWindow **>(Data_custom_val(window)))
-
-#define Make_square(x, y) (static_cast<unsigned>(((y) << 3) | (x)))
-#define Move_src(m) (Int_val(m) & 0b111111)
-#define Move_dst(m) ((Int_val(m) >> 6) & 0b111111)
-#define Piece_color(p) ((Int_val(p) >> 3) & 0b1)
-#define Piece_kind(p) (Int_val(p) & 0b111)
-
-static void sfml_finalize_window(value window) {
-  CAMLparam1(window);
-  delete Sfml_window_val(window);
-  CAMLreturn0;
-}
-
-static struct custom_operations sfml_window_custom_ops = {
-  (char *)"sfml_window_custom_ops",
-  sfml_finalize_window,
-  custom_compare_default,
-  custom_compare_ext_default,
-  custom_hash_default,
-  custom_serialize_default,
-  custom_deserialize_default,
-#if OCAML_VERSION_MAJOR >= 4 && OCAML_VERSION_MINOR >= 8
-  NULL, // custom_fixed_length
-#endif
-};
+/* Helpers */
 
 enum Color : int {White, Black};
 enum Kind : int {Pawn, Knight, Bishop, Rook, Queen, King};
@@ -69,6 +48,38 @@ static wchar_t piece_unicode(int color, int kind) {
     assert(false);
   }
 }
+
+#define Sfml_window_val(v)                                          \
+  (*reinterpret_cast<sf::RenderWindow **>(Data_custom_val(window)))
+
+#define Make_square(x, y) (static_cast<unsigned>(((y) << 3) | (x)))
+#define Move_src(m) (Int_val(m) & 0b111111)
+#define Move_dst(m) ((Int_val(m) >> 6) & 0b111111)
+#define Piece_color(p) ((Int_val(p) >> 3) & 0b1)
+#define Piece_kind(p) (Int_val(p) & 0b111)
+
+/* Custom allocation for the SFML window object */
+
+static void sfml_finalize_window(value window) {
+  CAMLparam1(window);
+  delete Sfml_window_val(window);
+  CAMLreturn0;
+}
+
+static struct custom_operations sfml_window_custom_ops = {
+  (char *)"sfml_window_custom_ops",
+  sfml_finalize_window,
+  custom_compare_default,
+  custom_compare_ext_default,
+  custom_hash_default,
+  custom_serialize_default,
+  custom_deserialize_default,
+#if OCAML_VERSION_MAJOR >= 4 && OCAML_VERSION_MINOR >= 8
+  NULL, // custom_fixed_length
+#endif
+};
+
+/* Exposed minimal API (requires C linkage) */
 
 extern "C" {
 value ml_init_fonts(value dummy) {
@@ -238,4 +249,4 @@ value ml_window_paint_board(value window, value position, value valid_squares,
 
   CAMLreturn(Val_unit);
 }
-}
+} // extern "C"
