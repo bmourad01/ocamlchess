@@ -9,8 +9,11 @@ type limits = {
 (** Raised when no legal moves are available for the player. *)
 exception No_moves
 
-(** [t ~limits] will construct a player object with search limits [limits] *)
-class virtual t ?(limits = None) () = object
+(** The player interface. *)
+type t = <move : Position.t -> Move.t * Position.t>
+
+(** [player ~limits] will construct a player object with search limits [limits] *)
+class virtual cls ?(limits = None) () = object
   (** The search limits, if they exist. *)
   val limits : limits option = limits
 

@@ -3,8 +3,7 @@ open Cmdliner
 
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
-  | "random" -> Some (new Chess.Player_random.t ())
-  | s -> invalid_arg @@ sprintf "Invalid player '%s'" s
+  | s -> Some (Chess.Choose_player.choose s)
 
 module Perft = struct
   let go depth pos =
