@@ -164,8 +164,7 @@ let ai_move player pos =
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
-  end >>
-  check_and_print_endgame
+  end >> check_and_print_endgame
 
 let human_or_ai_move pos = function
   | None -> human_move
