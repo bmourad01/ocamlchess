@@ -117,8 +117,8 @@ module Bits = struct
   let h8 = 0b111_111
 
   (* Extract the bits *)
-  let rank sq = sq lsr 3
-  let file sq = sq land 0b111
+  let[@inline] rank sq = sq lsr 3
+  let[@inline] file sq = sq land 0b111
   let[@inline] decomp sq = rank sq, file sq
 end
 
