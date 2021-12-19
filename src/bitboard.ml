@@ -35,7 +35,7 @@ let file_e = 0x1010101010101010L
 let file_f = 0x2020202020202020L
 let file_g = 0x4040404040404040L
 let file_h = 0x8080808080808080L
-let edges = 0xFF818181818181FFL
+let edges  = 0xFF818181818181FFL
 
 (* Helpers to access rank/file by index. *)
 
@@ -61,17 +61,24 @@ let file i = Option.try_with @@ fun () -> file_exn i
 let inter = Int64.bit_and
 let union = Int64.bit_or
 let compl = Int64.bit_not
-let diff x y = inter x @@ compl y
-let singleton sq = Int64.(one lsl Square.to_int sq)
-let set b sq = union b @@ singleton sq
-let clear b sq = diff b @@ singleton sq
-let mem b sq = empty <> inter b @@ singleton sq
+let[@inline] diff x y = inter x @@ compl y
+let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
+let[@inline] set b sq = union b @@ singleton sq
+let[@inline] clear b sq = diff b @@ singleton sq
+let[@inline] mem b sq = empty <> inter b @@ singleton sq
 let count = Int64.popcount
 
 (* Higher-order functions. *)
 
+let[@inline] next_square ?(rev = false) =
+  (* These are intrinsics which hopefully map to hardware instructions
+     (such as `lzcnt/tzcnt` on x86). Note that the results are undefined
+     if `b` is zero. *)
+  if rev then fun b -> Square.last - Int64.clz b
+  else Int64.ctz
+
 let fold ?(rev = false) b ~init ~f =
-  let next = if rev then fun b -> Square.last - Int64.clz b else Int64.ctz in
+  let next = next_square ~rev in
   let rec aux b acc =
     if b = empty then acc
     else
@@ -81,7 +88,7 @@ let fold ?(rev = false) b ~init ~f =
 
 let fold_until ?(rev = false) b ~init ~f ~finish =
   let open Continue_or_stop in
-  let next = if rev then fun b -> Square.last - Int64.clz b else Int64.ctz in
+  let next = next_square ~rev in
   let rec aux b acc =
     if b = empty then finish acc
     else
@@ -106,8 +113,7 @@ let find ?(rev = false) b ~f = fold_until b ~init:None
 
 let first_set_exn ?(rev = false) b =
   if b = empty then invalid_arg "Find first set on an empty bitboard"
-  else Square.of_int_exn @@
-    if rev then Square.last - Int64.clz b else Int64.ctz b
+  else Square.of_int_exn @@ next_square b ~rev
 
 let first_set ?(rev = false) b =
   Option.try_with @@ fun () -> first_set_exn b ~rev
@@ -122,7 +128,7 @@ module Syntax = struct
   let (!!) = singleton
   let (++) = set
   let (--) = clear
-  let (@) sq b = mem b sq
+  let[@inline] (@) sq b = mem b sq
 end
 
 include Syntax
