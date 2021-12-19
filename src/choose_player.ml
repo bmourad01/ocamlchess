@@ -5,5 +5,6 @@ let choose ?(limits = None) s =
     | "random" -> new Player_random.cls ~limits ()
     | "same-color" -> new Player_same_color.cls ~limits ()
     | "opposite-color" -> new Player_opposite_color.cls ~limits ()
+    | "cccp" -> new Player_cccp.cls ~limits ()
     | _ -> invalid_arg @@ sprintf "Invalid player %s" s in
   (player :> Player.t)

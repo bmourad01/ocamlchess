@@ -5,23 +5,27 @@ module Bb = Bitboard
 (** The player that prefers to put its pieces on squares of its color,
     such that the number of pieces on these squares is maximized. Ties are
     broken randomly. *)
-class cls ?(limits = None) () = object
+class cls ?(limits = None) () = object(self)
   inherit Player.cls ~limits ()
 
+  method private same_color active sq =
+    let rank, file = Square.decomp sq in
+    match (active : Piece.color) with
+    | White -> (rank land 1) <> (file land 1)
+    | Black -> (rank land 1) = (file land 1)
+
+  method private board active = match (active : Piece.color) with
+    | White -> Position.white
+    | Black -> Position.black
+  
   method move pos = match Position.legal_moves pos with
     | [] -> raise Player.No_moves
     | moves ->
       let active = Position.active pos in
-      let board pos = match active with
-        | White -> Position.white pos
-        | Black -> Position.black pos in
-      let same_color sq =
-        let rank, file = Square.decomp sq in
-        match active with
-        | White -> (rank land 1) <> (file land 1)
-        | Black -> (rank land 1) = (file land 1) in
+      let board = self#board active in
       List.map moves ~f:(fun (m, pos) ->
-          let n = Bb.(count @@ filter (board pos) ~f:same_color) in
+          let n =
+            Bb.(count @@ filter (board pos) ~f:(self#same_color active)) in
           (m, pos, n)) |>
       List.sort ~compare:(fun (_, _, n) (_, _, n') -> Int.compare n' n) |>
       List.fold_until ~init:([], 0) ~finish:fst
@@ -30,6 +34,6 @@ class cls ?(limits = None) () = object
             | [] -> Continue ((m, pos) :: acc, n)
             | _ -> if n' > n then Stop acc else Continue ((m, pos) :: acc, n')) |>
       List.random_element_exn
-
+  
   method name = "same-color"
 end
