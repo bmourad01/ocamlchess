@@ -67,7 +67,7 @@ end
 
 module Uci = struct
   let go player = match choose_player player ~none_ok:false with
-    | None -> invalid_arg "Expected player"
+    | None -> failwith "Expected player"
     | Some player -> Uci.go player
 
   let player =
