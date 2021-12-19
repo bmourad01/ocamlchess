@@ -155,11 +155,11 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
 let check_and_print_endgame =
   check_endgame >> State.(gets endgame) >>| Option.iter ~f:print_endgame
 
-let next_move = State.(gets endgame) >>= function
+let human_move = State.(gets endgame) >>= function
   | Some _ -> State.return ()
   | None -> poll >> check_and_print_endgame
 
-let player_move player pos =
+let ai_move player pos =
   let m, pos = player#move pos in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
@@ -168,9 +168,9 @@ let player_move player pos =
   check_and_print_endgame
 
 let human_or_ai_move pos = function
-  | None -> next_move
+  | None -> human_move
   | Some player -> State.(gets endgame) >>= function
-    | None -> player_move player pos
+    | None -> ai_move player pos
     | Some _ -> State.return ()
 
 let rec main_loop () = State.(gets window) >>= fun window ->
