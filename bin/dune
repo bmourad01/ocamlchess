@@ -1,21 +1,14 @@
 (executable
- (name test_gui)
- (modules test_gui)
- (libraries core chess monads)
+ (name chess_engine)
+ (libraries cmdliner core chess monads)
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_fields_conv))
  (foreign_stubs
   (language cxx)
-  (names test_gui_stubs))
+  (names gui_stubs))
  (link_flags
   ((-cclib -lstdc++)
    (-cclib -lrt)
    (-cclib -lsfml-graphics)
    (-cclib -lsfml-system)
    (-cclib -lsfml-window))))
-
-(executable
- (name perft)
- (modules perft)
- (libraries core chess)
- (ocamlopt_flags -O3))

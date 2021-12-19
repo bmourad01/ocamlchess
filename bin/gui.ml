@@ -194,13 +194,9 @@ let window_size = 640
 
 external init_fonts : unit -> bool = "ml_init_fonts"
 
-let () =
+let go pos =
   if init_fonts () then
     let window = Window.create window_size window_size "chess" in
-    let pos =
-      if Array.length Sys.argv > 1
-      then Position.Fen.of_string_exn Sys.argv.(1)
-      else Position.start in
     let legal = Position.legal_moves pos in
     printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
     printf "%d legal moves\n%!" (List.length legal);
