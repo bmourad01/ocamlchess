@@ -653,7 +653,7 @@ module Moves = struct
      the enemy king. *)
   let king_mask = I.read () >>| Info.king_mask
 
-  let make ?(capture = Bb.empty) sq k b ~f =
+  let[@inline] make ?(capture = Bb.empty) sq k b ~f =
     pin_mask sq >>= fun pin ->
     check_mask k ~capture >>= fun chk ->
     king_mask >>| fun k ->
