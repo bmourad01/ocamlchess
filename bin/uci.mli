@@ -1,1 +1,3 @@
-val go : unit -> unit
+open Chess
+
+val go : Player.t -> unit

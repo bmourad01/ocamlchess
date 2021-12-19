@@ -1,8 +1,8 @@
 open Core_kernel
 open Cmdliner
 
-let choose_player = function
-  | "" -> None
+let choose_player ?(none_ok = true) = function
+  | "" when none_ok -> None
   | "random" -> Some (new Chess.Player_random.t ())
   | s -> invalid_arg @@ sprintf "Invalid player '%s'" s
 
@@ -48,11 +48,11 @@ module Gui = struct
 
   let white =
     let doc = "The AI player to play as white, if any." in
-    Arg.(value & opt string "" (info ["white"] ~docv:"PLAYER" ~doc))
+    Arg.(value & opt string "" (info ["white"] ~docv:"WHITE-PLAYER" ~doc))
 
   let black =
     let doc = "The AI player to play as black, if any." in
-    Arg.(value & opt string "" (info ["black"] ~docv:"PLAYER" ~doc))
+    Arg.(value & opt string "" (info ["black"] ~docv:"BLACK-PLAYER" ~doc))
 
   let t = Term.(const go $ pos $ white $ black)
 
@@ -66,13 +66,15 @@ module Gui = struct
 end
 
 module Uci = struct
-  let go _ = Uci.go ()
+  let go player = match choose_player player ~none_ok:false with
+    | None -> invalid_arg "Expected player"
+    | Some player -> Uci.go player
 
-  let dummy =
-    let doc = "Dummy parameter (does nothing)." in
-    Arg.(value & flag & info ["dummy"] ~docv:"DUMMY" ~doc)
+  let player =
+    let doc = "The AI player." in
+    Arg.(required & pos 0 (some string) None & info [] ~docv:"PLAYER" ~doc)
 
-  let t = Term.(const go $ dummy)
+  let t = Term.(const go $ player)
 
   let info =
     let doc = "Runs the UCI loop." in
