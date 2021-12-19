@@ -134,6 +134,8 @@ let create ~rank ~file =
   else if file land Bits.File.nmask <> 0 then None
   else Some ((rank lsl bits lsr 1) lor file)
 
+let[@inline] create_unsafe ~rank ~file = (rank lsl bits lsr 1) lor file
+
 let rank_char =
   let ranks = "12345678" in
   fun sq -> ranks.[Bits.rank sq]

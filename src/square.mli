@@ -24,11 +24,16 @@ val of_int_unsafe : int -> t
     integer is not within the specified range. *)
 val of_int : int -> t option
 
-(** [create_exn ~rank ~file] creates a square from the rank and
-    file indicies [rank] and [file], respectively. Both represent indices,
-    and so they must fall within the range [\[0, 7\]], otherwise
-    [Invalid_argument] is raised. *)
+(** [create_exn ~rank ~file] creates a square from the rank and file indicies
+    [rank] and [file], respectively. Both represent indices, and so they must
+    fall within the range [\[0, 7\]], otherwise [Invalid_argument] is raised. *)
 val create_exn : rank:int -> file:int -> t
+
+(** [create_unsafe ~rank ~file] creates a square from the rank and file
+    indicies [rank] and [file], respectively. Both represent indices, and so
+    they must fall within the range [\[0, 7\]]. No sanity checks are performed,
+    so invalid arguments may result in undefined behavior. *)
+val create_unsafe : rank:int -> file:int -> t
 
 (** [create_exn ~rank ~file] creates a square from the rank and
     file indicies [rank] and [file], respectively. Both represent indices,
