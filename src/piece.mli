@@ -94,6 +94,9 @@ module Kind : sig
 
   (** [to_string_hum k] returns the human-readable string of kind [k]. *)
   val to_string_hum : t -> string
+
+  (** [is_sliding k] returns [true] if [k] is a sliding piece kind. *)
+  val is_sliding : t -> bool
 end
 
 (** Representation of a Chess piece as an unboxed integer, which includes its
@@ -174,6 +177,9 @@ val is_queen : t -> bool
 
 (** [is_king p] returns [true] if [p] is a king. *)
 val is_king : t -> bool
+
+(** [is_sliding p] returns [true] if [p] is a sliding piece. *)
+val is_sliding : t -> bool
 
 (** [of_int_exn i] creates the representation of a piece from integer [i].
     Bits 0 through 3 must form an integer within the range [\[0,5\]], and

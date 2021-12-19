@@ -105,6 +105,10 @@ module Kind = struct
     | Rook -> "rook"
     | Queen -> "queen"
     | King -> "king"
+
+  let[@inline] is_sliding = function
+    | Bishop | Rook | Queen -> true
+    | _ -> false
 end
 
 module T = struct
@@ -134,6 +138,8 @@ let[@inline] is_bishop p = Bits.(kind p = bishop)
 let[@inline] is_rook p = Bits.(kind p = rook)
 let[@inline] is_queen p = Bits.(kind p = queen)
 let[@inline] is_king p = Bits.(kind p = king)
+
+let[@inline] is_sliding p = Kind.is_sliding @@ kind p
 
 (* Integer representation *)
 

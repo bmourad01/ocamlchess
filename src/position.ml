@@ -498,7 +498,7 @@ module Info = struct
     num_checkers : int;
     check_mask : Bb.t;
     en_passant_check_mask : Bb.t;
-    enemy_pieces : (Square.t * Piece.kind) list;
+    enemy_sliders : (Square.t * Piece.kind) list;
   } [@@deriving fields]
 end
 
@@ -536,7 +536,7 @@ module Moves = struct
        En passant moves arise rarely across all chess positions, so we can
        do a bit of heavy calculation here. *)
     let[@inline] en_passant sq ep diag = I.read () >>|
-      fun {pos; king_sq; occupied; enemy_pieces; _} ->
+      fun {pos; king_sq; occupied; enemy_sliders; _} ->
       (* Get the position of the pawn which made a double advance. *)
       let pw =
         let rank, file = Square.decomp ep in
@@ -547,7 +547,7 @@ module Moves = struct
       (* Remove our pawn and the captured pawn from the board. *)
       let occupied = occupied -- sq -- pw in
       let init = diag ++ ep and finish = ident in
-      List.fold_until enemy_pieces ~init ~finish ~f:(fun acc (sq, k) ->
+      List.fold_until enemy_sliders ~init ~finish ~f:(fun acc (sq, k) ->
           (* Check if an appropriate diagonal attack from the king would reach
              that corresponding piece. *)
           match k with
@@ -722,28 +722,27 @@ let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
   let n = Pre.knight king_sq & pos.knight in
   let bishop = Pre.bishop king_sq occupied in
   let rook = Pre.rook king_sq occupied in
-  let b = bishop & pos.bishop in
-  let r = rook & pos.rook in
-  let q = (bishop + rook) & pos.queen in
+  let bq = bishop & (pos.bishop + pos.queen) in
+  let rq = rook & (pos.rook + pos.queen) in
   let k = Pre.king king_sq & pos.king in
-  (p + n + b + r + q + k) & enemy_board
+  (p + n + bq + rq + k) & enemy_board
 
 (* For each enemy sliding piece, calculate its attack set. Then,
    intersect it with the same attack set from our king's square.
    Then, intersect with the squares between the sliding piece and our
    king. Any of our pieces that are in this intersection are thus
    pinned. *)
-let[@inline] pinners ~active_board ~king_sq ~enemy_pieces ~occupied =
+let[@inline] pinners ~active_board ~king_sq ~enemy_sliders ~occupied =
   let open Bb.Syntax in
   let update pinners sq p k mask =
     match Bb.first_set (p & k & mask) with
     | None -> pinners
-    | Some sq' -> Map.change pinners sq' ~f:(function
-        | None -> Some (!!sq)
-        | Some b -> Some (b ++ sq))
+    | Some sq' -> Map.update pinners sq' ~f:(function
+        | Some b -> b ++ sq
+        | None -> !!sq)
   and mask = active_board -- king_sq
   and init = Map.empty (module Square) in
-  List.fold enemy_pieces ~init ~f:(fun pinners (sq, k) ->
+  List.fold enemy_sliders ~init ~f:(fun pinners (sq, k) ->
       let mask = mask & Pre.between king_sq sq in
       match k with
       | Piece.Bishop ->
@@ -801,7 +800,9 @@ let[@inline] create_info pos =
   let enemy_attacks =
     Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
   let enemy_pieces = find_color pos enemy in
-  let pinners = pinners ~active_board ~king_sq ~enemy_pieces ~occupied in
+  let enemy_sliders =
+    List.filter enemy_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
+  let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
   let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
   (* Number of checkers is important for how we can decide to get out of
      check. *)
@@ -811,7 +812,7 @@ let[@inline] create_info pos =
   Info.Fields.create
     ~pos ~king_sq ~king_mask ~occupied ~active_board ~enemy_board
     ~enemy_attacks  ~pinners ~num_checkers ~check_mask
-    ~en_passant_check_mask ~enemy_pieces
+    ~en_passant_check_mask ~enemy_sliders
 
 (* Generate all legal moves from the position. *)
 let legal_moves pos = create_info pos |> Monad.Reader.run Moves.go
