@@ -1,6 +1,11 @@
 open Core_kernel
 open Cmdliner
 
+let choose_player = function
+  | "" -> None
+  | "random" -> Some (new Chess.Player_random.t ())
+  | s -> invalid_arg @@ sprintf "Invalid player '%s'" s
+
 module Perft = struct
   let go depth pos =
     if depth < 1 then invalid_arg @@
@@ -29,7 +34,11 @@ module Perft = struct
 end
 
 module Gui = struct
-  let go pos = Gui.go @@ Chess.Position.Fen.of_string_exn pos
+  let go pos white black =
+    let pos = Chess.Position.Fen.of_string_exn pos in
+    let white = choose_player white in
+    let black = choose_player black in
+    Gui.go pos ~white ~black
 
   let pos =
     let doc = "The position to play from, represented as a FEN string." in
@@ -37,7 +46,15 @@ module Gui = struct
          pos 0 string Chess.Position.Fen.start &
          info [] ~docv:"POSITION" ~doc)
 
-  let t = Term.(const go $ pos)
+  let white =
+    let doc = "The AI player to play as white, if any." in
+    Arg.(value & opt string "" (info ["white"] ~docv:"PLAYER" ~doc))
+
+  let black =
+    let doc = "The AI player to play as black, if any." in
+    Arg.(value & opt string "" (info ["black"] ~docv:"PLAYER" ~doc))
+
+  let t = Term.(const go $ pos $ white $ black)
 
   let info =
     let doc = "Runs the testing GUI." in
@@ -54,7 +71,7 @@ module Uci = struct
   let dummy =
     let doc = "Dummy parameter (does nothing)." in
     Arg.(value & flag & info ["dummy"] ~docv:"DUMMY" ~doc)
-  
+
   let t = Term.(const go $ dummy)
 
   let info =

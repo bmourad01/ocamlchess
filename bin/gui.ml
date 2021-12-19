@@ -39,6 +39,8 @@ module State = struct
       sel : (Square.t * moves) option;
       prev : Move.t option;
       endgame : endgame option;
+      white : Player.t option;
+      black : Player.t option;
     } [@@deriving fields]
   end
 
@@ -150,16 +152,36 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
     else None in
   {st with endgame}
 
+let check_and_print_endgame =
+  check_endgame >> State.(gets endgame) >>| Option.iter ~f:print_endgame
+
+let next_move = State.(gets endgame) >>= function
+  | Some _ -> State.return ()
+  | None -> poll >> check_and_print_endgame
+
+let player_move player pos =
+  let m, pos = player#move pos in
+  let legal = Position.legal_moves pos in
+  begin State.update @@ fun st ->
+    {st with pos; legal; sel = None; prev = Some m}
+  end >>
+  check_and_print_endgame
+
+let human_or_ai_move pos = function
+  | None -> next_move
+  | Some player -> State.(gets endgame) >>= function
+    | None -> player_move player pos
+    | Some _ -> State.return ()
+
 let rec main_loop () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
     State.(gets pos) >>= fun pos ->
-    State.(gets endgame) >>= begin function
-      | Some _ -> State.return ()
-      | None -> poll >>
-        (* Check if the game is over. *)
-        check_endgame >> State.(gets endgame) >>| Option.iter ~f:print_endgame
-    end >>
+    begin match Position.active pos with
+      | White -> State.(gets white)
+      | Black -> State.(gets black)
+    end >>= human_or_ai_move pos >>
+    (* New position? *)
     State.(gets pos) >>= fun pos' ->
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
@@ -194,7 +216,7 @@ let window_size = 640
 
 external init_fonts : unit -> bool = "ml_init_fonts"
 
-let go pos =
+let go pos ~white ~black =
   if init_fonts () then
     let window = Window.create window_size window_size "chess" in
     let legal = Position.legal_moves pos in
@@ -204,3 +226,4 @@ let go pos =
     Monad.State.eval (main_loop ()) @@
     State.Fields.create ~window ~pos ~legal
       ~sel:None ~prev:None ~endgame:None
+      ~white ~black

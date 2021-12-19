@@ -1,3 +1,5 @@
+(include_subdirs unqualified)
+
 (library
  (name chess)
  (public_name chess)
