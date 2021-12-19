@@ -39,22 +39,26 @@ let edges  = 0xFF818181818181FFL
 
 (* Helpers to access rank/file by index. *)
 
-let rank_exn =
-  let arr =
-    [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|] in
-  fun i -> if Int.(i < 0 || i >= Square.Rank.count) then invalid_arg @@
-      sprintf "Integer %d is not a valid rank" i
-    else Array.unsafe_get arr i
+let ranks = [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|]
+let files = [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|]
 
-let file_exn =
-  let arr =
-    [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|] in
-  fun i -> if Int.(i < 0 || i >= Square.File.count) then invalid_arg @@
-      sprintf "Integer %d is not a valid file" i
-    else Array.unsafe_get arr i
+let rank_exn i =
+  if Int.(i < 0 || i >= Square.Rank.count) then invalid_arg @@
+    sprintf "Integer %d is not a valid rank" i
+  else Array.unsafe_get ranks i
 
-let rank i = Option.try_with @@ fun () -> rank_exn i
-let file i = Option.try_with @@ fun () -> file_exn i
+let file_exn i =
+  if Int.(i < 0 || i >= Square.File.count) then invalid_arg @@
+    sprintf "Integer %d is not a valid file" i
+  else Array.unsafe_get files i
+
+let rank i =
+  if Int.(i < 0 || i >= Square.Rank.count) then None
+  else Some (Array.unsafe_get ranks i)
+
+let file i =
+  if Int.(i < 0 || i >= Square.File.count) then None
+  else Some (Array.unsafe_get files i)
 
 (* Bitwise operators. *)
 
@@ -82,7 +86,7 @@ let fold ?(rev = false) b ~init ~f =
   let rec aux b acc =
     if b = empty then acc
     else
-      let sq = Square.of_int_exn @@ next b in
+      let sq = Square.of_int_unsafe @@ next b in
       aux (clear b sq) @@ f acc sq in
   aux b init
 
@@ -92,31 +96,49 @@ let fold_until ?(rev = false) b ~init ~f ~finish =
   let rec aux b acc =
     if b = empty then finish acc
     else
-      let sq = Square.of_int_exn @@ next b in
+      let sq = Square.of_int_unsafe @@ next b in
       match f acc sq with
       | Stop x -> x
       | Continue acc -> aux (clear b sq) acc in
   aux b init
 
-let iter ?(rev = false) b ~f = fold b ~init:() ~f:(fun () sq -> f sq) ~rev
+let iter ?(rev = false) b ~f =
+  let next = next_square ~rev in
+  let rec aux b =
+    if b <> empty then begin
+      let sq = Square.of_int_unsafe @@ next b in
+      f sq;
+      aux @@ clear b sq
+    end in
+  aux b
 
-let iter_until ?(rev = false) b ~f = fold_until b ~init:()
-    ~f:(fun () sq -> if f sq then Stop () else Continue ())
-    ~finish:ident ~rev
+let iter_until ?(rev = false) b ~f =
+  let next = next_square ~rev in
+  let rec aux b =
+    if b <> empty then
+      let sq = Square.of_int_unsafe @@ next b in
+      if not @@ f sq then aux @@ clear b sq in
+  aux b
 
-let filter b ~f =
+let[@inline] filter b ~f =
   fold b ~init:b ~f:(fun acc sq -> if f sq then acc else clear acc sq)
 
-let find ?(rev = false) b ~f = fold_until b ~init:None
-    ~f:(fun acc sq -> if f sq then Stop (Some sq) else Continue acc)
-    ~finish:ident ~rev
+let find ?(rev = false) b ~f =
+  let next = next_square ~rev in
+  let rec aux b =
+    if b = empty then None
+    else
+      let sq = Square.of_int_unsafe @@ next b in
+      if f sq then Some sq else aux @@ clear b sq in
+  aux b
 
 let first_set_exn ?(rev = false) b =
   if b = empty then invalid_arg "Find first set on an empty bitboard"
-  else Square.of_int_exn @@ next_square b ~rev
+  else Square.of_int_unsafe @@ next_square b ~rev
 
 let first_set ?(rev = false) b =
-  Option.try_with @@ fun () -> first_set_exn b ~rev
+  if b = empty then None 
+  else Some (Square.of_int_unsafe @@ next_square b ~rev)
 
 (* Infix operators. *)
 

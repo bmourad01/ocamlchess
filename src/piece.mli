@@ -185,6 +185,13 @@ val of_int_exn : int -> t
 (** [of_int_exn i] creates the representation of a piece from integer [i].
     Bits 0 through 3 must form an integer within the range [\[0,5\]], and
     represents the piece's kind. Bit 4 represents the color with [0] being
+    white and [1] being black. All other bits must be zero. No sanity checks
+    are performed, so invalid values may result in undefined behavior. *)
+val of_int_unsafe : int -> t
+
+(** [of_int_exn i] creates the representation of a piece from integer [i].
+    Bits 0 through 3 must form an integer within the range [\[0,5\]], and
+    represents the piece's kind. Bit 4 represents the color with [0] being
     white and [1] being black. All other bits must be zero. In any other
     case, [None] is returned. *)
 val of_int : int -> t option

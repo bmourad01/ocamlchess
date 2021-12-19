@@ -15,6 +15,9 @@ type side = [`king | `queen]
     value is not within range. *)
 val of_int_exn : int -> t
 
+(** Convert from integer representation. Does not perform any sanity checks. *)
+val of_int_unsafe : int -> t
+
 (** Convert from integer representation. Returns [None] if the value is not
     within range. *)
 val of_int : int -> t option

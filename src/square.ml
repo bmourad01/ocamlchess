@@ -3,6 +3,7 @@ open Base
 
 let bits = 6
 let count = 64
+let nmask = lnot 63
 
 module T = struct
   type t = int [@@deriving compare, equal, hash, sexp]
@@ -12,11 +13,13 @@ include T
 include Comparable.Make (T)
 
 let of_int_exn i =
-  if i < 0 || i >= count then
+  if Int.(i land nmask <> 0) then
     invalid_arg @@ sprintf "Invalid square integer '%d'" i
   else i
 
-let of_int i = Option.try_with @@ fun () -> of_int_exn i
+let of_int_unsafe i = i
+
+let[@inline] of_int i = Option.some_if Int.(i land nmask = 0) i
 let[@inline] to_int sq = sq
 
 module Bits = struct
@@ -31,6 +34,7 @@ module Bits = struct
     let eight = 0b111
 
     let count = 8
+    let nmask = lnot 0b111
   end
 
   module File = struct
@@ -44,6 +48,7 @@ module Bits = struct
     let h = 0b111
 
     let count = 8
+    let nmask = lnot 0b111
   end
 
   let a1 = 0b000_000
@@ -118,13 +123,16 @@ module Bits = struct
 end
 
 let create_exn ~rank ~file =
-  if rank < 0 || rank >= Bits.Rank.count then
+  if rank land Bits.Rank.nmask <> 0 then
     invalid_arg @@ sprintf "Invalid rank index '%d'" rank
-  else if file < 0 || file >= Bits.File.count then
+  else if file land Bits.File.nmask <> 0 then
     invalid_arg @@ sprintf "Invalid file index '%d'" file
   else (rank lsl bits lsr 1) lor file
 
-let create ~rank ~file = Option.try_with @@ fun () -> create_exn ~rank ~file
+let create ~rank ~file =
+  if rank land Bits.Rank.nmask <> 0 then None
+  else if file land Bits.File.nmask <> 0 then None
+  else Some ((rank lsl bits lsr 1) lor file)
 
 let rank_char =
   let ranks = "12345678" in

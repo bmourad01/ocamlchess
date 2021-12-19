@@ -16,6 +16,10 @@ include Comparable.S with type t := t
     [Invalid_argument] if the integer is not within the specified range. *)
 val of_int_exn : int -> t
 
+(** [of_int_unsafe i] creates a square from an integer [i]. Does not perform
+    any sanity checks on [i]. *)
+val of_int_unsafe : int -> t
+
 (** [of_int i] creates a square from an integer [i]. Returns [None] if the
     integer is not within the specified range. *)
 val of_int : int -> t option

@@ -1,6 +1,7 @@
 open Core_kernel
 
 let bits = 4
+let nmask = lnot 0b1111
 
 module T = struct
   type t = int [@@deriving compare, equal, hash, sexp]
@@ -14,11 +15,12 @@ type side = [`king | `queen]
 (* Integer conversion. *)
 
 let of_int_exn i =
-  if i < 0 || i > 15 then invalid_arg @@
+  if i land nmask <> 0 then invalid_arg @@
     sprintf "Invalid integer value '%d' for castling rights" i
   else i
 
-let of_int i = Option.try_with @@ fun () -> of_int_exn i
+let[@inline] of_int_unsafe i = i
+let[@inline] of_int i = Option.some_if (i land nmask = 0) i
 let[@inline] to_int cr = cr
 
 (* Predefined constants. *)
@@ -36,7 +38,7 @@ let all = white lor black
 
 (* Constructor *)
 
-let singleton c s = match c, s with
+let[@inline] singleton c s = match c, s with
   | Piece.White, `king -> white_kingside
   | Piece.White, `queen -> white_queenside
   | Piece.Black, `king -> black_kingside
@@ -44,14 +46,14 @@ let singleton c s = match c, s with
 
 (* Logical operators. *)
 
-let inter x y = x land y
-let union x y = x lor y
-let compl x = all land lnot x
-let diff x y = inter x @@ compl y
+let[@inline] inter x y = x land y
+let[@inline] union x y = x lor y
+let[@inline] compl x = all land lnot x
+let[@inline] diff x y = inter x @@ compl y
 
 (* Testing membership. *)
 
-let mem x color side = match color, side with
+let[@inline] mem x color side = match color, side with
   | Piece.White, `king -> inter x white_kingside <> none
   | Piece.White, `queen -> inter x white_queenside <> none
   | Piece.Black, `king -> inter x black_kingside <> none
@@ -59,12 +61,12 @@ let mem x color side = match color, side with
 
 (* String operations. *)
 
-let to_string =
-  let pairs =
-    List.zip_exn (List.init bits ~f:Int.((lsl) 1)) ["K"; "Q"; "k"; "q"] in
-  function
+let string_pairs =
+  List.zip_exn (List.init bits ~f:Int.((lsl) 1)) ["K"; "Q"; "k"; "q"]
+
+let to_string = function
   | 0 -> "-"
-  | x -> List.fold pairs ~init:"" ~f:(fun acc (y, s) ->
+  | x -> List.fold string_pairs ~init:"" ~f:(fun acc (y, s) ->
       if inter x y <> none then acc ^ s else acc)
 
 let of_string_exn = function

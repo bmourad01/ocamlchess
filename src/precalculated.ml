@@ -24,7 +24,8 @@ end
    https://www.chessprogramming.org/index.php?title=Looking_for_Magics#Feeding_in_Randoms
    with USE_32_BIT_MULTIPLICATIONS undefined
 
-   Credit: Tord Romstad *)
+   Credit: Tord Romstad
+*)
 module Magic = struct
   let bishop = [|
     0x89A1121896040240L; 0x2004844802002010L; 0x2068080051921000L;
@@ -83,7 +84,7 @@ module Simple = struct
   (* Construct a simple table which maps squares to bitboards. *)
   let make f = Array.init Square.count ~f:(fun i ->
       let open Square in
-      let sq = of_int_exn i in
+      let sq = of_int_unsafe i in
       f (rank sq) (file sq) |>
       List.filter_map ~f:(fun (rank, file) -> create ~rank ~file) |>
       List.fold ~init:Bb.empty ~f:Bb.set)
@@ -187,7 +188,7 @@ module Sliding = struct
           blockers, Int64.(mask land pred mask)) |> fst
 
   (* Compute the index into the magic hash table. *)
-  let hash occupied magic shift =
+  let[@inline] hash occupied magic shift =
     Int64.((occupied * magic) lsr Int.(64 - shift) |> to_int_exn)
 
   (* Generate the magic hash table for bishop and rook moves. *)
@@ -210,30 +211,44 @@ end
 
 (* The actual API for accessing precalculated move patterns. *)
 
-let pawn_advance sq color = match color with
-  | Piece.White -> Simple.white_pawn_advance.(Square.to_int sq)
-  | Piece.Black -> Simple.black_pawn_advance.(Square.to_int sq)
+let[@inline] pawn_advance sq color = match color with
+  | Piece.White ->
+    Array.unsafe_get Simple.white_pawn_advance @@ Square.to_int sq
+  | Piece.Black ->
+    Array.unsafe_get Simple.black_pawn_advance @@ Square.to_int sq
 
-let pawn_capture sq color = match color with
-  | Piece.White -> Simple.white_pawn_capture.(Square.to_int sq)
-  | Piece.Black -> Simple.black_pawn_capture.(Square.to_int sq)
+let[@inline] pawn_capture sq color = match color with
+  | Piece.White ->
+    Array.unsafe_get Simple.white_pawn_capture @@ Square.to_int sq
+  | Piece.Black ->
+    Array.unsafe_get Simple.black_pawn_capture @@ Square.to_int sq
 
-let knight sq = Simple.knight.(Square.to_int sq)
+let[@inline] knight sq = Array.unsafe_get Simple.knight @@ Square.to_int sq
 
-let bishop sq occupied =
+let[@inline] bishop sq occupied =
   let i = Square.to_int sq in
-  let occupied = Bb.(to_int64 (occupied & Mask.diagonal.(i))) in
-  Sliding.(bishop.(i).(hash occupied Magic.bishop.(i) Shift.diagonal.(i)))
+  let mask = Array.unsafe_get Mask.diagonal i in
+  let shift = Array.unsafe_get Shift.diagonal i in
+  let magic = Array.unsafe_get Magic.bishop i in
+  let occupied = Bb.(to_int64 (occupied & mask)) in
+  let hash = Sliding.hash occupied magic shift in
+  let arr = Array.unsafe_get Sliding.bishop i in
+  Array.unsafe_get arr hash
 
-let rook sq occupied =
+let[@inline] rook sq occupied =
   let i = Square.to_int sq in
-  let occupied = Bb.(to_int64 (occupied & Mask.straight.(i))) in
-  Sliding.(rook.(i).(hash occupied Magic.rook.(i) Shift.straight.(i)))
+  let mask = Array.unsafe_get Mask.straight i in
+  let shift = Array.unsafe_get Shift.straight i in
+  let magic = Array.unsafe_get Magic.rook i in
+  let occupied = Bb.(to_int64 (occupied & mask)) in
+  let hash = Sliding.hash occupied magic shift in
+  let arr = Array.unsafe_get Sliding.rook i in
+  Array.unsafe_get arr hash
 
-let queen sq occupied = Bb.(bishop sq occupied + rook sq occupied)
-let king sq = Simple.king.(Square.to_int sq)
+let[@inline] queen sq occupied = Bb.(bishop sq occupied + rook sq occupied)
+let[@inline] king sq = Array.unsafe_get Simple.king @@ Square.to_int sq
 
-let castle =
+let castle_tbl =
   let open Bb in
   let open Castling_rights in
   let wk = Square.(!!f1 + !!g1) in
@@ -246,36 +261,41 @@ let castle =
     Piece.Black, `king,  (bk, bk);
     Piece.Black, `queen, (bq, bq -- Square.b8);
   ] in
-  let tbl = Array.init (1 lsl bits) ~f:(fun i ->
-      let x = of_int_exn i in
+  Array.init (1 lsl bits) ~f:(fun i ->
+      let x = of_int_unsafe i in
       List.fold valid ~init:(empty, empty) ~f:(fun (m, b) (c, s, (m', b')) ->
-          if mem x c s then (m + m', b + b') else (m, b))) in
-  fun rights c s -> tbl.(to_int @@ inter rights @@ singleton c s)
+          if mem x c s then (m + m', b + b') else (m, b)))
 
-let between =
-  let tbl = Array.init Square.count ~f:(fun i ->
-      let sq = Square.of_int_exn i in
-      Array.init Square.count ~f:(fun i' ->
-          let open Bb in
-          (* Use the singleton bitboard of the target square as the
-               blocker mask. *)
-          let s = !!Square.(of_int_exn i') in
-          let straight m =
-            let b = rook sq s & m in
-            if (b & s) <> empty then b - s else empty in
-          let diagonal m =
-            let b = bishop sq s & m in
-            if (b & s) <> empty then b - s else empty in
-          (* Use the pre-generated directional masks. *)
-          let east = straight Mask.east.(i) in
-          let west = straight Mask.west.(i) in
-          let north = straight Mask.north.(i) in
-          let south = straight Mask.south.(i) in
-          let neast = diagonal Mask.neast.(i) in
-          let nwest = diagonal Mask.nwest.(i) in
-          let seast = diagonal Mask.seast.(i) in
-          let swest = diagonal Mask.swest.(i) in
-          (* We're getting the union of all directions, even though only
-               one of them will be valid. *)
-          east + west + north + south + neast + nwest + seast + swest)) in
-  fun sq sq' -> Square.(tbl.(to_int sq).(to_int sq'))
+let[@inline] castle cr c s =
+  let open Castling_rights in
+  Array.unsafe_get castle_tbl @@ to_int @@ inter cr @@ singleton c s
+
+let between_tbl = Array.init Square.count ~f:(fun i ->
+    let sq = Square.of_int_unsafe i in
+    Array.init Square.count ~f:(fun i' ->
+        let open Bb in
+        (* Use the singleton bitboard of the target square as the
+           blocker mask. *)
+        let s = !!Square.(of_int_unsafe i') in
+        let straight m =
+          let b = rook sq s & m in
+          if (b & s) <> empty then b - s else empty in
+        let diagonal m =
+          let b = bishop sq s & m in
+          if (b & s) <> empty then b - s else empty in
+        (* Use the pre-generated directional masks. *)
+        let east  = straight Mask.east.(i)  in
+        let west  = straight Mask.west.(i)  in
+        let north = straight Mask.north.(i) in
+        let south = straight Mask.south.(i) in
+        let neast = diagonal Mask.neast.(i) in
+        let nwest = diagonal Mask.nwest.(i) in
+        let seast = diagonal Mask.seast.(i) in
+        let swest = diagonal Mask.swest.(i) in
+        (* We're getting the union of all directions, even though only
+           one of them will be valid. *)
+        east + west + north + south + neast + nwest + seast + swest))
+
+let[@inline] between sq sq' =
+  let arr = Array.unsafe_get between_tbl @@ Square.to_int sq in
+  Array.unsafe_get arr @@ Square.to_int sq'
