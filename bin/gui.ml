@@ -138,8 +138,9 @@ let in_check pos =
 let print_endgame = function
   | `Insufficient_material -> printf "Draw by insufficient material\n%!"
   | `Fifty_move -> printf "Draw by fifty-move rule\n%!"
-  | `Checkmate c -> printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
   | `Stalemate -> printf "Draw by stalemate\n%!"
+  | `Checkmate c ->
+    printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
 
 let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   let endgame =
