@@ -10,7 +10,10 @@ type limits = {
 exception No_moves
 
 (** The player interface. *)
-type t = <move : Position.t -> Move.t * Position.t>
+type t = <
+  move : Position.t -> Move.t * Position.t;
+  name : string;
+>
 
 (** [player ~limits] will construct a player object with search limits [limits] *)
 class virtual cls ?(limits = None) () = object
@@ -23,4 +26,7 @@ class virtual cls ?(limits = None) () = object
       undefined behavior may result. If the current position has no legal moves
       for the player, then [No_moves] is raised. *)
   method virtual move : Position.t -> Move.t * Position.t
+
+  (** The player's name. *)
+  method virtual name : string
 end

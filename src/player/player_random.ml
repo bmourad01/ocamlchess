@@ -8,4 +8,6 @@ class cls ?(limits = None) () = object
     match List.random_element @@ Position.legal_moves pos with
     | None -> raise Player.No_moves
     | Some m -> m
+
+  method name = "random"
 end

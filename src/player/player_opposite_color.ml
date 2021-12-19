@@ -30,4 +30,6 @@ class cls ?(limits = None) () = object
             | [] -> Continue ((m, pos) :: acc, n)
             | _ -> if n' > n then Stop acc else Continue ((m, pos) :: acc, n')) |>
       List.random_element_exn
+
+  method name = "opposite-color"
 end
