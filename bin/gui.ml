@@ -139,12 +139,6 @@ let is_fifty_move pos = Position.halfmove pos >= 100
 
 let enemy pos = Piece.Color.opposite @@ Position.active pos
 
-let in_check pos =
-  let active_board = Position.active_board pos in
-  let king = Position.king pos in
-  let attacks = Position.Attacks.all pos (enemy pos) ~ignore_same:true in
-  Bitboard.((active_board & king & attacks) <> empty)
-
 let print_endgame = function
   | `Insufficient_material -> printf "Draw by insufficient material\n%!"
   | `Fifty_move -> printf "Draw by fifty-move rule\n%!"
@@ -157,7 +151,7 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
     if is_insufficient_material pos then Some `Insufficient_material
     else if is_fifty_move pos then Some `Fifty_move
     else if List.is_empty legal then
-      if in_check pos
+      if Position.in_check pos
       then Some (`Checkmate (enemy pos))
       else Some `Stalemate
     else None in

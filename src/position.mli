@@ -201,6 +201,10 @@ module Attacks : sig
   val non_sliding : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 end
 
+(** [in_check pos] returns [true] if the active player for position [pos] is
+    currently in check. *)
+val in_check : t -> bool
+
 (** A legal move. *)
 type legal_move
 

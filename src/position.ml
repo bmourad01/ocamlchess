@@ -297,6 +297,12 @@ module Attacks = struct
         | _ -> true)
 end
 
+let in_check pos =
+  let active_board = active_board pos in
+  let enemy = Piece.Color.opposite @@ pos.active in
+  let attacks = Attacks.all pos enemy ~ignore_same:true in
+  Bb.((active_board & pos.king & attacks) <> empty)
+
 (* P for Position *)
 module P = struct
   include Monad.State.T1(T)(Monad.Ident)

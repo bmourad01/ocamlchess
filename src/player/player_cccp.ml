@@ -10,23 +10,16 @@ class cls ?(limits = None) () = object(self)
   method private enemy pos =
     Piece.Color.opposite @@ Position.active pos
 
-  method private in_check pos =
-    let active_board = Position.active_board pos in
-    let king = Position.king pos in
-    let enemy = self#enemy pos in
-    let attacks = Position.Attacks.all pos enemy ~ignore_same:true in
-    Bb.((active_board & king & attacks) <> empty)
-
   (* Try to checkmate the enemy king. *)
   method private checkmate = List.filter ~f:(fun mv ->
       let pos = Lm.position mv in
       match Position.legal_moves pos with
-      | _ :: _ -> false
-      | [] -> self#in_check pos)
+      | [] -> Position.in_check pos
+      | _ :: _ -> false)
 
   (* Try to check the enemy king. *)
   method private check = List.filter ~f:(fun mv ->
-      Lm.position mv |> self#in_check)
+      Lm.position mv |> Position.in_check)
 
   method private captured enemy pos pos' =
     let open Option.Monad_infix in
