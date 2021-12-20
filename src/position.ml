@@ -24,6 +24,8 @@ end
 
 include T
 
+let enemy pos = Piece.Color.opposite pos.active
+
 (* Bitboard accessors *)
 
 let[@inline] all_board pos = Bb.(pos.white + pos.black)
@@ -33,6 +35,7 @@ let[@inline] board_of_color pos = function
   | Piece.Black -> pos.black
 
 let[@inline] active_board pos = board_of_color pos pos.active
+let[@inline] enemy_board pos = board_of_color pos @@ enemy pos
 
 let[@inline] board_of_kind pos = function
   | Piece.Pawn -> pos.pawn
@@ -299,8 +302,7 @@ end
 
 let in_check pos =
   let active_board = active_board pos in
-  let enemy = Piece.Color.opposite @@ pos.active in
-  let attacks = Attacks.all pos enemy ~ignore_same:true in
+  let attacks = Attacks.all pos (enemy pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
 (* P for Position *)
@@ -793,7 +795,7 @@ let[@inline] create_info pos =
   let enemy = Piece.Color.opposite pos.active in
   let occupied = all_board pos in
   let active_board = active_board pos in
-  let enemy_board = board_of_color pos enemy in
+  let enemy_board = enemy_board pos in
   let king_mask = ~~(pos.king & enemy_board) in
   (* We're considering attacked squares only for king moves. These squares
      should include enemy pieces which may block an enemy attack, since it

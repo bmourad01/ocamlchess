@@ -9,9 +9,6 @@ module Lm = Position.Legal_move
 class cls ?(limits = None) () = object(self)
   inherit Player.cls ~limits ()
 
-  method private enemy pos =
-    Piece.Color.opposite @@ Position.active pos
-
   (* Try to checkmate the enemy king. *)
   method private checkmate = List.filter ~f:(fun mv ->
       let pos = Lm.position mv in
@@ -41,7 +38,7 @@ class cls ?(limits = None) () = object(self)
   (* Try to capture an enemy piece of the highest value. *)
   method private capture pos moves =
     let open Option.Monad_infix in
-    let enemy = self#enemy pos in
+    let enemy = Position.enemy pos in
     self#equal_eval moves ~eval:(fun mv ->
         Lm.position mv |> self#captured enemy pos >>| self#piece_value)
 
