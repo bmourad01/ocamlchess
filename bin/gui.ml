@@ -15,6 +15,7 @@ module Window = struct
   external size : t -> (int * int) = "ml_window_size"
   external is_open : t -> bool = "ml_window_is_open"
   external poll_event : t -> event option = "ml_window_poll_event"
+  external close : t -> unit = "ml_window_close"
   external clear : t -> unit = "ml_window_clear"
   external display : t -> unit = "ml_window_display"
 
@@ -216,7 +217,14 @@ let rec main_loop () = State.(gets window) >>= fun window ->
     Window.clear window;
     Window.paint_board window pos' bb sq prev;
     Window.display window;
-    main_loop ()
+    (* Nothing more to do if the game is over. *)
+    State.(gets endgame) >>= function
+    | Some _ ->
+      (* Prompt the user to quit when ready. *)
+      printf "Enter any key to quit: %!";
+      ignore @@ In_channel.(input_line stdin);
+      State.return @@ Window.close window
+    | None -> main_loop ()
   else State.return ()
 
 let () = Callback.register "piece_at_square" Position.piece_at_square

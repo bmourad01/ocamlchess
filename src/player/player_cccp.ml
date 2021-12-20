@@ -13,22 +13,20 @@ class cls ?(limits = None) () = object(self)
   method private in_check pos =
     let active_board = Position.active_board pos in
     let king = Position.king pos in
-    let attacks =
-      Position.Attacks.all pos (self#enemy pos) ~ignore_same:true in
+    let enemy = self#enemy pos in
+    let attacks = Position.Attacks.all pos enemy ~ignore_same:true in
     Bb.((active_board & king & attacks) <> empty)
 
   (* Try to checkmate the enemy king. *)
-  method private checkmate moves =
-    List.filter moves ~f:(fun mv ->
-        let pos = Lm.position mv in
-        match Position.legal_moves pos with
-        | _ :: _ -> false
-        | [] -> self#in_check pos)
+  method private checkmate = List.filter ~f:(fun mv ->
+      let pos = Lm.position mv in
+      match Position.legal_moves pos with
+      | _ :: _ -> false
+      | [] -> self#in_check pos)
 
   (* Try to check the enemy king. *)
-  method private check moves =
-    List.filter moves ~f:(fun mv ->
-        Lm.position mv |> self#in_check)
+  method private check = List.filter ~f:(fun mv ->
+      Lm.position mv |> self#in_check)
 
   method private captured enemy pos pos' =
     let open Option.Monad_infix in
@@ -50,8 +48,7 @@ class cls ?(limits = None) () = object(self)
     let open Option.Monad_infix in
     let enemy = self#enemy pos in
     self#equal_eval moves ~eval:(fun mv ->
-        let pos' = Lm.position mv in
-        self#captured enemy pos pos' >>| self#piece_value)
+        Lm.position mv |> self#captured enemy pos >>| self#piece_value)
 
   (* Push a piece that gains the the largest number of controlled squares,
      with a bonus for promoting to a high-value piece. *)
@@ -61,8 +58,7 @@ class cls ?(limits = None) () = object(self)
         let m, pos' = Lm.decomp mv in
         let promote_bonus =
           Move.promote m |> Option.value_map ~default:0 ~f:self#piece_value in
-        let num_controlled =
-          Bb.count @@ Position.Attacks.all pos' active
+        let num_controlled = Bb.count @@ Position.Attacks.all pos' active
             ~ignore_same:false ~king_danger:true in
         Option.return (num_controlled + promote_bonus))
 

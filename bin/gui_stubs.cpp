@@ -13,7 +13,7 @@
 
 /*
   Assets
-  
+
   XXX: don't rely on system installation for these
 */
 
@@ -26,8 +26,8 @@ static sf::Font _piece_font, _text_font;
 
 /* Helpers */
 
-enum Color : int {White, Black};
-enum Kind : int {Pawn, Knight, Bishop, Rook, Queen, King};
+enum Color : int { White, Black };
+enum Kind : int { Pawn, Knight, Bishop, Rook, Queen, King };
 
 static wchar_t piece_unicode(int color, int kind) {
   auto is_white = color == White;
@@ -155,6 +155,12 @@ value ml_window_poll_event(value window) {
   }
 
   CAMLreturn(result);
+}
+
+value ml_window_close(value window) {
+  CAMLparam1(window);
+  Sfml_window_val(window)->close();
+  CAMLreturn(Val_unit);
 }
 
 value ml_window_clear(value window) {
