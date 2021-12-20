@@ -5,7 +5,7 @@
       of its color, breaking ties randomly.
     - ["opposite-color"]: the player that puts its pieces on squares
       opposite its color, breaking ties randomly.
-    - ["cccp"]: this player attempts to, in the following order,
+    - ["cccp"]: this player attempts, in the following order,
       checkmates, checks, captures, and pushes. Here, "pushes" means
       the player will attempt to control (i.e. attack) the greatest
       number of squares.
