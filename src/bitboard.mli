@@ -98,6 +98,9 @@ val compl : t -> t
 (** [diff x y] is equivalent to [inter x (compl y)]. *)
 val diff : t -> t -> t
 
+(** [xor x y] is the exclusive-OR of boards [x] and [y]. *)
+val xor : t -> t -> t
+
 (** [count b] returns the number of occupied squares in [b]. *)
 val count : t -> int
 
@@ -170,6 +173,9 @@ module Syntax : sig
 
   (** [x - y] is equivalent to [diff x y]. *)
   val (-) : t -> t -> t
+
+  (** [x ^ y] is equivalent to [xor x y]. *)
+  val (^) : t -> t -> t
 
   (** [~~b] is equivalent to [compl b]. *)
   val (~~) : t -> t

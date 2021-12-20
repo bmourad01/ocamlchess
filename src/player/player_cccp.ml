@@ -34,8 +34,8 @@ class cls ?(limits = None) () = object(self)
     let open Option.Monad_infix in
     let b = Position.board_of_color pos enemy in
     let b' = Position.board_of_color pos' enemy in
-    Bb.(find b ~f:(fun sq -> not (sq @ b'))) >>=
-    Position.piece_at_square pos >>| Piece.kind
+    (* Only one enemy piece could've been captured, so use an XOR. *)
+    Bb.(first_set (b ^ b')) >>= Position.piece_at_square pos >>| Piece.kind
 
   method private piece_value (k : Piece.kind) =
     match k with
