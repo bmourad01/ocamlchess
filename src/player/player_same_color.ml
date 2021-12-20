@@ -23,16 +23,9 @@ class cls ?(limits = None) () = object(self)
     | moves ->
       let active = Position.active pos in
       let board = self#board active in
-      List.map moves ~f:(fun (m, pos) ->
-          let n =
-            Bb.(count @@ filter (board pos) ~f:(self#same_color active)) in
-          (m, pos, n)) |>
-      List.sort ~compare:(fun (_, _, n) (_, _, n') -> Int.compare n' n) |>
-      List.fold_until ~init:([], 0) ~finish:fst
-        ~f:(fun (acc, n') (m, pos, n) ->
-            match acc with
-            | [] -> Continue ((m, pos) :: acc, n)
-            | _ -> if n' > n then Stop acc else Continue ((m, pos) :: acc, n')) |>
+      self#equal_eval moves ~eval:(fun (_, pos) ->
+          Option.return @@ Bb.count @@
+          Bb.filter (board pos) ~f:(self#same_color active)) |>
       List.random_element_exn
   
   method name = "same-color"

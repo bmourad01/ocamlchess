@@ -48,28 +48,16 @@ class cls ?(limits = None) () = object(self)
   method private capture pos moves =
     let open Option.Monad_infix in
     let enemy = self#enemy pos in
-    List.filter_map moves ~f:(fun ((_, pos') as move) ->
-        self#captured enemy pos pos' >>| fun p ->
-        (move, self#piece_value p)) |>
-    List.sort ~compare:(fun (_, v) (_, v') -> Int.compare v' v) |>
-    List.fold_until ~init:([], 0) ~finish:fst ~f:(fun (acc, v') (m, v) ->
-        match acc with
-        | [] -> Continue (m :: acc, v)
-        | _ -> if v' > v then Stop acc else Continue (m :: acc, v'))
+    self#equal_eval moves ~eval:(fun (_, pos') ->
+        self#captured enemy pos pos' >>| self#piece_value)
 
   (* Push a piece that gains the the largest number of controlled squares. *)
   method private push pos moves =
     let active = Position.active pos in
-    List.map moves ~f:(fun ((_, pos') as m) ->
-        let attacks =
-          Position.Attacks.all pos' active
-            ~ignore_same:false ~king_danger:true in
-        (m, Bb.count attacks)) |>
-    List.sort ~compare:(fun (_, a) (_, a') -> Int.compare a' a) |>
-    List.fold_until ~init:([], 0) ~finish:fst ~f:(fun (acc, a') (m, a) ->
-        match acc with
-        | [] -> Continue (m :: acc, a)
-        | _ -> if a' > a then Stop acc else Continue (m :: acc, a'))
+    self#equal_eval moves ~eval:(fun (_, pos') ->
+        Option.return @@ Bb.count @@
+        Position.Attacks.all pos' active
+          ~ignore_same:false ~king_danger:true)
   
   method move pos = match Position.legal_moves pos with
     | [] -> raise Player.No_moves
