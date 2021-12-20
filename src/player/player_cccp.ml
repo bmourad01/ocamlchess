@@ -8,7 +8,7 @@ class cls ?(limits = None) () = object(self)
 
   method private enemy pos =
     Piece.Color.opposite @@ Position.active pos
-  
+
   method private in_check pos =
     let active_board = Position.active_board pos in
     let king = Position.king pos in
@@ -58,7 +58,7 @@ class cls ?(limits = None) () = object(self)
         Option.return @@ Bb.count @@
         Position.Attacks.all pos' active
           ~ignore_same:false ~king_danger:true)
-  
+
   method move pos = match Position.legal_moves pos with
     | [] -> raise Player.No_moves
     | moves -> match self#checkmate moves with
@@ -71,5 +71,3 @@ class cls ?(limits = None) () = object(self)
 
   method name = "cccp"
 end
-
-
