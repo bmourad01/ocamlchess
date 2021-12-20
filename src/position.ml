@@ -674,11 +674,12 @@ module Moves = struct
     let rank, file = Square.decomp sq in
     push sq >>= fun push -> begin
       (* Only allow double push if a single push is available. *)
-      if Bb.(push = empty) then I.return push else push2 rank file
-    end >>= fun push2 ->
+      if Bb.(push = empty) then I.return push
+      else push2 rank file >>| (+) push
+    end >>= fun push ->
     capture sq >>= fun capture ->
     move_accum sq rank >>= fun f ->
-    make sq Pawn (push + push2 + capture) ~f ~capture
+    make sq Pawn (push + capture) ~f ~capture
 
   let[@inline] knight sq =
     Knight.jump sq >>= make sq Knight ~f:(default_accum sq)
