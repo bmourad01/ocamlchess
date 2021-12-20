@@ -3,7 +3,9 @@ open Core_kernel
 module Bb = Bitboard
 module Lm = Position.Legal_move
 
-(* The "checkmate, check, capture, push" strategy. *)
+(** The player with the simplistic "checkmate, check, capture, push"
+    strategy. It attempts each of these four goals in the exact order
+    that you are reading them. *)
 class cls ?(limits = None) () = object(self)
   inherit Player.cls ~limits ()
 
