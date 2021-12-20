@@ -304,10 +304,7 @@ let in_check pos =
   Bb.((active_board & pos.king & attacks) <> empty)
 
 (* P for Position *)
-module P = struct
-  include Monad.State.T1(T)(Monad.Ident)
-  include Monad.State.Make(T)(Monad.Ident)
-end
+module P = Monad.State.Make(T)(Monad.Ident)
 
 module Apply = struct
   open P.Syntax
@@ -430,9 +427,9 @@ module Apply = struct
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
      that the move is legal. For the check if `p` is a pawn or not, we assume
-     that it belongs to the active color.  *)
-  let[@inline] update_en_passant ?p sq sq' = handle_piece sq ?p >>= begin
-      function
+     that it belongs to the active color. *)
+  let[@inline] update_en_passant ?p sq sq' =
+    handle_piece sq ?p >>= begin function
       | None -> P.return None
       | Some p when not @@ Piece.is_pawn p -> P.return None
       | Some _ ->
@@ -509,10 +506,7 @@ module Info = struct
 end
 
 (* I for Info *)
-module I = struct
-  include Monad.Reader.T1(Info)(Monad.Ident)
-  include Monad.Reader.Make(Info)(Monad.Ident)
-end
+module I = Monad.Reader.Make(Info)(Monad.Ident)
 
 module Moves = struct
   open I.Syntax
