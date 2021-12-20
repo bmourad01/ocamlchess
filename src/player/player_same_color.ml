@@ -23,7 +23,8 @@ class cls ?(limits = None) () = object(self)
     | moves ->
       let active = Position.active pos in
       let board = self#board active in
-      self#equal_eval moves ~eval:(fun (_, pos) ->
+      self#equal_eval moves ~eval:(fun mv ->
+          let pos = Position.Legal_move.position mv in
           Option.return @@ Bb.count @@
           Bb.filter (board pos) ~f:(self#same_color active)) |>
       List.random_element_exn

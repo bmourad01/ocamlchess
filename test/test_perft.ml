@@ -9,7 +9,8 @@ let rec perft pos depth =
   if depth <= 0 then 1L
   else
     Position.legal_moves pos |>
-    List.fold ~init:0L ~f:(fun acc (_, pos) ->
+    List.fold ~init:0L ~f:(fun acc mv ->
+        let pos = Position.Legal_move.position mv in
         Int64.(acc + perft pos (Int.pred depth)))
 
 let expect pos depth expected =

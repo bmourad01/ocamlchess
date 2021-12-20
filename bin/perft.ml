@@ -5,8 +5,9 @@ let rec perft ?(first = false) pos depth =
   if depth <= 0 then 1L
   else
     Position.legal_moves pos |>
-    List.fold ~init:0L ~f:(fun acc (m, pos') ->
-        let nodes = perft pos' (depth - 1) in
+    List.fold ~init:0L ~f:(fun acc mv ->
+        let m, pos = Position.Legal_move.decomp mv in
+        let nodes = perft pos (depth - 1) in
         if first then begin
           printf "%s: %Ld\n%!" (Move.to_string m) nodes
         end;

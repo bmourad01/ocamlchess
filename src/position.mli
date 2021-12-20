@@ -201,8 +201,27 @@ module Attacks : sig
   val non_sliding : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 end
 
+(** A legal move. *)
+type legal_move
+
+module Legal_move : sig
+  (** The actual move that was made. *)
+  val move : legal_move -> Move.t
+
+  (** The resulting position. *)
+  val position : legal_move -> t
+
+  (** Decomposes the move into its constituents. *)
+  val decomp : legal_move -> Move.t * t
+  
+  (** A legal move. *)
+  type t = legal_move [@@deriving compare, equal, sexp]
+
+  include Comparable.S with type t := t
+end
+
 (** [legal_moves pos] returns a list of move-position pairs, which represents
     all of the legal moves for the active color of position [pos]. It is
     assumed that [pos] is reachable from the starting position. May raise
     if [pos] is not valid. *)
-val legal_moves : t -> (Move.t * t) list
+val legal_moves : t -> legal_move list

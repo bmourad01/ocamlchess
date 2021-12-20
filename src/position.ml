@@ -814,6 +814,21 @@ let[@inline] create_info pos =
     ~enemy_attacks  ~pinners ~num_checkers ~check_mask
     ~en_passant_check_mask ~enemy_sliders
 
+type legal_move = Move.t * T.t [@@deriving compare, equal, sexp]
+
+module Legal_move = struct
+  module T = struct
+    type t = legal_move [@@deriving compare, equal, sexp]
+  end
+
+  include T
+  include Comparable.Make(T)
+
+  let[@inline] move m = fst m
+  let[@inline] position m = snd m
+  let[@inline] decomp m = m
+end
+
 (* Generate all legal moves from the position. *)
 let legal_moves pos = create_info pos |> Monad.Reader.run Moves.go
 

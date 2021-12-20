@@ -1,6 +1,7 @@
 open Core_kernel
 
 module Bb = Bitboard
+module Lm = Position.Legal_move
 
 (* The "checkmate, check, capture, push" strategy. *)
 class cls ?(limits = None) () = object(self)
@@ -18,14 +19,16 @@ class cls ?(limits = None) () = object(self)
 
   (* Try to checkmate the enemy king. *)
   method private checkmate moves =
-    List.filter moves ~f:(fun (_, pos) ->
+    List.filter moves ~f:(fun mv ->
+        let pos = Lm.position mv in
         match Position.legal_moves pos with
         | _ :: _ -> false
         | [] -> self#in_check pos)
 
   (* Try to check the enemy king. *)
   method private check moves =
-    List.filter moves ~f:(fun (_, pos) -> self#in_check pos)
+    List.filter moves ~f:(fun mv ->
+        Lm.position mv |> self#in_check)
 
   method private captured enemy pos pos' =
     let open Option.Monad_infix in
@@ -46,14 +49,16 @@ class cls ?(limits = None) () = object(self)
   method private capture pos moves =
     let open Option.Monad_infix in
     let enemy = self#enemy pos in
-    self#equal_eval moves ~eval:(fun (_, pos') ->
+    self#equal_eval moves ~eval:(fun mv ->
+        let pos' = Lm.position mv in
         self#captured enemy pos pos' >>| self#piece_value)
 
   (* Push a piece that gains the the largest number of controlled squares,
      with a bonus for promoting to a high-value piece. *)
   method private push pos moves =
     let active = Position.active pos in
-    self#equal_eval moves ~eval:(fun (m, pos') ->
+    self#equal_eval moves ~eval:(fun mv ->
+        let m, pos' = Lm.decomp mv in
         let promote_bonus =
           Move.promote m |> Option.value_map ~default:0 ~f:self#piece_value in
         let num_controlled =

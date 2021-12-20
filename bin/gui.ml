@@ -2,6 +2,8 @@ open Core_kernel
 open Chess
 open Monads.Std
 
+module Lm = Position.Legal_move
+
 module Window = struct
   type t
 
@@ -21,7 +23,7 @@ module Window = struct
     "ml_window_paint_board"
 end
 
-type moves = (Move.t * Position.t) list
+type moves = Position.legal_move list
 
 type endgame = [
   | `Checkmate of Piece.color
@@ -86,9 +88,12 @@ let rec promote () = try match In_channel.(input_line stdin) with
     eprintf "Invalid promotion, try again: %!";
     promote ()
 
-let find_move sq (m, _) = Square.(sq = Move.dst m)
+let find_move sq mv =
+  let m = Lm.move mv in
+  Square.(sq = Move.dst m)
 
-let find_promote sq k (m, _) =
+let find_promote sq k mv =
+  let m = Lm.move mv in
   Square.(sq = Move.dst m) &&
   Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)
 
@@ -99,18 +104,22 @@ let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
     | Some (sq', _) when Square.(sq = sq') -> {st with sel = None}
     | None ->
       let moves =
-        List.filter legal ~f:(fun (m, _) -> Square.(sq = Move.src m)) in
+        List.filter legal ~f:(fun mv ->
+            let m = Lm.move mv in
+            Square.(sq = Move.src m)) in
       let sel = if List.is_empty moves then None else Some (sq, moves) in
       {st with sel}
     | Some (_, moves) -> match List.find moves ~f:(find_move sq) with
       | None -> st
-      | Some (m, pos) ->
+      | Some mv ->
+        let m, pos = Lm.decomp mv in
         let m, pos = match Move.promote m with
           | None -> m, pos
           | Some _ ->
             promote_prompt ();
             let k = promote () in
-            List.find_exn moves ~f:(find_promote sq k) in
+            List.find_exn moves ~f:(find_promote sq k) |>
+            Lm.decomp in
         let legal = Position.legal_moves pos in
         {st with pos; legal; sel = None; prev = Some m}
 
@@ -161,7 +170,7 @@ let human_move = State.(gets endgame) >>= function
   | None -> poll >> check_and_print_endgame
 
 let ai_move player pos =
-  let m, pos = player#move pos in
+  let m, pos = Lm.decomp @@ player#move pos in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
@@ -198,7 +207,8 @@ let rec main_loop () = State.(gets window) >>= fun window ->
       | None -> State.return (Bitboard.(to_int64 empty), None)
       | Some (sq, moves) ->
         let bb =
-          List.fold moves ~init:Bitboard.empty ~f:(fun acc (m, _) ->
+          List.fold moves ~init:Bitboard.empty ~f:(fun acc mv ->
+              let m = Lm.move mv in
               Bitboard.(acc ++ Move.dst m)) in
         State.return (Bitboard.to_int64 bb, Some sq)
     end >>= fun (bb, sq) ->

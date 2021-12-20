@@ -13,7 +13,7 @@ exception No_moves
 
 (** The player interface. *)
 type t = <
-  move : Position.t -> Move.t * Position.t;
+  move : Position.t -> Position.legal_move;
   name : string;
 >
 
@@ -24,11 +24,10 @@ class virtual cls ?(limits = None) () = object
   val limits : limits option = limits
 
   (** [move pos] picks the move to play according to the player's evaluation
-      of the position [pos]. This is a move/position pair, and it *must* be
-      within the result returned by [Position.legal_moves pos]. If not, then
-      undefined behavior may result. If the current position has no legal moves
-      for the player, then [No_moves] is raised. *)
-  method virtual move : Position.t -> Move.t * Position.t
+      of the position [pos]. This is a move/position pair, and it is guaranteed
+      to be a legal move. If the current position has no legal moves for the
+      player, then [No_moves] may be raised. *)
+  method virtual move : Position.t -> Position.legal_move
 
   (** The player's name. *)
   method virtual name : string
