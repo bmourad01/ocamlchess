@@ -27,17 +27,15 @@ class cls ?(limits = None) () = object(self)
   method private check moves =
     List.filter moves ~f:(fun (_, pos) -> self#in_check pos)
 
-  method private enemy_count enemy pos =
-    Bb.count @@ Position.board_of_color pos enemy
-
   method private captured enemy pos pos' =
     let open Option.Monad_infix in
     let b = Position.board_of_color pos enemy in
     let b' = Position.board_of_color pos' enemy in
     Bb.(find b ~f:(fun sq -> not (sq @ b'))) >>=
-    Position.piece_at_square pos
+    Position.piece_at_square pos >>| Piece.kind
 
-  method private piece_value p = match Piece.kind p with
+  method private piece_value (k : Piece.kind) =
+    match k with
     | Pawn -> 1
     | Knight | Bishop -> 3
     | Rook -> 5
@@ -51,13 +49,17 @@ class cls ?(limits = None) () = object(self)
     self#equal_eval moves ~eval:(fun (_, pos') ->
         self#captured enemy pos pos' >>| self#piece_value)
 
-  (* Push a piece that gains the the largest number of controlled squares. *)
+  (* Push a piece that gains the the largest number of controlled squares,
+     with a bonus for promoting to a high-value piece. *)
   method private push pos moves =
     let active = Position.active pos in
-    self#equal_eval moves ~eval:(fun (_, pos') ->
-        Option.return @@ Bb.count @@
-        Position.Attacks.all pos' active
-          ~ignore_same:false ~king_danger:true)
+    self#equal_eval moves ~eval:(fun (m, pos') ->
+        let promote_bonus =
+          Move.promote m |> Option.value_map ~default:0 ~f:self#piece_value in
+        let num_controlled =
+          Bb.count @@ Position.Attacks.all pos' active
+            ~ignore_same:false ~king_danger:true in
+        Option.return (num_controlled + promote_bonus))
 
   method move pos = match Position.legal_moves pos with
     | [] -> raise Player.No_moves
