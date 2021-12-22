@@ -139,8 +139,7 @@ module Fen = struct
         | None -> invalid_arg @@
           sprintf "Invalid piece '%c' placed at square '%s'"
             sym (Square.to_string sq) in
-    let rank, file =
-      String.fold s ~init:(Square.Rank.eight, Square.File.a) ~f in
+    let rank, file = String.fold s ~init:Square.(Rank.eight, File.a) ~f in
     if rank > 0 then
       invalid_arg @@
       sprintf "Reached unspecified rank %d at end of piece placement '%s'"
