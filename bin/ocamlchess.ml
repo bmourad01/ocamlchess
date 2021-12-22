@@ -96,7 +96,7 @@ module Default = struct
 
   let info =
     let doc = "A UCI-compatible chess engine." in
-    Term.info "chess"
+    Term.info "ocamlchess"
       ~doc
       ~exits:Term.default_exits
       ~man:[]
