@@ -191,7 +191,7 @@ let prompt_end window =
   ignore @@ In_channel.(input_line stdin);
   Window.close window
 
-let rec main_loop () = State.(gets window) >>= fun window ->
+let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
     State.(gets pos) >>= fun pos ->
@@ -225,11 +225,11 @@ let rec main_loop () = State.(gets window) >>= fun window ->
     (* Nothing more to do if the game is over. *)
     match endgame with
     | Some _ -> State.return @@ prompt_end window
-    | None -> main_loop ()
+    | None -> delay (); main_loop ~delay ()
   else State.return ()
 
-let start_with_endgame_check = check_and_print_endgame >>= function
-  | None -> main_loop ()
+let start_with_endgame_check delay = check_and_print_endgame >>= function
+  | None -> main_loop ~delay ()
   | Some _ ->
     State.(gets window) >>= fun window ->
     State.(gets pos) >>| fun pos ->
@@ -245,14 +245,14 @@ let window_size = 640
 
 external init_fonts : unit -> bool = "ml_init_fonts"
 
-let go pos ~white ~black =
+let go pos ~white ~black ~delay =
   if init_fonts () then
     let window = Window.create window_size window_size "chess" in
     let legal = Position.legal_moves pos in
     printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
     printf "%d legal moves\n%!" (List.length legal);
     printf "\n%!";
-    Monad.State.eval start_with_endgame_check @@
+    Monad.State.eval (start_with_endgame_check delay) @@
     State.Fields.create ~window ~pos ~legal
       ~sel:None ~prev:None ~endgame:None
       ~white ~black

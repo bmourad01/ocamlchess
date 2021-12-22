@@ -1,4 +1,3 @@
-open Core_kernel
 open Cmdliner
 
 let choose_player ?(none_ok = true) = function
@@ -8,7 +7,7 @@ let choose_player ?(none_ok = true) = function
 module Perft = struct
   let go depth pos =
     if depth < 1 then invalid_arg @@
-      sprintf "Invalid depth value %d" depth
+      Format.sprintf "Invalid depth value %d" depth
     else Perft.go depth @@ Chess.Position.Fen.of_string_exn pos
 
   let depth =
@@ -33,11 +32,14 @@ module Perft = struct
 end
 
 module Gui = struct
-  let go pos white black =
+  let go pos white black delay =
     let pos = Chess.Position.Fen.of_string_exn pos in
     let white = choose_player white in
     let black = choose_player black in
-    Gui.go pos ~white ~black
+    let delay = match white, black with
+      | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
+      | _ -> Fun.id in
+    Gui.go pos ~white ~black ~delay
 
   let pos =
     let doc = "The position to play from, represented as a FEN string." in
@@ -53,7 +55,12 @@ module Gui = struct
     let doc = "The AI player to play as black, if any." in
     Arg.(value & opt string "" (info ["black"] ~docv:"BLACK-PLAYER" ~doc))
 
-  let t = Term.(const go $ pos $ white $ black)
+  let delay =
+    let doc = "Delay (in seconds) between AI moves \
+               (only applies when both players are AI)" in
+    Arg.(value & opt float 0.0 (info ["delay"] ~docv:"DELAY" ~doc))
+  
+  let t = Term.(const go $ pos $ white $ black $ delay)
 
   let info =
     let doc = "Runs the testing GUI." in
