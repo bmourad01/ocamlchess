@@ -162,8 +162,8 @@ let human_move = State.(gets endgame) >>= function
   | Some _ -> State.return ()
   | None -> poll >> check_and_print_endgame
 
-let ai_move player pos =
-  let m, pos = Lm.decomp @@ player#move pos in
+let ai_move (player : Player.t) pos =
+  let m, pos = Lm.decomp @@ player.choose pos in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}

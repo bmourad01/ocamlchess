@@ -1,10 +1,13 @@
 open Core_kernel
 
-let choose ?(limits = None) s =
-  let player = match s with
-    | "random" -> new Player_random.cls ~limits ()
-    | "same-color" -> new Player_same_color.cls ~limits ()
-    | "opposite-color" -> new Player_opposite_color.cls ~limits ()
-    | "cccp" -> new Player_cccp.cls ~limits ()
-    | _ -> invalid_arg @@ sprintf "Invalid player %s" s in
-  (player :> Player.t)
+let players = Hashtbl.of_alist_exn (module String) [
+    "random", Player_random.create;
+    "same-color", Player_same_color.create;
+    "opposite-color", Player_opposite_color.create;
+    "cccp", Player_cccp.create;
+  ]
+
+let choose ?(limits = None) name =
+  match Hashtbl.find players name with
+  | None -> invalid_arg @@ sprintf "Invalid player '%s'" name
+  | Some (create : Player.create) -> create ~limits ()
