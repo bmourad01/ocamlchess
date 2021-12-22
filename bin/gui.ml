@@ -156,10 +156,12 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   {st with endgame}
 
 let check_and_print_endgame =
-  check_endgame >> State.(gets endgame) >>| Option.iter ~f:print_endgame
+  check_endgame >> State.(gets endgame) >>| fun endgame ->
+  Option.iter endgame ~f:print_endgame;
+  endgame
 
 let human_move = State.(gets endgame) >>= function
-  | Some _ -> State.return ()
+  | Some _ -> State.return None
   | None -> poll >> check_and_print_endgame
 
 let ai_move player pos =
@@ -173,7 +175,7 @@ let human_or_ai_move pos = function
   | None -> human_move
   | Some player -> State.(gets endgame) >>= function
     | None -> ai_move player pos
-    | Some _ -> State.return ()
+    | Some _ -> State.return None
 
 let display_board
     ?(bb = 0L)
@@ -197,7 +199,7 @@ let rec main_loop () = State.(gets window) >>= fun window ->
     begin match Position.active pos with
       | White -> State.(gets white)
       | Black -> State.(gets black)
-    end >>= human_or_ai_move pos >>
+    end >>= human_or_ai_move pos >>= fun endgame ->
     (* New position? *)
     State.(gets pos) >>= fun pos' ->
     State.(gets legal) >>= fun legal ->
@@ -222,13 +224,12 @@ let rec main_loop () = State.(gets window) >>= fun window ->
     end >>= fun (bb, sq) ->
     display_board pos' window ~bb ~sq ~prev;
     (* Nothing more to do if the game is over. *)
-    State.(gets endgame) >>= function
+    match endgame with
     | Some _ -> State.return @@ prompt_end window
     | None -> main_loop ()
   else State.return ()
 
-let start_with_endgame_check = check_and_print_endgame >>
-  State.(gets endgame) >>= function
+let start_with_endgame_check = check_and_print_endgame >>= function
   | None -> main_loop ()
   | Some _ ->
     State.(gets window) >>= fun window ->
