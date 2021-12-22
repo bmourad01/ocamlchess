@@ -26,12 +26,11 @@ end
 
 type moves = Position.legal_move list
 
-type endgame = [
-  | `Checkmate of Piece.color
-  | `Insufficient_material
-  | `Fifty_move
-  | `Stalemate
-]
+type endgame =
+  | Checkmate of Piece.color
+  | Insufficient_material
+  | Fifty_move
+  | Stalemate
 
 module State = struct
   module T = struct
@@ -138,20 +137,20 @@ let is_insufficient_material pos =
 let is_fifty_move pos = Position.halfmove pos >= 100
 
 let print_endgame = function
-  | `Insufficient_material -> printf "Draw by insufficient material\n%!"
-  | `Fifty_move -> printf "Draw by fifty-move rule\n%!"
-  | `Stalemate -> printf "Draw by stalemate\n%!"
-  | `Checkmate c ->
+  | Insufficient_material -> printf "Draw by insufficient material\n%!"
+  | Fifty_move -> printf "Draw by fifty-move rule\n%!"
+  | Stalemate -> printf "Draw by stalemate\n%!"
+  | Checkmate c ->
     printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
 
 let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   let endgame =
-    if is_insufficient_material pos then Some `Insufficient_material
-    else if is_fifty_move pos then Some `Fifty_move
+    if is_insufficient_material pos then Some Insufficient_material
+    else if is_fifty_move pos then Some Fifty_move
     else if List.is_empty legal then
       if Position.in_check pos
-      then Some (`Checkmate (Position.enemy pos))
-      else Some `Stalemate
+      then Some (Checkmate (Position.enemy pos))
+      else Some Stalemate
     else None in
   {st with endgame}
 
