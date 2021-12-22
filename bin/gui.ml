@@ -175,6 +175,21 @@ let human_or_ai_move pos = function
     | None -> ai_move player pos
     | Some _ -> State.return ()
 
+let display_board
+    ?(bb = 0L)
+    ?(sq = None)
+    ?(prev = None)
+    pos window =
+  Window.clear window;
+  Window.paint_board window pos bb sq prev;
+  Window.display window
+
+(* Prompt the user to quit when ready. *)
+let prompt_end window =
+  printf "Enter any key to quit: %!";
+  ignore @@ In_channel.(input_line stdin);
+  Window.close window
+
 let rec main_loop () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
@@ -205,19 +220,23 @@ let rec main_loop () = State.(gets window) >>= fun window ->
               Bitboard.(acc ++ Move.dst m)) in
         State.return (Bitboard.to_int64 bb, Some sq)
     end >>= fun (bb, sq) ->
-    (* Display the board. *)
-    Window.clear window;
-    Window.paint_board window pos' bb sq prev;
-    Window.display window;
+    display_board pos' window ~bb ~sq ~prev;
     (* Nothing more to do if the game is over. *)
     State.(gets endgame) >>= function
-    | Some _ ->
-      (* Prompt the user to quit when ready. *)
-      printf "Enter any key to quit: %!";
-      ignore @@ In_channel.(input_line stdin);
-      State.return @@ Window.close window
+    | Some _ -> State.return @@ prompt_end window
     | None -> main_loop ()
   else State.return ()
+
+let start_with_endgame_check = check_and_print_endgame >>
+  State.(gets endgame) >>= function
+  | None -> main_loop ()
+  | Some _ ->
+    State.(gets window) >>= fun window ->
+    State.(gets pos) >>| fun pos ->
+    if Window.is_open window then begin
+      display_board pos window;
+      prompt_end window
+    end
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
@@ -233,7 +252,7 @@ let go pos ~white ~black =
     printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
     printf "%d legal moves\n%!" (List.length legal);
     printf "\n%!";
-    Monad.State.eval (main_loop ()) @@
+    Monad.State.eval start_with_endgame_check @@
     State.Fields.create ~window ~pos ~legal
       ~sel:None ~prev:None ~endgame:None
       ~white ~black
