@@ -9,6 +9,10 @@
       checkmates, checks, captures, and pushes. Here, "pushes" means
       the player will attempt to control (i.e. attack) the greatest
       number of squares.
+    - ["huddle"]: this player will move its pieces such that they
+      minimize their Chebyshev distance from its king.
+    - ["swarm"]: this player will move its pieces such that they
+      minimize their Chebyshev distance from the enemy king.
 
     Any other choices will raise [Invalid_argument].
  *)

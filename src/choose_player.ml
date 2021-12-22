@@ -5,6 +5,8 @@ let players = Hashtbl.of_alist_exn (module String) [
     "same-color", Player_same_color.create;
     "opposite-color", Player_opposite_color.create;
     "cccp", Player_cccp.create;
+    "huddle", Player_huddle.create;
+    "swarm", Player_swarm.create;
   ]
 
 let choose ?(limits = None) name =
