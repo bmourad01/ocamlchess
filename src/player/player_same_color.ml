@@ -19,4 +19,4 @@ let choose pos = match Position.legal_moves pos with
         Position.board_of_color pos active) |>
     List.random_element_exn
 
-let create ?(limits = None) () = Player.{choose; limits}
+let create ?(limits = None) () = Player.create ~choose ~limits ()

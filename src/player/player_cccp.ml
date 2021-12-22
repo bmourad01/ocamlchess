@@ -59,4 +59,4 @@ let choose pos = match Position.legal_moves pos with
         | (_ :: _) as moves -> List.random_element_exn moves
         | [] -> push pos moves |> List.random_element_exn
                                          
-let create ?(limits = None) () = Player.{choose; limits}
+let create ?(limits = None) () = Player.create ~choose ~limits ()
