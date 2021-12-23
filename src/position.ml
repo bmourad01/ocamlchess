@@ -5,21 +5,40 @@ module Pre = Precalculated
 module Bb = Bitboard
 
 module T = struct
+  (* We'll use mutable fields, since this has a performance advantage
+     when applying moves over a typical state monad pattern (where we
+     are making a new copy every time). *)
   type t = {
-    white : Bb.t;
-    black : Bb.t;
-    pawn : Bb.t;
-    knight : Bb.t;
-    bishop : Bb.t;
-    rook : Bb.t;
-    queen : Bb.t;
-    king : Bb.t;
-    active : Piece.color;
-    castle : Castling_rights.t;
-    en_passant : Square.t option;
-    halfmove : int;
-    fullmove : int;
+    mutable white : Bb.t;
+    mutable black : Bb.t;
+    mutable pawn : Bb.t;
+    mutable knight : Bb.t;
+    mutable bishop : Bb.t;
+    mutable rook : Bb.t;
+    mutable queen : Bb.t;
+    mutable king : Bb.t;
+    mutable active : Piece.color;
+    mutable castle : Castling_rights.t;
+    mutable en_passant : Square.t option;
+    mutable halfmove : int;
+    mutable fullmove : int;
   } [@@deriving compare, equal, fields, sexp]
+
+  let copy pos = {
+    white      = pos.white;
+    black      = pos.black;
+    pawn       = pos.pawn;
+    knight     = pos.knight;
+    bishop     = pos.bishop;
+    rook       = pos.rook;
+    queen      = pos.queen;
+    king       = pos.king;
+    active     = pos.active;
+    castle     = pos.castle;
+    en_passant = pos.en_passant;
+    halfmove   = pos.halfmove;
+    fullmove   = pos.fullmove;
+  }
 end
 
 include T
@@ -313,68 +332,61 @@ let in_check pos =
   let attacks = Attacks.all pos (enemy pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
-(* P for Position *)
-module P = Monad.State.Make(T)(Monad.Ident)
+(* P for Position. Since all the fields are mutable, this will act like a
+   pseudo-state monad. *)
+module P = Monad.Reader.Make(T)(Monad.Ident)
 
 module Apply = struct
   open P.Syntax
 
   let[@inline] (>>) m n = m >>= fun _ -> n
 
-  let[@inline] color_field = function
-    | Piece.White -> Fields.white
-    | Piece.Black -> Fields.black
+  let[@inline] map_color c ~f = P.read () >>| fun pos -> match c with
+    | Piece.White -> set_white pos @@ f @@ white pos
+    | Piece.Black -> set_black pos @@ f @@ black pos
 
-  let[@inline] kind_field = function
-    | Piece.Pawn -> Fields.pawn
-    | Piece.Knight -> Fields.knight
-    | Piece.Bishop -> Fields.bishop
-    | Piece.Rook -> Fields.rook
-    | Piece.Queen -> Fields.queen
-    | Piece.King -> Fields.king
+  let[@inline] map_kind k ~f = P.read () >>| fun pos -> match k with
+    | Piece.Pawn -> set_pawn pos @@ f @@ pawn pos
+    | Piece.Knight -> set_knight pos @@ f @@ knight pos
+    | Piece.Bishop -> set_bishop pos @@ f @@ bishop pos
+    | Piece.Rook -> set_rook pos @@ f @@ rook pos
+    | Piece.Queen -> set_queen pos @@ f @@ queen pos
+    | Piece.King -> set_king pos @@ f @@ king pos
 
-  let[@inline] piece_fields p =
+  let[@inline] map_piece p ~f =
     let c, k = Piece.decomp p in
-    color_field c, kind_field k
+    map_color c ~f >> map_kind k ~f
 
   (* A piece can be optionally provided. If not, then we will look up
      the piece at that square. *)
   let[@inline] handle_piece ?p sq = match p with
-    | None -> P.gets @@ Fn.flip piece_at_square @@ sq
+    | None -> P.read () >>| (Fn.flip piece_at_square @@ sq)
     | Some _ -> P.return p
-
-  let[@inline] map_field field ~f = P.update @@ Field.map field ~f
 
   (* Helper for setting both the color and the kind fields of the board. *)
   let map_square ?p sq ~f = handle_piece sq ?p >>= function
+    | Some p -> map_piece p ~f
     | None -> P.return ()
-    | Some p ->
-      let c, k = piece_fields p in
-      map_field c ~f >> map_field k ~f
 
   let[@inline] set_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b ++ sq)
   let[@inline] clear_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b -- sq)
 
-  let[@inline] is_pawn_or_capture sq sq' = P.gets @@ fun pos ->
+  (* The halfmove clock is reset after captures or pawn moves, and
+     incremented otherwise. *)
+  let[@inline] update_halfmove sq sq' = P.read () >>| fun pos ->
     let open Bb.Syntax in
     let is_pawn = sq @ pos.pawn in
     let is_capture =
       (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
-    is_pawn || is_capture
-
-  (* The halfmove clock is reset after captures or pawn moves, and
-     incremented otherwise. *)
-  let[@inline] update_halfmove sq sq' =
-    is_pawn_or_capture sq sq' >>= fun cnd ->
-    map_field Fields.halfmove ~f:(fun n -> if cnd then 0 else succ n)
+    set_halfmove pos @@ if is_pawn || is_capture then 0 else succ pos.halfmove
 
   module CR = Castling_rights
 
-  let clear_white_castling_rights =
-    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x white))
+  let clear_white_castling_rights = P.read () >>| fun pos ->
+    set_castle pos @@ CR.(diff pos.castle white)
 
-  let clear_black_castling_rights =
-    P.update @@ Field.map Fields.castle ~f:(fun x -> CR.(diff x black))
+  let clear_black_castling_rights = P.read () >>| fun pos ->
+    set_castle pos @@ CR.(diff pos.castle black)
 
   let white_kingside_castle =
     clear_square Square.h1 >>
@@ -398,7 +410,8 @@ module Apply = struct
 
   (* If this move is actually a castling, then we need to move the rook
      as well as clear our rights. *)
-  let[@inline] king_moved_or_castled sq sq' = P.gets active >>= function
+  let[@inline] king_moved_or_castled sq sq' =
+    P.read () >>= fun {active; _} -> match active with
     | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
     | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
     | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
@@ -409,18 +422,19 @@ module Apply = struct
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
   let[@inline] rook_moved_or_captured sq = function
-    | Piece.White when Square.(sq = h1) -> P.update @@
-      Field.map Fields.castle ~f:(fun x -> CR.(diff x white_kingside))
-    | Piece.White when Square.(sq = a1) -> P.update @@
-      Field.map Fields.castle ~f:(fun x -> CR.(diff x white_queenside))
-    | Piece.Black when Square.(sq = h8) -> P.update @@
-      Field.map Fields.castle ~f:(fun x -> CR.(diff x black_kingside))
-    | Piece.Black when Square.(sq = a8) -> P.update @@
-      Field.map Fields.castle ~f:(fun x -> CR.(diff x black_queenside))
+    | Piece.White when Square.(sq = h1) -> P.read () >>| fun pos ->
+      set_castle pos @@ CR.(diff pos.castle white_kingside)
+    | Piece.White when Square.(sq = a1) -> P.read () >>| fun pos ->
+      set_castle pos @@ CR.(diff pos.castle white_queenside)
+    | Piece.Black when Square.(sq = h8) -> P.read () >>| fun pos ->
+      set_castle pos @@ CR.(diff pos.castle black_kingside)
+    | Piece.Black when Square.(sq = a8) -> P.read () >>| fun pos ->
+      set_castle pos @@ CR.(diff pos.castle black_queenside)
     | _ -> P.return ()
 
   (* Rook moved from a square. *)
-  let[@inline] rook_moved sq = P.gets active >>= rook_moved_or_captured sq
+  let[@inline] rook_moved sq = P.read () >>= fun {active; _} ->
+    rook_moved_or_captured sq active
 
   (* Rook was captured at a square. Assume that it is the enemy's color. *)
   let[@inline] rook_captured sq = handle_piece sq >>= function
@@ -444,26 +458,28 @@ module Apply = struct
       | Some p when not @@ Piece.is_pawn p -> P.return None
       | Some _ ->
         let rank = Square.rank sq and rank', file = Square.decomp sq' in
-        P.gets active >>| function
+        P.read () >>| fun {active; _} -> match active with
         | Piece.White when Square.Rank.(rank = two && rank' = four) ->
           Some (Square.create_unsafe ~rank:(pred rank') ~file)
         | Piece.Black when Square.Rank.(rank = seven && rank' = five) ->
           Some (Square.create_unsafe ~rank:(succ rank') ~file)
         | _ -> None
-    end >>= fun ep -> map_field Fields.en_passant ~f:(const ep)
+    end >>= fun ep -> P.read () >>| (Fn.flip set_en_passant @@ ep)
 
   (* After each halfmove, give the turn to the other player. *)
-  let flip_active = map_field Fields.active ~f:Piece.Color.opposite
+  let flip_active = P.read () >>| fun pos ->
+    set_active pos @@ Piece.Color.opposite pos.active
 
   (* Since white moves first, increment the fullmove clock after black
      has moved. *)
-  let update_fullmove = P.gets active >>= function
-    | White -> P.return ()
-    | Black -> map_field Fields.fullmove ~f:succ
+  let update_fullmove = P.read () >>| fun pos ->
+    match pos.active with
+    | White -> ()
+    | Black -> set_fullmove pos @@ succ pos.fullmove
 
   (* Update the piece for the destination square if we're promoting. *)
   let[@inline] do_promote ?p = function
-    | Some k -> P.gets @@ fun pos -> Some (Piece.create pos.active k)
+    | Some k -> P.read () >>| fun pos -> Some (Piece.create pos.active k)
     | None -> P.return p
 
   let[@inline] move_or_capture ?p sq' ep =
@@ -473,7 +489,7 @@ module Apply = struct
     && Option.exists p ~f:Piece.is_pawn
     then
       let rank, file = Square.decomp sq' in
-      begin P.gets @@ fun {active; _} -> match active with
+      begin P.read () >>| fun {active; _} -> match active with
         | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
         | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file
       end >>= clear_square
@@ -483,7 +499,7 @@ module Apply = struct
      for legality. *)
   let[@inline] move p m =
     Move.decomp m |> fun (sq, sq', promote) ->
-    P.gets en_passant >>= fun ep ->
+    P.read () >>= fun {en_passant = ep; _} ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove sq sq' >>
     update_en_passant sq sq' ~p >>
@@ -706,7 +722,10 @@ module Moves = struct
   (* Get the new positions from the list of moves. *)
   let[@inline] exec k moves = I.read () >>| fun {pos; _} ->
     let p = Piece.create pos.active k in
-    List.map moves ~f:(fun m -> m, Monad.State.exec (Apply.move p m) pos)
+    List.map moves ~f:(fun m ->
+        let pos = copy pos in
+        Monad.Reader.run (Apply.move p m) pos;
+        m, pos)
 
   let[@inline] any sq = function
     | Piece.Pawn -> pawn sq
