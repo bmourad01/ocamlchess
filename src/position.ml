@@ -103,51 +103,50 @@ module Fen = struct
   let parse_placement s =
     let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
     let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
-    let rec f (rank, file) sym =
-      if rank < 0 then invalid_arg @@
-        sprintf "Invalid number of ranks %d" (Square.Rank.count - rank)
-      else if Char.equal sym '/' then rank_separator rank file
-      else if Char.is_digit sym  then skip_file rank file sym
-      else if Char.is_alpha sym  then place_piece rank file sym
-      else invalid_arg @@
-        sprintf "Unexpected symbol '%c' in piece placement string '%s'"
-          sym s
-    and rank_separator rank file =
-      if file <> Square.File.count then invalid_arg @@
-        sprintf "Invalid separation at rank %d with %d files remaining"
-          (succ rank) (Square.File.count - file)
-      else pred rank, 0
+    (* Split the ranks so we can parse them individually. *)
+    let ranks = match String.split s ~on:'/' with
+      | [_; _; _; _; _; _; _; _] as ranks -> List.rev ranks
+      | ranks -> invalid_arg @@
+        sprintf "Invalid number of ranks %d in placement string '%s'"
+          (List.length ranks) s in
+    (* The main entry to parsing the rank. *)
+    let rec parse_rank rank file sym =
+      if Char.is_digit sym
+      then skip_file rank file sym
+      else place_piece rank file sym
+    (* Advance the file (we hit a numeric symbol). *)
     and skip_file rank file sym =
       let inc = Char.(to_int sym - to_int '0') in
       let file' = file + inc in
       if file' > Square.File.count then invalid_arg @@
-        sprintf "Invalid increment %d at file %d" inc (succ file)
-      else rank, file'
+        sprintf "Invalid increment %d at square %s of placement string '%s'"
+          inc (Square.to_string @@ Square.create_exn ~rank ~file) s
+      else file'
+    (* Place a piece on the board (we hit an alphabetical symbol). *)
     and place_piece rank file sym =
       if file > Square.File.h then invalid_arg @@
-        sprintf "Invalid piece placement on full rank %d" (succ rank)
+        sprintf "Invalid piece placement on full rank %d of placement \
+                 string '%s'" (rank + 1) s
       else
         let sq = Square.create_unsafe ~rank ~file in
         match Piece.of_fen sym with
         | Some p ->
-          let open Bb.Syntax in
           let c = Piece.(color p |> Color.to_int) in
           let k = Piece.(kind p |> Kind.to_int) in
-          color_tbl.(c) <- color_tbl.(c) ++ sq;
-          kind_tbl.(k) <- kind_tbl.(k) ++ sq;
-          rank, succ file
+          color_tbl.(c) <- Bb.(color_tbl.(c) ++ sq);
+          kind_tbl.(k) <- Bb.(kind_tbl.(k) ++ sq);
+          file + 1
         | None -> invalid_arg @@
-          sprintf "Invalid piece '%c' placed at square '%s'"
-            sym (Square.to_string sq) in
-    let rank, file = String.fold s ~init:Square.(Rank.eight, File.a) ~f in
-    if rank > 0 then
-      invalid_arg @@
-      sprintf "Reached unspecified rank %d at end of piece placement '%s'"
-        rank s;
-    if file <> Square.File.count then
-      invalid_arg @@
-      sprintf "Reached unspecified file %d at end of piece placement '%s'"
-        (succ file) s;
+          sprintf "Invalid piece '%c' placed at square '%s' of placement \
+                   string '%s'" sym (Square.to_string sq) s in
+    (* Parse each rank individually. *)
+    List.iteri ranks ~f:(fun rank s ->
+        let file = String.fold s ~init:Square.File.a ~f:(parse_rank rank) in
+        let diff = Square.File.count - file in
+        if diff <> 0 then invalid_arg @@
+          sprintf "Rank %d is missing %d square(s) in placement string '%s'"
+            (rank + 1) diff s);
+    (* Return the individual bitboards. *)
     Piece.(
       color_tbl.(Color.white),
       color_tbl.(Color.black),
