@@ -144,7 +144,8 @@ module Fen = struct
         let file = String.fold s ~init:Square.File.a ~f:(parse_rank rank) in
         let diff = Square.File.count - file in
         if diff <> 0 then invalid_arg @@
-          sprintf "Rank %d is missing %d square(s) in placement string '%s'"
+          (* All eight squares of the rank must be specified. *)
+          sprintf "Rank %d has %d unspecified square(s): '%s'"
             (rank + 1) diff s);
     (* Return the individual bitboards. *)
     Piece.(
