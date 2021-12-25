@@ -66,11 +66,13 @@ let inter = Int64.bit_and
 let union = Int64.bit_or
 let compl = Int64.bit_not
 let xor   = Int64.bit_xor
+
 let[@inline] diff x y = inter x @@ compl y
 let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
 let[@inline] set b sq = union b @@ singleton sq
 let[@inline] clear b sq = diff b @@ singleton sq
-let[@inline] mem b sq = empty <> inter b @@ singleton sq
+let[@inline] mem b sq = Int64.((b lsr Square.to_int sq) land one <> zero)
+
 let count = Int64.popcount
 
 (* Higher-order functions. *)
