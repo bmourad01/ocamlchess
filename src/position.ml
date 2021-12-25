@@ -368,8 +368,11 @@ module Apply = struct
     | Some p -> map_piece p ~f
     | None -> P.return ()
 
-  let[@inline] set_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b ++ sq)
-  let[@inline] clear_square ?p sq = map_square sq ?p ~f:Bb.(fun b -> b -- sq)
+  let[@inline] set_square p sq = map_piece p ~f:Bb.(fun b -> b ++ sq)
+  let[@inline] clear_square p sq = map_piece p ~f:Bb.(fun b -> b -- sq)
+
+  let[@inline] clear_square_maybe ?p sq =
+    map_square sq ?p ~f:Bb.(fun b -> b -- sq)
 
   (* The halfmove clock is reset after captures or pawn moves, and
      incremented otherwise. *)
@@ -389,23 +392,23 @@ module Apply = struct
     set_castle pos @@ CR.(diff pos.castle black)
 
   let white_kingside_castle =
-    clear_square Square.h1 >>
-    set_square Square.f1 ~p:Piece.white_rook >>
+    clear_square Piece.white_rook Square.h1 >>
+    set_square Piece.white_rook Square.f1 >>
     clear_white_castling_rights
 
   let white_queenside_castle =
-    clear_square Square.a1 >>
-    set_square Square.d1 ~p:Piece.white_rook >>
+    clear_square Piece.white_rook Square.a1 >>
+    set_square Piece.white_rook Square.d1 >>
     clear_white_castling_rights
 
   let black_kingside_castle =
-    clear_square Square.h8 >>
-    set_square Square.f8 ~p:Piece.black_rook >>
+    clear_square Piece.black_rook Square.h8 >>
+    set_square Piece.black_rook Square.f8 >>
     clear_black_castling_rights
 
   let black_queenside_castle =
-    clear_square Square.a8 >>
-    set_square Square.d8 ~p:Piece.black_rook >>
+    clear_square Piece.black_rook Square.a8 >>
+    set_square Piece.black_rook Square.d8 >>
     clear_black_castling_rights
 
   (* If this move is actually a castling, then we need to move the rook
@@ -442,29 +445,26 @@ module Apply = struct
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle ?p sq sq' = handle_piece sq ?p >>= function
-    | Some p when Piece.is_king p -> king_moved_or_castled sq sq'
-    | Some p when Piece.is_rook p -> rook_moved sq >> rook_captured sq
-    | Some _ -> rook_captured sq'
-    | _ -> P.return ()
+  let[@inline] update_castle p sq sq' =
+    if Piece.is_king p then king_moved_or_castled sq sq'
+    else if Piece.is_rook p then rook_moved sq >> rook_captured sq
+    else rook_captured sq'
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
      that the move is legal. For the check if `p` is a pawn or not, we assume
-     that it belongs to the active color. *)
-  let[@inline] update_en_passant ?p sq sq' =
-    handle_piece sq ?p >>= begin function
-      | None -> P.return None
-      | Some p when not @@ Piece.is_pawn p -> P.return None
-      | Some _ ->
-        let rank = Square.rank sq and rank', file = Square.decomp sq' in
-        P.read () >>| fun {active; _} -> match active with
-        | Piece.White when Square.Rank.(rank = two && rank' = four) ->
-          Some (Square.create_unsafe ~rank:(pred rank') ~file)
-        | Piece.Black when Square.Rank.(rank = seven && rank' = five) ->
-          Some (Square.create_unsafe ~rank:(succ rank') ~file)
-        | _ -> None
-    end >>= fun ep -> P.read () >>| (Fn.flip set_en_passant @@ ep)
+     that it belongs to the active color. *) 
+  let[@inline] update_en_passant p sq sq' = begin
+    if Piece.is_pawn p then
+      let rank = Square.rank sq and rank', file = Square.decomp sq' in
+      P.read () >>| fun {active; _} -> match active with
+      | Piece.White when Square.Rank.(rank = two && rank' = four) ->
+        Some (Square.create_unsafe ~rank:(pred rank') ~file)
+      | Piece.Black when Square.Rank.(rank = seven && rank' = five) ->
+        Some (Square.create_unsafe ~rank:(succ rank') ~file)
+      | _ -> None
+    else P.return None end >>= fun ep ->
+    P.read () >>| (Fn.flip set_en_passant @@ ep)
 
   (* After each halfmove, give the turn to the other player. *)
   let flip_active = P.read () >>| fun pos ->
@@ -472,27 +472,26 @@ module Apply = struct
 
   (* Since white moves first, increment the fullmove clock after black
      has moved. *)
-  let update_fullmove = P.read () >>| fun pos ->
-    match pos.active with
-    | White -> ()
+  let update_fullmove = P.read () >>| fun pos -> match pos.active with
     | Black -> set_fullmove pos @@ succ pos.fullmove
+    | White -> ()
 
   (* Update the piece for the destination square if we're promoting. *)
-  let[@inline] do_promote ?p = function
-    | Some k -> P.read () >>| fun pos -> Some (Piece.create pos.active k)
+  let[@inline] do_promote p = function
+    | Some k -> P.read () >>| fun {active; _} -> Piece.create active k
     | None -> P.return p
 
-  let[@inline] move_or_capture ?p sq' ep =
-    set_square sq' ?p >>
+  let[@inline] move_or_capture p sq' ep =
+    set_square p sq' >>
     (* Check if this was an en passant capture. *)
-    if Option.exists ep ~f:(Square.equal sq')
-    && Option.exists p ~f:Piece.is_pawn
-    then
+    if Option.exists ep ~f:(Square.equal sq') && Piece.is_pawn p then
       let rank, file = Square.decomp sq' in
       begin P.read () >>| fun {active; _} -> match active with
-        | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
-        | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file
-      end >>= clear_square
+        | Piece.White ->
+          Square.create_unsafe ~rank:(rank - 1) ~file, Piece.black_pawn
+        | Piece.Black ->
+          Square.create_unsafe ~rank:(rank + 1) ~file, Piece.white_pawn
+      end >>= fun (sq, p) -> clear_square p sq
     else P.return ()
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
@@ -502,12 +501,12 @@ module Apply = struct
     P.read () >>= fun {en_passant = ep; _} ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove sq sq' >>
-    update_en_passant sq sq' ~p >>
-    update_castle sq sq' ~p >>
+    update_en_passant p sq sq' >>
+    update_castle p sq sq' >>
     (* Move the piece. *)
-    clear_square sq ~p >> clear_square sq' >>
-    do_promote promote ~p >>= fun p ->
-    move_or_capture sq' ep ?p >>
+    clear_square p sq >> clear_square_maybe sq' >>
+    do_promote p promote >>= fun p ->
+    move_or_capture p sq' ep >>
     (* Prepare for the next move. *)
     update_fullmove >> flip_active
 end
