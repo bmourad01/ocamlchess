@@ -666,12 +666,14 @@ module Moves = struct
         Bb.(mask ++ sq')
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let[@inline] check_mask ?(capture = Bb.empty) k = I.read () >>|
+  let check_mask = I.read () >>| Info.check_mask
+
+  (* Special case for pawns, with en passant capture being an option to escape
+     check. *)
+  let[@inline] check_mask_pawn capture = I.read () >>|
     fun {num_checkers; check_mask; en_passant_check_mask; _} ->
     if num_checkers <> 1 then check_mask
-    else match k with
-      | Piece.Pawn -> Bb.(check_mask + (capture & en_passant_check_mask))
-      | _ -> check_mask      
+    else Bb.(check_mask + (capture & en_passant_check_mask))
 
   (* It is technically illegal to actually capture the enemy king, so let's
      mask it out. We shouldn't need to check this for our king, because it
@@ -679,14 +681,22 @@ module Moves = struct
      the enemy king. *)
   let king_mask = I.read () >>| Info.king_mask
 
-  let[@inline] make ?(capture = Bb.empty) sq k b ~f =
+  (* Pawn has special case for check mask. *)
+  let[@inline] make_pawn sq b capture ~f =
     pin_mask sq >>= fun pin ->
-    check_mask k ~capture >>= fun chk ->
+    check_mask_pawn capture >>= fun chk ->
     king_mask >>| fun k ->
     Bb.(fold (b & pin & chk & k) ~init:[] ~f)
 
   (* King cannot be pinned, so do not use the pin mask. *)
   let[@inline] make_king sq = Bb.fold ~init:[] ~f:(default_accum sq)
+
+  (* All other pieces. *)
+  let[@inline] make sq b ~f =
+    pin_mask sq >>= fun pin ->
+    check_mask >>= fun chk ->
+    king_mask >>| fun k ->
+    Bb.(fold (b & pin & chk & k) ~init:[] ~f)
 
   let[@inline] pawn sq =
     let open Pawn in
@@ -699,18 +709,12 @@ module Moves = struct
     end >>= fun push ->
     capture sq >>= fun capture ->
     move_accum sq rank >>= fun f ->
-    make sq Pawn (push + capture) ~f ~capture
+    make_pawn sq (push + capture) capture ~f
 
-  let[@inline] knight sq =
-    Knight.jump sq >>= make sq Knight ~f:(default_accum sq)
-
-  let[@inline] bishop sq =
-    Bishop.slide sq >>= make sq Bishop ~f:(default_accum sq)
-
-  let[@inline] rook sq = Rook.slide sq >>= make sq Rook ~f:(default_accum sq)
-
-  let[@inline] queen sq =
-    Queen.slide sq >>= make sq Queen ~f:(default_accum sq)
+  let[@inline] knight sq = Knight.jump sq >>= make sq ~f:(default_accum sq)
+  let[@inline] bishop sq = Bishop.slide sq >>= make sq ~f:(default_accum sq)
+  let[@inline] rook sq = Rook.slide sq >>= make sq ~f:(default_accum sq)
+  let[@inline] queen sq = Queen.slide sq >>= make sq ~f:(default_accum sq)
 
   let[@inline] king sq =
     let open King in
