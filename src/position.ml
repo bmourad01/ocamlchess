@@ -445,10 +445,10 @@ module Apply = struct
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle p sq sq' =
-    if Piece.is_king p then king_moved_or_castled sq sq'
-    else if Piece.is_rook p then rook_moved sq >> rook_captured sq
-    else rook_captured sq'
+  let[@inline] update_castle p sq sq' = match Piece.kind p with
+    | King -> king_moved_or_castled sq sq'
+    | Rook -> rook_moved sq >> rook_captured sq
+    | _ -> rook_captured sq'
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
