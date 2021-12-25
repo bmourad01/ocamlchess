@@ -43,12 +43,12 @@ let ranks = [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|]
 let files = [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|]
 
 let rank_exn i =
-  if Int.(i < 0 || i >= Square.Rank.count) then invalid_arg @@
+  if Int.(i land Square.Rank.nmask <> 0) then invalid_arg @@
     sprintf "Integer %d is not a valid rank" i
   else Array.unsafe_get ranks i
 
 let file_exn i =
-  if Int.(i < 0 || i >= Square.File.count) then invalid_arg @@
+  if Int.(i land Square.File.nmask <> 0) then invalid_arg @@
     sprintf "Integer %d is not a valid file" i
   else Array.unsafe_get files i
 

@@ -34,7 +34,8 @@ module Bits = struct
     let eight = 0b111
 
     let count = 8
-    let nmask = lnot 0b111
+    let mask = 0b111
+    let nmask = lnot mask
   end
 
   module File = struct
@@ -48,7 +49,8 @@ module Bits = struct
     let h = 0b111
 
     let count = 8
-    let nmask = lnot 0b111
+    let mask = 0b111
+    let nmask = lnot mask
   end
 
   let a1 = 0b000_000

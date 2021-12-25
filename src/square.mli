@@ -298,6 +298,12 @@ module Rank : sig
 
   (** Number of ranks. *)
   val count : int
+
+  (** The mask for valid ranks. *)
+  val mask : int
+
+  (** The mask for invalid ranks. *)
+  val nmask : int
 end
 
 (** Integer represenations of the files. *)
@@ -328,6 +334,12 @@ module File : sig
 
   (** Number of files. *)
   val count : int
+
+  (** The mask for valid files. *)
+  val mask : int
+
+  (** The mask for invalid files. *)
+  val nmask : int
 end
 
 (** The first square that is visited (in integer order). *)
