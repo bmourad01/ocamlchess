@@ -9,11 +9,9 @@ let same_color active sq =
   | White -> (rank land 1) <> (file land 1)
   | Black -> (rank land 1) = (file land 1)
 
-let choose lms =
-  let moves, pos = Lms.decomp lms in
-  match moves with
-  | [] -> raise Player.No_moves
-  | moves ->
+let choose lms = match Lms.decomp lms with
+  | [], _ -> raise Player.No_moves
+  | moves, pos ->
     let active = Position.active pos in
     Player.best_moves moves ~eval:(fun mv ->
         let pos = Position.Legal_move.position mv in

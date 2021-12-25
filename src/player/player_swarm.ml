@@ -9,11 +9,9 @@ let chebyshev sq sq' =
   let rank', file' = Square.decomp sq' in
   max (abs (rank - rank')) (abs (file - file'))
 
-let choose lms =
-  let moves, pos = Lms.decomp lms in
-  match moves with
-  | [] -> raise Player.No_moves
-  | moves ->
+let choose lms = match Lms.decomp lms with
+  | [], _ -> raise Player.No_moves
+  | moves, pos ->
     let active = Position.active pos in
     let enemy = Position.enemy pos in
     let enemy_board = Position.board_of_color pos enemy in

@@ -50,11 +50,9 @@ let push pos moves =
           ~ignore_same:false ~king_danger:true in
       Option.return (num_controlled + promote_bonus))
     
-let choose lms =
-  let moves, pos = Lms.decomp lms in
-  match moves with
-  | [] -> raise Player.No_moves
-  | moves -> match checkmate moves with
+let choose lms = match Lms.decomp lms with
+  | [], _ -> raise Player.No_moves
+  | moves, pos -> match checkmate moves with
     | (_ :: _) as moves -> List.random_element_exn moves
     | [] -> match check moves with
       | (_ :: _) as moves -> List.random_element_exn moves
