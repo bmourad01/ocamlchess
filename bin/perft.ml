@@ -5,6 +5,7 @@ let rec perft ?(first = false) pos depth =
   if depth <= 0 then 1L
   else
     Position.legal_moves pos |>
+    Position.Legal_moves.moves |>
     List.fold ~init:0L ~f:(fun acc mv ->
         let m, pos = Position.Legal_move.decomp mv in
         let nodes = perft pos (depth - 1) in

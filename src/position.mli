@@ -224,11 +224,30 @@ module Legal_move : sig
   (** The resulting position. *)
   val position : legal_move -> t
 
-  (** Decomposes the move into its constituents. *)
+  (** Decomposes the structure into its constituents. *)
   val decomp : legal_move -> Move.t * t
-  
+
   (** A legal move. *)
   type t = legal_move [@@deriving compare, equal, sexp]
+
+  include Comparable.S with type t := t
+end
+
+(** A list of legal moves for a position. *)
+type legal_moves
+
+module Legal_moves : sig
+  (** The list of legal moves. *)
+  val moves : legal_moves -> legal_move list
+
+  (** The parent position. *)
+  val position : legal_moves -> t
+
+  (** Decomposes the structure into its constituents. *)
+  val decomp : legal_moves -> legal_move list * t
+
+  (** A list of legal moves for a position. *)
+  type t = legal_moves [@@deriving compare, equal, sexp]
 
   include Comparable.S with type t := t
 end
@@ -237,4 +256,4 @@ end
     all of the legal moves for the active color of position [pos]. It is
     assumed that [pos] is reachable from the starting position. May raise
     if [pos] is not valid. *)
-val legal_moves : t -> legal_move list
+val legal_moves : t -> legal_moves

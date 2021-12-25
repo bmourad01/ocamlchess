@@ -11,7 +11,7 @@ exception No_moves
 
 (** The function that chooses which move to play, based on the position.
     May raise [No_moves] if there are no legal moves available. *)
-type choose = Position.t -> Position.legal_move
+type choose = Position.legal_moves -> Position.legal_move
 
 (** The player. *)
 type t
@@ -28,11 +28,11 @@ type create = ?limits:limits option -> unit -> t
 (** The instantiation function. *)
 val create : choose:choose -> create
 
-(** [equal_eval moves ~eval] will take a list of moves, evaluate them with
+(** [best_moves moves ~eval] will take a list of moves, evaluate them with
     [eval], and then return a list of the highest scoring moves (with the
     same score). If [eval] returns [None] for a particular move, then it
     is discarded from the final solution. *)
-val equal_eval :
+val best_moves :
   Position.legal_move list ->
   eval:(Position.legal_move -> int option) ->
   Position.legal_move list

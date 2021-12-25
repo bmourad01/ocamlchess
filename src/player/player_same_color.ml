@@ -1,6 +1,7 @@
 open Core_kernel
 
 module Bb = Bitboard
+module Lms = Position.Legal_moves
 
 let same_color active sq =
   let rank, file = Square.decomp sq in
@@ -8,11 +9,13 @@ let same_color active sq =
   | White -> (rank land 1) <> (file land 1)
   | Black -> (rank land 1) = (file land 1)
 
-let choose pos = match Position.legal_moves pos with
+let choose lms =
+  let moves, pos = Lms.decomp lms in
+  match moves with
   | [] -> raise Player.No_moves
   | moves ->
     let active = Position.active pos in
-    Player.equal_eval moves ~eval:(fun mv ->
+    Player.best_moves moves ~eval:(fun mv ->
         let pos = Position.Legal_move.position mv in
         Option.return @@ Bb.count @@
         Bb.filter ~f:(same_color active) @@

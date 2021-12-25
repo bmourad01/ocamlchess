@@ -7,7 +7,7 @@ type limits = {
 
 exception No_moves
 
-type choose = Position.t -> Position.legal_move
+type choose = Position.legal_moves -> Position.legal_move
 
 type t = {
   choose : choose;
@@ -18,7 +18,7 @@ type create = ?limits:limits option -> unit -> t
 
 let create ~choose = fun ?(limits = None) () -> {choose; limits}
 
-let equal_eval moves ~eval =
+let best_moves moves ~eval =
   let open Option.Monad_infix in
   List.filter_map moves ~f:(fun m -> eval m >>| fun score -> (m, score)) |>
   List.sort ~compare:(fun (_, score) (_, score') ->

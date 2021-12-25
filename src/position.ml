@@ -859,7 +859,24 @@ module Legal_move = struct
   let[@inline] decomp m = m
 end
 
+type legal_moves = legal_move list * T.t [@@deriving compare, equal, sexp]
+
+module Legal_moves = struct
+  module T = struct
+    type t = legal_moves [@@deriving compare, equal, sexp]
+  end
+
+  include T
+  include Comparable.Make(T)
+
+  let[@inline] moves m = fst m
+  let[@inline] position m = snd m
+  let[@inline] decomp m = m
+end
+
 (* Generate all legal moves from the position. *)
-let legal_moves pos = create_info pos |> Monad.Reader.run Moves.go
+let legal_moves pos =
+  let moves = create_info pos |> Monad.Reader.run Moves.go in
+  moves, pos
 
 include Comparable.Make(T)

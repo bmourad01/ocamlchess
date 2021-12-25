@@ -2,11 +2,12 @@ open Core_kernel
 
 module Bb = Bitboard
 module Lm = Position.Legal_move
+module Lms = Position.Legal_moves
 
 (* Try to checkmate the enemy king. *)
 let checkmate = List.filter ~f:(fun mv ->
     let pos = Lm.position mv in
-    match Position.legal_moves pos with
+    match Lms.moves @@ Position.legal_moves pos with
     | [] -> Position.in_check pos
     | _ :: _ -> false)
     
@@ -34,14 +35,14 @@ let piece_value (k : Piece.kind) = match k with
 let capture pos moves =
   let open Option.Monad_infix in
   let enemy = Position.enemy pos in
-  Player.equal_eval moves ~eval:(fun mv ->
+  Player.best_moves moves ~eval:(fun mv ->
       Lm.position mv |> captured enemy pos >>| piece_value)
 
 (* Push a piece that gains the the largest number of controlled squares,
    with a bonus for promoting to a high-value piece. *)
 let push pos moves =
   let active = Position.active pos in
-  Player.equal_eval moves ~eval:(fun mv ->
+  Player.best_moves moves ~eval:(fun mv ->
       let m, pos' = Lm.decomp mv in
       let promote_bonus =
         Move.promote m |> Option.value_map ~default:0 ~f:piece_value in
@@ -49,7 +50,9 @@ let push pos moves =
           ~ignore_same:false ~king_danger:true in
       Option.return (num_controlled + promote_bonus))
     
-let choose pos = match Position.legal_moves pos with
+let choose lms =
+  let moves, pos = Lms.decomp lms in
+  match moves with
   | [] -> raise Player.No_moves
   | moves -> match checkmate moves with
     | (_ :: _) as moves -> List.random_element_exn moves
