@@ -211,13 +211,13 @@ end
 
 (* The actual API for accessing precalculated move patterns. *)
 
-let[@inline] pawn_advance sq color = match color with
+let[@inline] pawn_advance sq = function
   | Piece.White ->
     Array.unsafe_get Simple.white_pawn_advance @@ Square.to_int sq
   | Piece.Black ->
     Array.unsafe_get Simple.black_pawn_advance @@ Square.to_int sq
 
-let[@inline] pawn_capture sq color = match color with
+let[@inline] pawn_capture sq = function
   | Piece.White ->
     Array.unsafe_get Simple.white_pawn_capture @@ Square.to_int sq
   | Piece.Black ->
@@ -266,9 +266,8 @@ let castle_tbl =
       List.fold valid ~init:(empty, empty) ~f:(fun (m, b) (c, s, (m', b')) ->
           if mem x c s then (m + m', b + b') else (m, b)))
 
-let[@inline] castle cr c s =
-  let open Castling_rights in
-  Array.unsafe_get castle_tbl @@ to_int @@ inter cr @@ singleton c s
+let[@inline] castle cr c s = Array.unsafe_get castle_tbl @@
+  Castling_rights.(to_int @@ inter cr @@ singleton c s)
 
 let between_tbl = Array.init Square.count ~f:(fun i ->
     let sq = Square.of_int_unsafe i in
