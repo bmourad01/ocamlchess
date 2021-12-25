@@ -1,5 +1,20 @@
 open Cmdliner
 
+let man_players = [
+  `S "PLAYER (predefined algorithm for the computer)";
+  `P "random: the player that makes moves randomly";
+  `P "same-color: the player that tries to maximize the number of pieces \
+      that are on squares of its color";
+  `P "opposite-color: the player that tries to maximize the number of pieces \
+      that are on squares that are opposite of its color";
+  `P "cccp: the player that plays the 'checkmate, check, capture, push' \
+      strategy (in that order)";
+  `P "huddle: the player that tries to minimize the distance between its \
+      pieces and its king";
+  `P "swarm: the player that tries to minimize the distance between its \
+      pieces and the emey king";
+]
+
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
   | s -> Some (Chess.Choose_player.choose s)
@@ -49,11 +64,11 @@ module Gui = struct
 
   let white =
     let doc = "The AI player to play as white, if any." in
-    Arg.(value & opt string "" (info ["white"] ~docv:"WHITE-PLAYER" ~doc))
+    Arg.(value & opt string "" (info ["white"] ~docv:"PLAYER" ~doc))
 
   let black =
     let doc = "The AI player to play as black, if any." in
-    Arg.(value & opt string "" (info ["black"] ~docv:"BLACK-PLAYER" ~doc))
+    Arg.(value & opt string "" (info ["black"] ~docv:"PLAYER" ~doc))
 
   let delay =
     let doc = "Delay (in seconds) between AI moves \
@@ -99,7 +114,7 @@ module Default = struct
     Term.info "ocamlchess"
       ~doc
       ~exits:Term.default_exits
-      ~man:[]
+      ~man:man_players
 end
 
 let () =
