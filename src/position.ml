@@ -723,12 +723,12 @@ module Moves = struct
     make_king sq (move + castle)
 
   (* Get the new positions from the list of moves. *)
-  let[@inline] exec k moves = I.read () >>| fun {pos; _} ->
+  let[@inline] exec k acc moves = I.read () >>| fun {pos; _} ->
     let p = Piece.create pos.active k in
-    List.map moves ~f:(fun m ->
+    List.fold moves ~init:acc ~f:(fun acc m ->
         let pos = copy pos in
         Monad.Reader.run (Apply.move p m) pos;
-        m, pos)
+        (m, pos) :: acc)
 
   let[@inline] any sq = function
     | Piece.Pawn -> pawn sq
@@ -741,10 +741,9 @@ module Moves = struct
   let go = I.read () >>= fun {pos; king_sq; num_checkers; _} ->
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
-    if num_checkers > 1 then king king_sq >>= exec King
-    else
-      find_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
-          any sq k >>= exec k >>| fun moves -> moves @ acc)
+    if num_checkers > 1 then king king_sq >>= exec King []
+    else find_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
+        any sq k >>= exec k acc)
 end
 
 (* Attacks of all piece kinds, starting from the king, intersected with

@@ -255,5 +255,6 @@ end
 (** [legal_moves pos] returns a list of move-position pairs, which represents
     all of the legal moves for the active color of position [pos]. It is
     assumed that [pos] is reachable from the starting position. May raise
-    if [pos] is not valid. *)
+    if [pos] is not valid. No particular order is guaranteed for the resulting
+    list. *)
 val legal_moves : t -> legal_moves
