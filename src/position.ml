@@ -536,10 +536,6 @@ module I = Monad.Reader.Make(Info)(Monad.Ident)
 module Moves = struct
   open I.Syntax
 
-  (* Accumulate moves with a cons. We use this for every kind of move except
-     for a pawn promotion. *)
-  let[@inline] default_accum src acc dst = Move.create src dst :: acc
-
   module Pawn = struct
     let[@inline] push sq = I.read () >>| fun {pos; occupied; _} ->
       let open Bb.Syntax in
@@ -595,14 +591,6 @@ module Moves = struct
        promote to. *)
     let[@inline] promote src dst = List.map promote_kinds ~f:(fun k ->
         Move.create src dst ~promote:(Some k))
-
-    (* Accumulator function for all the squares we can move to. We need this
-       in case we have a promotion. *)
-    let[@inline] move_accum src rank = I.read () >>| fun {pos; _} ->
-      if (Piece.Color.(pos.active = White) && Square.Rank.(rank = seven))
-      || (Piece.Color.(pos.active = Black) && Square.Rank.(rank = two))
-      then fun acc dst -> promote src dst @ acc
-      else default_accum src
   end
 
   module Knight = struct
@@ -681,54 +669,66 @@ module Moves = struct
   let king_mask = I.read () >>| Info.king_mask
 
   (* Pawn has special case for check mask. *)
-  let[@inline] make_pawn sq b capture ~f =
+  let[@inline] make_pawn sq b capture =
     pin_mask sq >>= fun pin ->
     check_mask_pawn capture >>= fun chk ->
     king_mask >>| fun k ->
-    Bb.(fold (b & pin & chk & k) ~init:[] ~f)
+    Bb.(b & pin & chk & k)
 
   (* King cannot be pinned, so do not use the pin mask. *)
-  let[@inline] make_king sq = Bb.fold ~init:[] ~f:(default_accum sq)
+  let[@inline] make_king b = b
 
   (* All other pieces. *)
-  let[@inline] make sq b ~f =
+  let[@inline] make sq b =
     pin_mask sq >>= fun pin ->
     check_mask >>= fun chk ->
     king_mask >>| fun k ->
-    Bb.(fold (b & pin & chk & k) ~init:[] ~f)
+    Bb.(b & pin & chk & k)
 
   let[@inline] pawn sq =
     let open Pawn in
     let open Bb.Syntax in
-    let rank, file = Square.decomp sq in
     push sq >>= fun push -> begin
       (* Only allow double push if a single push is available. *)
       if Bb.(push = empty) then I.return push
-      else push2 rank file >>| (+) push
+      else
+        let rank, file = Square.decomp sq in
+        push2 rank file >>| (+) push
     end >>= fun push ->
     capture sq >>= fun capture ->
-    move_accum sq rank >>= fun f ->
-    make_pawn sq (push + capture) capture ~f
+    make_pawn sq (push + capture) capture
 
-  let[@inline] knight sq = Knight.jump sq >>= make sq ~f:(default_accum sq)
-  let[@inline] bishop sq = Bishop.slide sq >>= make sq ~f:(default_accum sq)
-  let[@inline] rook sq = Rook.slide sq >>= make sq ~f:(default_accum sq)
-  let[@inline] queen sq = Queen.slide sq >>= make sq ~f:(default_accum sq)
+  let[@inline] knight sq = Knight.jump sq >>= make sq 
+  let[@inline] bishop sq = Bishop.slide sq >>= make sq
+  let[@inline] rook sq = Rook.slide sq >>= make sq 
+  let[@inline] queen sq = Queen.slide sq >>= make sq
 
   let[@inline] king sq =
     let open King in
     let open Bb.Syntax in
     move sq >>= fun move ->
     castle >>| fun castle ->
-    make_king sq (move + castle)
+    make_king (move + castle)
 
   (* Get the new positions from the list of moves. *)
-  let[@inline] exec k acc moves = I.read () >>| fun {pos; _} ->
+  let[@inline] exec src k init b = I.read () >>| fun {pos; _} ->
+    let is_promote = match k with
+      | Piece.Pawn -> begin
+          (* If we're promoting, then the back rank should be the only
+             available squares. *)
+          match pos.active with
+          | Piece.White -> Bb.((b & rank_8) = b)
+          | Piece.Black -> Bb.((b & rank_1) = b)
+        end
+      | _ -> false in
     let p = Piece.create pos.active k in
-    List.fold moves ~init:acc ~f:(fun acc m ->
-        let pos = copy pos in
-        Monad.Reader.run (Apply.move p m) pos;
-        (m, pos) :: acc)
+    let apply acc m =
+      let pos = copy pos in
+      Monad.Reader.run (Apply.move p m) pos;
+      (m, pos) :: acc in
+    if is_promote then Bb.fold b ~init ~f:(fun init dst ->
+        Pawn.promote src dst |> List.fold ~init ~f:apply)
+    else Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> apply acc)
 
   let[@inline] any sq = function
     | Piece.Pawn -> pawn sq
@@ -741,9 +741,9 @@ module Moves = struct
   let go = I.read () >>= fun {pos; king_sq; num_checkers; _} ->
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
-    if num_checkers > 1 then king king_sq >>= exec King []
+    if num_checkers > 1 then king king_sq >>= exec king_sq King []
     else find_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
-        any sq k >>= exec k acc)
+        any sq k >>= exec sq k acc)
 end
 
 (* Attacks of all piece kinds, starting from the king, intersected with
