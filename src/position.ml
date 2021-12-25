@@ -517,7 +517,6 @@ module Info = struct
   type t = {
     pos : T.t;
     king_sq : Square.t;
-    king_mask : Bb.t;
     occupied : Bb.t;
     active_board : Bb.t;
     enemy_board : Bb.t;
@@ -662,28 +661,17 @@ module Moves = struct
     if num_checkers <> 1 then check_mask
     else Bb.(check_mask + (capture & en_passant_check_mask))
 
-  (* It is technically illegal to actually capture the enemy king, so let's
-     mask it out. We shouldn't need to check this for our king, because it
-     would be illegal to even reach a position where our king can capture
-     the enemy king. *)
-  let king_mask = I.read () >>| Info.king_mask
-
   (* Pawn has special case for check mask. *)
   let[@inline] make_pawn sq b capture =
     pin_mask sq >>= fun pin ->
-    check_mask_pawn capture >>= fun chk ->
-    king_mask >>| fun k ->
-    Bb.(b & pin & chk & k)
+    check_mask_pawn capture >>| fun chk ->
+    Bb.(b & pin & chk)
 
-  (* King cannot be pinned, so do not use the pin mask. *)
-  let[@inline] make_king b = b
-
-  (* All other pieces. *)
+  (* All other pieces (except the king). *)
   let[@inline] make sq b =
     pin_mask sq >>= fun pin ->
-    check_mask >>= fun chk ->
-    king_mask >>| fun k ->
-    Bb.(b & pin & chk & k)
+    check_mask >>| fun chk ->
+    Bb.(b & pin & chk)
 
   let[@inline] pawn sq =
     let open Pawn in
@@ -708,9 +696,9 @@ module Moves = struct
     let open Bb.Syntax in
     move sq >>= fun move ->
     castle >>| fun castle ->
-    make_king (move + castle)
+    move + castle
 
-  (* Get the new positions from the list of moves. *)
+  (* Get the new positions from the bitboard of squares we can move to. *)
   let[@inline] exec src k init b = I.read () >>| fun {pos; _} ->
     let is_promote = match k with
       | Piece.Pawn -> begin
@@ -817,15 +805,13 @@ let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
 
 (* Populate info needed for generating legal moves. *)
 let[@inline] create_info pos =
-  let open Bb.Syntax in
   (* First, find our king. *)
-  let king_sq = Bitboard.(first_set_exn (pos.king & active_board pos)) in
+  let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
   (* Most general info. *)
   let enemy = Piece.Color.opposite pos.active in
   let occupied = all_board pos in
   let active_board = active_board pos in
   let enemy_board = enemy_board pos in
-  let king_mask = ~~(pos.king & enemy_board) in
   (* We're considering attacked squares only for king moves. These squares
      should include enemy pieces which may block an enemy attack, since it
      would be illegal for the king to attack those squares. *)
@@ -842,7 +828,7 @@ let[@inline] create_info pos =
   let check_mask, en_passant_check_mask =
     check_masks pos ~num_checkers ~checkers ~king_sq ~enemy in
   Info.Fields.create
-    ~pos ~king_sq ~king_mask ~occupied ~active_board ~enemy_board
+    ~pos ~king_sq ~occupied ~active_board ~enemy_board
     ~enemy_attacks  ~pinners ~num_checkers ~check_mask
     ~en_passant_check_mask ~enemy_sliders
 
