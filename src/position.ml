@@ -5,9 +5,9 @@ module Pre = Precalculated
 module Bb = Bitboard
 
 module T = struct
-  (* We'll use mutable fields, since this has a performance advantage
-     when applying moves over a typical state monad pattern (where we
-     are making a new copy every time). *)
+  (* We'll use mutable fields since, when applying moves, this has a
+     performance advantage over a typical state monad pattern (where
+     we are making a new copy every time). *)
   type t = {
     mutable white : Bb.t;
     mutable black : Bb.t;
