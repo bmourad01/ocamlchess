@@ -1,7 +1,7 @@
 open Core_kernel
 
 module Bb = Bitboard
-module Lms = Position.Legal_moves
+module Legals = Position.Legal_moves
 
 let opposite_color active sq =
   let rank, file = Square.decomp sq in
@@ -9,7 +9,7 @@ let opposite_color active sq =
   | White -> (rank land 1) = (file land 1)
   | Black -> (rank land 1) <> (file land 1)
 
-let choose lms = match Lms.decomp lms with
+let choose lms = match Legals.decomp lms with
   | [], _ -> raise Player.No_moves
   | moves, pos ->
     let active = Position.active pos in

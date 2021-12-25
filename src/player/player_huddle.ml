@@ -1,20 +1,20 @@
 open Core_kernel
 
 module Bb = Bitboard
-module Lm = Position.Legal_move
-module Lms = Position.Legal_moves
+module Legal = Position.Legal_move
+module Legals = Position.Legal_moves
 
 let chebyshev sq sq' =
   let rank, file = Square.decomp sq in
   let rank', file' = Square.decomp sq' in
   max (abs (rank - rank')) (abs (file - file'))
 
-let choose lms = match Lms.decomp lms with
+let choose lms = match Legals.decomp lms with
   | [], _ -> raise Player.No_moves
   | moves, pos ->
     let active = Position.active pos in
     Player.best_moves moves ~eval:(fun mv ->
-        let pos = Lm.position mv in
+        let pos = Legal.position mv in
         let active_board = Position.board_of_color pos active in
         let king = Position.king pos in
         let king_sq = Bb.(first_set_exn (king & active_board)) in

@@ -1,8 +1,8 @@
 open Core_kernel
 
-module Lms = Position.Legal_moves
+module Legals = Position.Legal_moves
 
-let choose lms = match List.random_element @@ Lms.moves lms with
+let choose lms = match List.random_element @@ Legals.moves lms with
   | None -> raise Player.No_moves
   | Some m -> m
 
