@@ -114,6 +114,352 @@ let all_pieces pos =
       piece_at_square pos sq |> Option.value_map ~default:acc
         ~f:(fun p -> (sq, p) :: acc))
 
+(* Attack patterns. *)
+
+module Attacks = struct
+  (* Useful when excluding squares that are occupied by our color. *)
+  let[@inline] ignore_color pos c b = Bb.(b - board_of_color pos c)
+
+  (* Generate for a particular color and kind *)
+  let[@inline] gen ?(ignore_same = true) pos c k f =
+    let open Bb.Syntax in
+    Piece.create c k |> board_of_piece pos |> Bb.fold
+      ~init:Bb.empty ~f:(fun acc sq -> acc + f sq) |>
+    fun b -> if ignore_same then ignore_color pos c b else b
+
+  let[@inline] pawn ?(ignore_same = true) pos c =
+    gen pos c Pawn ~ignore_same @@ fun sq -> Pre.pawn_capture sq c
+
+  let[@inline] knight ?(ignore_same = true) pos c =
+    gen pos c Knight Pre.knight ~ignore_same
+
+  (* Get the occupied squares for the board. `king_danger` indicates that the
+     king of the opposite color should be ignored, so that sliding attacks
+     can "see through" the enemy king. This is useful when the king is blocking
+     the attack of a sliding piece. *)
+  let[@inline] occupied pos c king_danger =
+    let open Bb.Syntax in
+    if king_danger then
+      let p = Piece.(create (Color.opposite c) King) in
+      all_board pos - board_of_piece pos p
+    else all_board pos
+
+  let[@inline] bishop ?(ignore_same = true) ?(king_danger = false) pos c =
+    let occupied = occupied pos c king_danger in
+    gen pos c Bishop ~ignore_same @@ fun sq -> Pre.bishop sq occupied
+
+  let[@inline] rook ?(ignore_same = true) ?(king_danger = false) pos c =
+    let occupied = occupied pos c king_danger in
+    gen pos c Rook ~ignore_same @@ fun sq -> Pre.rook sq occupied
+
+  let[@inline] queen ?(ignore_same = true) ?(king_danger = false) pos c =
+    let occupied = occupied pos c king_danger in
+    gen pos c Queen ~ignore_same @@ fun sq -> Pre.queen sq occupied
+
+  let[@inline] king ?(ignore_same = true) pos c =
+    gen pos c King Pre.king ~ignore_same
+
+  let[@inline] pre_of_kind sq occupied c = function
+    | Piece.Pawn -> Pre.pawn_capture sq c
+    | Piece.Knight -> Pre.knight sq
+    | Piece.Bishop -> Pre.bishop sq occupied
+    | Piece.Rook -> Pre.rook sq occupied
+    | Piece.Queen -> Pre.queen sq occupied
+    | Piece.King -> Pre.king sq
+
+  let[@inline] aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
+    let open Bb.Syntax in
+    let occupied = occupied pos c king_danger in
+    find_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
+        if f k then acc + pre_of_kind sq occupied c k else acc) |>
+    fun b -> if ignore_same then ignore_color pos c b else b
+
+  let[@inline] all ?(ignore_same = true) ?(king_danger = false) pos c =
+    aux pos c ~ignore_same ~king_danger ~f:(fun _ -> true)
+
+  let[@inline] sliding ?(ignore_same = true) ?(king_danger = false) pos c =
+    aux pos c ~ignore_same ~king_danger ~f:(function
+        | Piece.(Bishop | Rook | Queen) -> true
+        | _ -> false)
+
+  let[@inline] non_sliding ?(ignore_same = true) pos c =
+    aux pos c ~ignore_same ~f:(function
+        | Piece.(Bishop | Rook | Queen) -> false
+        | _ -> true)
+end
+
+let in_check pos =
+  let active_board = active_board pos in
+  let attacks = Attacks.all pos (enemy pos) ~ignore_same:true in
+  Bb.((active_board & pos.king & attacks) <> empty)
+
+(* Attacks of all piece kinds, starting from the king, intersected with
+   the squares occupied by enemy pieces. *)
+let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
+  let open Bb.Syntax in
+  let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
+  let n = Pre.knight king_sq & pos.knight in
+  let bishop = Pre.bishop king_sq occupied in
+  let rook = Pre.rook king_sq occupied in
+  let bq = bishop & (pos.bishop + pos.queen) in
+  let rq = rook & (pos.rook + pos.queen) in
+  let k = Pre.king king_sq & pos.king in
+  (p + n + bq + rq + k) & enemy_board
+
+(* Validation *)
+
+module Valid = struct
+  module Error = struct
+    type t =
+      | Invalid_number_of_kings of Piece.color * int
+      | Kings_not_separated
+      | Inactive_in_check of Piece.color
+      | Invalid_number_of_checkers of Piece.color * int
+      | Invalid_two_checkers of Piece.color * Piece.kind * Piece.kind
+      | Invalid_number_of_pawns of Piece.color * int
+      | Pawns_in_back_rank of Piece.color
+      | Missing_pawn_en_passant of Piece.color
+      | Invalid_en_passant_square of Square.t
+      | Invalid_extra_pieces of Piece.color * int
+      | Invalid_number_of_pieces of Piece.color * int
+      | Invalid_castling_rights of Piece.color * Piece.kind
+      | En_passant_wrong_halfmove
+      | Invalid_halfmove
+      | Invalid_fullmove
+
+    let to_string = function
+      | Invalid_number_of_kings (c, n) ->
+        sprintf "Invalid number of %s kings (%d)"
+          (Piece.Color.to_string_hum c) n
+      | Kings_not_separated ->
+        sprintf "Kings must be separated by at least one square"
+      | Inactive_in_check c ->
+        sprintf "Inactive player %s is in check" @@
+        Piece.Color.to_string_hum c
+      | Invalid_number_of_checkers (c, n) ->
+        sprintf "Player %s has %d checkers, max is two"
+          (Piece.Color.to_string_hum c) n
+      | Invalid_two_checkers (c, k1, k2) ->
+        sprintf "Player %s has invalid two checkers: %s and %s"
+          (Piece.Color.to_string_hum c)
+          (Piece.Kind.to_string_hum k1)
+          (Piece.Kind.to_string_hum k2)
+      | Invalid_number_of_pawns (c, n) ->
+        sprintf "Invalid number of %s pawns (%d)"
+          (Piece.Color.to_string_hum c) n
+      | Pawns_in_back_rank c ->
+        sprintf "Player %s has pawns in the back rank" @@
+        Piece.Color.to_string_hum c
+      | Missing_pawn_en_passant c ->
+        sprintf "Missing %s pawn in front of en passant square" @@
+        Piece.Color.to_string_hum c
+      | Invalid_en_passant_square sq ->
+        sprintf "Invalid en passant square %s" @@
+        Square.to_string sq
+      | Invalid_extra_pieces (c, n) ->
+        sprintf "Invalid number of extra %s pieces (%d)"
+          (Piece.Color.to_string_hum c) n
+      | Invalid_number_of_pieces (c, n) ->
+        sprintf "Invalid number of %s pieces (%d)"
+          (Piece.Color.to_string_hum c) n
+      | Invalid_castling_rights (c, k) ->
+        sprintf "Invalid castling rights, %s %s moved"
+          (Piece.Color.to_string_hum c)
+          (Piece.Kind.to_string_hum k)
+      | En_passant_wrong_halfmove ->
+        sprintf "En passant square is set, but halfmove clock is not zero"
+      | Invalid_halfmove -> sprintf "Invalid halfmove clock"
+      | Invalid_fullmove -> sprintf "Invalid fullmove clock"
+  end
+
+  type error = Error.t
+
+  module E = Monad.Result.Make(Error)(Monad.Ident)
+
+  open E.Syntax
+
+  let (>>) m n = m >>= fun _ -> n
+
+  module King = struct
+    let check_count pos =
+      let wk = Bb.(count (pos.white & pos.king)) in
+      if wk <> 1 then E.fail @@ Invalid_number_of_kings (White, wk)
+      else
+        let bk = Bb.(count (pos.black & pos.king)) in
+        if bk <> 1 then E.fail @@ Invalid_number_of_kings (Black, bk)
+        else E.return ()
+
+    let check_sep pos =
+      let wrank, wfile =
+        Square.decomp @@ Bb.(first_set_exn (pos.white & pos.king)) in
+      let brank, bfile =
+        Square.decomp @@ Bb.(first_set_exn (pos.black & pos.king)) in
+      if max (abs (wrank - brank)) (abs (wfile - bfile)) <= 1
+      then E.fail Kings_not_separated
+      else E.return ()
+
+    let go pos =
+      check_count pos >>
+      check_sep pos
+  end
+
+  module Checks = struct
+    let check_inactive_in_check pos =
+      let b = enemy_board pos in
+      let attacks = Attacks.all pos pos.active ~ignore_same:true in
+      if Bb.((b & pos.king & attacks) <> empty)
+      then E.fail @@ Inactive_in_check (enemy pos)
+      else E.return ()
+
+    let check_checkers pos =
+      let active_board = active_board pos in
+      let king_sq = Bb.(first_set_exn (active_board & pos.king)) in
+      let enemy_board = enemy_board pos in
+      let occupied = Bb.(active_board + enemy_board) in
+      let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
+      let num_checkers = Bb.count checkers in
+      if num_checkers >= 3
+      then E.fail @@ Invalid_number_of_checkers (pos.active, num_checkers)
+      else
+        let checkers = Bb.fold checkers ~init:[] ~f:(fun acc sq ->
+            match which_kind pos sq with
+            | None -> assert false
+            | Some k -> k :: acc) in
+        match checkers with
+        | [Pawn; Pawn] ->
+          E.fail @@ Invalid_two_checkers (pos.active, Pawn, Pawn)
+        | [Pawn; Knight] | [Knight; Pawn] ->
+          E.fail @@ Invalid_two_checkers (pos.active, Pawn, Knight)
+        | [Pawn; Bishop] | [Bishop; Pawn] ->
+          E.fail @@ Invalid_two_checkers (pos.active, Pawn, Bishop)
+        | [Knight; Knight] ->
+          E.fail @@ Invalid_two_checkers (pos.active, Knight, Knight)
+        | [Bishop; Bishop] ->
+          E.fail @@ Invalid_two_checkers (pos.active, Bishop, Bishop)
+        | _ -> E.return ()
+
+    let go pos = 
+      check_inactive_in_check pos >>
+      check_checkers pos
+  end
+
+  module Pawn = struct
+    let check_count pos =
+      let wp = Bb.(count (pos.white & pos.pawn)) in
+      if wp > 8 then E.fail @@ Invalid_number_of_pawns (White, wp)
+      else
+        let bp = Bb.(count (pos.black & pos.pawn)) in
+        if bp > 8 then E.fail @@ Invalid_number_of_pawns (Black, bp)
+        else E.return ()
+
+    let check_back_rank pos =
+      let mask = Bb.(rank_1 + rank_8) in
+      if Bb.((pos.white & pos.pawn & mask) <> empty)
+      then E.fail @@ Pawns_in_back_rank White
+      else if Bb.((pos.black & pos.pawn & mask) <> empty)
+      then E.fail @@ Pawns_in_back_rank Black
+      else E.return ()
+
+    let check_en_passant pos = match pos.en_passant with
+      | None -> E.return ()
+      | Some ep ->
+        let rank, file = Square.decomp ep in
+        if rank = Square.Rank.three then
+          let sq = Square.create_exn ~rank:(succ rank) ~file in
+          match piece_at_square pos sq with
+          | Some p when Piece.is_white p && Piece.is_pawn p -> E.return ()
+          | _ -> E.fail @@ Missing_pawn_en_passant White
+        else if rank = Square.Rank.six then
+          let sq = Square.create_exn ~rank:(pred rank) ~file in
+          match piece_at_square pos sq with
+          | Some p when Piece.is_black p && Piece.is_pawn p -> E.return ()
+          | _ -> E.fail @@ Missing_pawn_en_passant Black
+        else E.fail @@ Invalid_en_passant_square ep
+
+    let check_promotions pos c b =
+      let num_pawn = Bb.(count (pos.pawn & b)) in
+      let num_knight = Bb.(count (pos.knight & b)) in
+      let num_bishop = Bb.(count (pos.bishop & b)) in
+      let num_rook = Bb.(count (pos.rook & b)) in
+      let num_queen = Bb.(count (pos.queen & b)) in
+      let extra =
+        max 0 (num_knight - 2) +
+        max 0 (num_bishop - 2) +
+        max 0 (num_rook   - 2) +
+        max 0 (num_queen  - 1) in
+      if extra > (8 - num_pawn) then E.fail @@ Invalid_extra_pieces (c, extra)
+      else if extra <> 0 then
+        let c' = Piece.Color.opposite c in
+        let n = Bb.count @@ board_of_color pos c' in
+        if n >= 16 then E.fail @@ Invalid_number_of_pieces (c', n)
+        else E.return ()
+      else E.return ()
+
+    let go pos =
+      check_count pos >>
+      check_back_rank pos >>
+      check_en_passant pos >>
+      check_promotions pos White pos.white >>
+      check_promotions pos Black pos.black
+  end
+
+  module Castling = struct
+    let check_king_moved pos c b =
+      if Castling_rights.mem pos.castle c `king ||
+         Castling_rights.mem pos.castle c `queen
+      then
+        let sq = match c with
+          | White -> Square.e1
+          | Black -> Square.e8 in
+        if Bb.(sq @ (b & pos.king)) then E.return ()
+        else E.fail @@ Invalid_castling_rights (c, King)
+      else E.return ()
+
+    let check_rook_moved pos c b =
+      if Castling_rights.mem pos.castle c `king ||
+         Castling_rights.mem pos.castle c `queen
+      then
+        let sq1, sq2 = match c with
+          | White -> Square.(a1, h1)
+          | Black -> Square.(a8, h8) in
+        let mask = Bb.(b & pos.rook) in
+        if Bb.(sq1 @ mask && sq2 @ mask) then E.return ()
+        else E.fail @@ Invalid_castling_rights (c, Rook)
+      else E.return ()
+
+    let go pos =
+      check_king_moved pos White pos.white >>
+      check_king_moved pos Black pos.black >>
+      check_rook_moved pos White pos.white >>
+      check_rook_moved pos Black pos.black
+  end
+
+  module Half_and_fullmove = struct
+    let check_en_passant pos = match pos.en_passant with
+      | Some _ when pos.halfmove <> 0 -> E.fail En_passant_wrong_halfmove
+      | _ -> E.return ()
+
+    let check_both pos =
+      if pos.halfmove >
+         ((pos.fullmove - 1) * 2) + (Piece.Color.to_int pos.active)
+      then E.fail Invalid_halfmove
+      else if pos.halfmove < 0 then E.fail Invalid_halfmove
+      else if pos.fullmove < 1 then E.fail Invalid_fullmove
+      else E.return ()
+
+    let go pos =
+      check_en_passant pos >>
+      check_both pos
+  end
+
+  let check pos =
+    King.go pos >>
+    Checks.go pos >>
+    Pawn.go pos >>
+    Castling.go pos >>
+    Half_and_fullmove.go pos
+end
+
 (* FEN parsing/unparsing *)
 
 module Fen = struct
@@ -204,22 +550,29 @@ module Fen = struct
       else fullmove
     with Failure _ -> invalid_arg @@ sprintf "Invalid halfmove count '%s'" s
 
-  let of_string_exn s =
-    match String.split s ~on:' ' with
+  let of_string_exn ?(validate = true) s = match String.split s ~on:' ' with
     | [placement; active; castle; en_passant; halfmove; fullmove] ->
       let white, black, pawn, knight, bishop, rook, queen, king =
         parse_placement placement in
-      Fields.create
-        ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
-        ~active:(parse_active active)
-        ~castle:(parse_castle castle)
-        ~en_passant:(parse_en_passant en_passant)
-        ~halfmove:(parse_halfmove halfmove)
-        ~fullmove:(parse_fullmove fullmove)
+      let pos = Fields.create
+          ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
+          ~active:(parse_active active)
+          ~castle:(parse_castle castle)
+          ~en_passant:(parse_en_passant en_passant)
+          ~halfmove:(parse_halfmove halfmove)
+          ~fullmove:(parse_fullmove fullmove) in
+      if not validate then pos
+      else begin match Valid.check pos with
+        | Ok () -> pos
+        | Error e -> invalid_arg @@
+          sprintf "FEN string '%s' produced an illegal position: %s"
+            s @@ Valid.Error.to_string e
+      end      
     | _ -> invalid_arg @@
       sprintf "Invalid number of sections in FEN string '%s'" s
 
-  let of_string s = Option.try_with @@ fun () -> of_string_exn s
+  let of_string ?(validate = true) s = Option.try_with @@
+    fun () -> of_string_exn s ~validate
 
   let string_of_placement pos =
     let rec aux rank file skip acc =
@@ -253,88 +606,11 @@ end
 
 let start = Fen.(of_string_exn start)
 
-(* Handling moves *)
-
-module Attacks = struct
-  (* Useful when excluding squares that are occupied by our color. *)
-  let[@inline] ignore_color pos c b = Bb.(b - board_of_color pos c)
-
-  (* Generate for a particular color and kind *)
-  let[@inline] gen ?(ignore_same = true) pos c k f =
-    let open Bb.Syntax in
-    Piece.create c k |> board_of_piece pos |> Bb.fold
-      ~init:Bb.empty ~f:(fun acc sq -> acc + f sq) |>
-    fun b -> if ignore_same then ignore_color pos c b else b
-
-  let[@inline] pawn ?(ignore_same = true) pos c =
-    gen pos c Pawn ~ignore_same @@ fun sq -> Pre.pawn_capture sq c
-
-  let[@inline] knight ?(ignore_same = true) pos c =
-    gen pos c Knight Pre.knight ~ignore_same
-
-  (* Get the occupied squares for the board. `king_danger` indicates that the
-     king of the opposite color should be ignored, so that sliding attacks
-     can "see through" the enemy king. This is useful when the king is blocking
-     the attack of a sliding piece. *)
-  let[@inline] occupied pos c king_danger =
-    let open Bb.Syntax in
-    if king_danger then
-      let p = Piece.(create (Color.opposite c) King) in
-      all_board pos - board_of_piece pos p
-    else all_board pos
-
-  let[@inline] bishop ?(ignore_same = true) ?(king_danger = false) pos c =
-    let occupied = occupied pos c king_danger in
-    gen pos c Bishop ~ignore_same @@ fun sq -> Pre.bishop sq occupied
-
-  let[@inline] rook ?(ignore_same = true) ?(king_danger = false) pos c =
-    let occupied = occupied pos c king_danger in
-    gen pos c Rook ~ignore_same @@ fun sq -> Pre.rook sq occupied
-
-  let[@inline] queen ?(ignore_same = true) ?(king_danger = false) pos c =
-    let occupied = occupied pos c king_danger in
-    gen pos c Queen ~ignore_same @@ fun sq -> Pre.queen sq occupied
-
-  let[@inline] king ?(ignore_same = true) pos c =
-    gen pos c King Pre.king ~ignore_same
-
-  let[@inline] pre_of_kind sq occupied c = function
-    | Piece.Pawn -> Pre.pawn_capture sq c
-    | Piece.Knight -> Pre.knight sq
-    | Piece.Bishop -> Pre.bishop sq occupied
-    | Piece.Rook -> Pre.rook sq occupied
-    | Piece.Queen -> Pre.queen sq occupied
-    | Piece.King -> Pre.king sq
-
-  let[@inline] aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
-    let open Bb.Syntax in
-    let occupied = occupied pos c king_danger in
-    find_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
-        if f k then acc + pre_of_kind sq occupied c k else acc) |>
-    fun b -> if ignore_same then ignore_color pos c b else b
-
-  let[@inline] all ?(ignore_same = true) ?(king_danger = false) pos c =
-    aux pos c ~ignore_same ~king_danger ~f:(fun _ -> true)
-
-  let[@inline] sliding ?(ignore_same = true) ?(king_danger = false) pos c =
-    aux pos c ~ignore_same ~king_danger ~f:(function
-        | Piece.(Bishop | Rook | Queen) -> true
-        | _ -> false)
-
-  let[@inline] non_sliding ?(ignore_same = true) pos c =
-    aux pos c ~ignore_same ~f:(function
-        | Piece.(Bishop | Rook | Queen) -> false
-        | _ -> true)
-end
-
-let in_check pos =
-  let active_board = active_board pos in
-  let attacks = Attacks.all pos (enemy pos) ~ignore_same:true in
-  Bb.((active_board & pos.king & attacks) <> empty)
-
 (* P for Position. Since all the fields are mutable, this will act like a
    pseudo-state monad. *)
 module P = Monad.Reader.Make(T)(Monad.Ident)
+
+(* Handling moves *)
 
 module Apply = struct
   open P.Syntax
@@ -364,7 +640,7 @@ module Apply = struct
     | Some _ -> P.return p
 
   (* Helper for setting both the color and the kind fields of the board. *)
-  let map_square ?p sq ~f = handle_piece sq ?p >>= function
+  let[@inline] map_square ?p sq ~f = handle_piece sq ?p >>= function
     | Some p -> map_piece p ~f
     | None -> P.return ()
 
@@ -733,19 +1009,6 @@ module Moves = struct
     else find_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
         any sq k >>= exec sq k acc)
 end
-
-(* Attacks of all piece kinds, starting from the king, intersected with
-   the squares occupied by enemy pieces. *)
-let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
-  let open Bb.Syntax in
-  let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
-  let n = Pre.knight king_sq & pos.knight in
-  let bishop = Pre.bishop king_sq occupied in
-  let rook = Pre.rook king_sq occupied in
-  let bq = bishop & (pos.bishop + pos.queen) in
-  let rq = rook & (pos.rook + pos.queen) in
-  let k = Pre.king king_sq & pos.king in
-  (p + n + bq + rq + k) & enemy_board
 
 (* For each enemy sliding piece, calculate its attack set. Then,
    intersect it with the same attack set from our king's square.

@@ -111,6 +111,39 @@ val piece_at_square : t -> Square.t -> Piece.t option
     square on position [pos]. *)
 val all_pieces : t -> (Square.t * Piece.t) list
 
+(** This submodule is concerned with checking the validity of a given
+    position (it may not be exhaustive!). *)
+module Valid : sig
+  module Error : sig
+    (** The possible errors that can arise from validating a position. *)
+    type t =
+      | Invalid_number_of_kings of Piece.color * int
+      | Kings_not_separated
+      | Inactive_in_check of Piece.color
+      | Invalid_number_of_checkers of Piece.color * int
+      | Invalid_two_checkers of Piece.color * Piece.kind * Piece.kind
+      | Invalid_number_of_pawns of Piece.color * int
+      | Pawns_in_back_rank of Piece.color
+      | Missing_pawn_en_passant of Piece.color
+      | Invalid_en_passant_square of Square.t
+      | Invalid_extra_pieces of Piece.color * int
+      | Invalid_number_of_pieces of Piece.color * int
+      | Invalid_castling_rights of Piece.color * Piece.kind
+      | En_passant_wrong_halfmove
+      | Invalid_halfmove
+      | Invalid_fullmove
+
+    val to_string : t -> string
+  end
+
+  (** Validation error. *)
+  type error = Error.t
+
+  (** [check pos] will return [Ok ()] if the position is valid (i.e. reachable
+      from the starting position), and [Error err] otherwise. *)
+  val check : t -> (unit, error) Result.t
+end
+
 (** This submodule provides compatibility with FEN (Forsyth-Edwards
     Notation). This notation is designed to give a compact ASCII
     representation of any chess position. *)
@@ -118,17 +151,21 @@ module Fen : sig
   (** String representation of the starting position. *)
   val start : string
 
-  (** [of_string_exn s] attempts to parse a FEN string [s] into a position.
-      Raises [Invalid_argument] if [s] is not a syntactically valid FEN
-      string. The resulting position is NOT guaranteed to be legal, and may
-      result in undefined behavior by the move generator, or by extension
-      any other component that depends on the position value. *)
-  val of_string_exn : string -> t
+  (** [of_string_exn s ~validate] attempts to parse a FEN string [s] into a
+      position. Raises [Invalid_argument] if [s] is not a syntactically valid
+      FEN string. If [validate] is [true], then the position is checked for
+      legality, raising [Invalid_argument] upon failure. By default, it is
+      [true]. Use of invalid chess positions (e.g. with the move generator)
+      may result in undefined behavior. *)
+  val of_string_exn : ?validate:bool -> string -> t
 
-  (** [of_string_exn s] attempts to parse a FEN string [s] into a position.
-      Returns [None] if [s] is not a syntactically valid FEN string. The
-      resulting position is not guaranteed to be legal. *)
-  val of_string : string -> t option
+  (** [of_string_exn s ~validate] attempts to parse a FEN string [s] into a
+      position. Returns [None] if [s] is not a syntactically valid FEN string.
+      If [validate] is [true], then the position is checked for legality,
+      raising [Invalid_argument] upon failure. By default, it is [true]. Use
+      of invalid chess positions (e.g. with the move generator) may result in
+      undefined behavior. *)
+  val of_string : ?validate:bool -> string -> t option
 
   (** [to_string fen] returns a string representation of [fen]. *)
   val to_string : t -> string
