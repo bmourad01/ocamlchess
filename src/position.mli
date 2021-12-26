@@ -133,6 +133,7 @@ module Valid : sig
       | Invalid_halfmove
       | Invalid_fullmove
 
+    (** [to_string err] converts [err] into a human-readable string. *)
     val to_string : t -> string
   end
 
