@@ -11,4 +11,8 @@ let choose lms = match Legals.moves lms with
         Some (-(List.length @@ Legals.moves @@ Position.legal_moves pos))) |>
     List.random_element_exn
 
-let create ?(limits = None) () = Player.create ~choose ~limits ()
+let create ?(limits = None) () = object
+  method choose = choose
+  method limits = limits
+  method name = "min-oppt-moves"
+end

@@ -20,4 +20,8 @@ let choose lms = match Legals.decomp lms with
         Position.board_of_color pos active) |>
     List.random_element_exn
 
-let create ?(limits = None) () = Player.create ~choose ~limits ()
+let create ?(limits = None) () = object
+  method choose = choose
+  method limits = limits
+  method name = "opposite-color"
+end

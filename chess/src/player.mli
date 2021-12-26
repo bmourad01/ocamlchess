@@ -9,24 +9,24 @@ type limits = {
 (** Raised when no legal moves are available for the player. *)
 exception No_moves
 
-(** The function that chooses which move to play, based on the position.
-    May raise [No_moves] if there are no legal moves available. *)
-type choose = Position.legal_moves -> Position.legal_move
+(** The player is expected to implement this interface.
 
-(** The player. *)
-type t
+    The [choose] method chooses which move to play based on the position.
+    May raise [No_moves] if there are no legal moves available.
 
-(** [choose player pos] returns the choice function. *)
-val choose : t -> choose
+    The [limits] method returns the search limits, if any, that were used
+    to construct the player.
 
-(** [limits player] returns the search limits on the player, if any. *)
-val limits : t -> limits option
+    The [name] method returns the name of the player.
+*)
+type t = <
+  choose : Position.legal_moves -> Position.legal_move;
+  limits : limits option;
+  name : string;
+>
 
 (** The instantiation signature. *)
 type create = ?limits:limits option -> unit -> t
-
-(** The instantiation function. *)
-val create : choose:choose -> create
 
 (** [best_moves moves ~eval] will take a list of moves, evaluate them with
     [eval], and then return a list of the highest scoring moves (with the

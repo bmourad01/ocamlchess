@@ -162,7 +162,7 @@ let human_move = State.(gets endgame) >>= function
   | None -> poll >> check_and_print_endgame
 
 let ai_move player = State.(gets legal) >>= fun legal ->
-  let m, pos = Legal.decomp @@ Player.choose player legal in
+  let m, pos = Legal.decomp @@ player#choose legal in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
@@ -174,11 +174,7 @@ let human_or_ai_move = function
     | None -> ai_move player
     | Some _ -> State.return None
 
-let display_board
-    ?(bb = 0L)
-    ?(sq = None)
-    ?(prev = None)
-    pos window =
+let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
   Window.clear window;
   Window.paint_board window pos bb sq prev;
   Window.display window
@@ -247,6 +243,14 @@ let go pos ~white ~black ~delay =
   if init_fonts () then
     let window = Window.create window_size window_size "chess" in
     let legal = Position.legal_moves pos in
+    begin match white with
+      | None -> printf "White is human\n%!"
+      | Some player -> printf "White is AI: %s\n%!" player#name
+    end;
+    begin match black with
+      | None -> printf "Black is human\n%!"
+      | Some player -> printf "Black is AI: %s\n%!" player#name
+    end;
     printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
     printf "%d legal moves\n%!" (List.length @@ Legals.moves legal);
     printf "\n%!";

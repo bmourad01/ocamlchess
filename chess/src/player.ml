@@ -7,16 +7,13 @@ type limits = {
 
 exception No_moves
 
-type choose = Position.legal_moves -> Position.legal_move
-
-type t = {
-  choose : choose;
+type t = <
+  choose : Position.legal_moves -> Position.legal_move;
   limits : limits option;
-} [@@deriving fields]
+  name : string;
+>
 
 type create = ?limits:limits option -> unit -> t
-
-let create ~choose = fun ?(limits = None) () -> {choose; limits}
 
 let best_moves moves ~eval =
   let open Option.Monad_infix in

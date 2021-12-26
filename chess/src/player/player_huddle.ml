@@ -27,4 +27,8 @@ let choose lms = match Legals.decomp lms with
         Option.return) |>
     List.random_element_exn
 
-let create ?(limits = None) () = Player.create ~choose ~limits ()
+let create ?(limits = None) () = object
+  method limits = limits
+  method choose = choose
+  method name = "huddle"
+end

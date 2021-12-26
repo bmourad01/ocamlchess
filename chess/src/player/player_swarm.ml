@@ -24,4 +24,8 @@ let choose lms = match Legals.decomp lms with
         Option.return) |>
     List.random_element_exn
 
-let create ?(limits = None) () = Player.create ~choose ~limits ()
+let create ?(limits = None) () = object
+  method choose = choose
+  method limits = limits
+  method name = "swarm"
+end

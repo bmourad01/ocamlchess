@@ -60,4 +60,8 @@ let choose lms = match Legals.decomp lms with
         | (_ :: _) as moves -> List.random_element_exn moves
         | [] -> push pos moves |> List.random_element_exn
                                          
-let create ?(limits = None) () = Player.create ~choose ~limits ()
+let create ?(limits = None) () = object
+  method choose = choose
+  method limits = limits
+  method name = "cccp"
+end
