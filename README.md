@@ -22,3 +22,12 @@ The custom testing GUI requires the following:
 
 - A C++11-compatible compiler
 - SFML 2.5
+
+Finally, a version of Make (such as GNU Make) is needed for building the project.
+
+# Instructions
+
+- To build and install the project, run `make` (these can be done individually with `make build` and `make install`, respectively).
+- To uninstall the project, run `make uninstall`.
+- To clean the build artifacts, run `make clean`.
+- To run the unit tests, run `make test`.
