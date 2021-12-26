@@ -20,7 +20,7 @@ The following OCaml packages are required, available via `opam install <pkg>`:
 
 The custom testing GUI requires the following:
 
-- A C++11-compatible compiler
+- A C++11 compiler such as GCC or Clang.
 - SFML 2.5
 
 Finally, a version of Make (such as GNU Make) is needed for building the project.
