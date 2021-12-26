@@ -12,7 +12,7 @@ let man_players = [
   `P "huddle: the player that tries to minimize the distance between its \
       pieces and its king";
   `P "swarm: the player that tries to minimize the distance between its \
-      pieces and the emey king";
+      pieces and the enemy king";
   `P "min-oppt-moves: the player that attempts to minimize the number of \
       moves the opponent can make.";
   `P "max-oppt-moves: the player that attempts to maximize the number of \
