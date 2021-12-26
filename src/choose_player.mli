@@ -13,6 +13,10 @@
       minimize their Chebyshev distance from its king.
     - ["swarm"]: this player will move its pieces such that they
       minimize their Chebyshev distance from the enemy king.
+    - ["min-oppt-moves"]: this player will attempt to minimize the
+      number of moves the opponent can make.
+    - ["max-oppt-moves"]: this player will attempt to maximize the
+      number of moves the opponent can make.
 
     Any other choices will raise [Invalid_argument].
  *)

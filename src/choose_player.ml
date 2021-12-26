@@ -7,6 +7,8 @@ let players = Hashtbl.of_alist_exn (module String) [
     "cccp", Player_cccp.create;
     "huddle", Player_huddle.create;
     "swarm", Player_swarm.create;
+    "min-oppt-moves", Player_minimize_opponent_moves.create;
+    "max-oppt-moves", Player_maximize_opponent_moves.create;
   ]
 
 let choose ?(limits = None) name =
