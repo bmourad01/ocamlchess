@@ -114,8 +114,8 @@ val all_pieces : t -> (Square.t * Piece.t) list
 (** This submodule is concerned with checking the validity of a given
     position (it may not be exhaustive!). *)
 module Valid : sig
+  (** The possible errors that can arise from validating a position. *)
   module Error : sig
-    (** The possible errors that can arise from validating a position. *)
     type t =
       | Invalid_number_of_kings of Piece.color * int
       | Kings_not_separated
@@ -149,8 +149,38 @@ end
     Notation). This notation is designed to give a compact ASCII
     representation of any chess position. *)
 module Fen : sig
+  (** The possible errors that can arise from parsing a FEN string. *)
+  module Error : sig
+    type t =
+      | Invalid_number_of_ranks of int
+      | Invalid_file_increment of int * Square.t
+      | Rank_full of int
+      | Invalid_piece_symbol of char * Square.t
+      | Unspecified_squares of int * int
+      | Invalid_active_color of string
+      | Invalid_castling_rights of string
+      | Invalid_en_passant of string
+      | Invalid_halfmove of string
+      | Invalid_fullmove of string
+      | Invalid_position of Valid.error
+      | Invalid_number_of_sections of int
+
+    (** [to_string err] converts [err] into a human-readable string. *)
+    val to_string : t -> string
+  end
+
+  type error = Error.t
+
   (** String representation of the starting position. *)
   val start : string
+
+  (** [of_string_exn s ~validate] attempts to parse a FEN string [s] into a
+      position. Returns [Ok pos] if [s] is a syntactically valid FEN string,
+      and [Error err] otherwise. If [validate] is [true], then the position
+      is checked for legality, returning [Error err] upon failure. By default,
+      it is [true]. Use of invalid chess positions (e.g. with the move
+      generator) may result in undefined behavior. *)
+  val of_string : ?validate:bool -> string -> (t, error) Result.t
 
   (** [of_string_exn s ~validate] attempts to parse a FEN string [s] into a
       position. Raises [Invalid_argument] if [s] is not a syntactically valid
@@ -159,14 +189,6 @@ module Fen : sig
       [true]. Use of invalid chess positions (e.g. with the move generator)
       may result in undefined behavior. *)
   val of_string_exn : ?validate:bool -> string -> t
-
-  (** [of_string_exn s ~validate] attempts to parse a FEN string [s] into a
-      position. Returns [None] if [s] is not a syntactically valid FEN string.
-      If [validate] is [true], then the position is checked for legality,
-      raising [Invalid_argument] upon failure. By default, it is [true]. Use
-      of invalid chess positions (e.g. with the move generator) may result in
-      undefined behavior. *)
-  val of_string : ?validate:bool -> string -> t option
 
   (** [to_string fen] returns a string representation of [fen]. *)
   val to_string : t -> string

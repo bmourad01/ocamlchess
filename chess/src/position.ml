@@ -463,116 +463,50 @@ end
 (* FEN parsing/unparsing *)
 
 module Fen = struct
+  module Error = struct
+    type t =
+      | Invalid_number_of_ranks of int
+      | Invalid_file_increment of int * Square.t
+      | Rank_full of int
+      | Invalid_piece_symbol of char * Square.t
+      | Unspecified_squares of int * int
+      | Invalid_active_color of string
+      | Invalid_castling_rights of string
+      | Invalid_en_passant of string
+      | Invalid_halfmove of string
+      | Invalid_fullmove of string
+      | Invalid_position of Valid.error
+      | Invalid_number_of_sections of int
+
+    let to_string = function
+      | Invalid_number_of_ranks n -> sprintf "Invalid number of ranks %d" n
+      | Invalid_file_increment (n, sq) ->
+        sprintf "Invalid file increment %d on square %s" n @@
+        Square.to_string sq
+      | Rank_full rank -> sprintf "Piece placement on full rank %d" (rank + 1)
+      | Invalid_piece_symbol (sym, sq) ->
+        sprintf "Invalid piece symbol '%c' placed at square %s" sym @@
+        Square.to_string sq
+      | Unspecified_squares (rank, n) ->
+        sprintf "Rank %d has %d unspecified square(s)" (rank + 1) n
+      | Invalid_active_color s -> sprintf "Invalid active color '%s'" s
+      | Invalid_castling_rights s -> sprintf "Invalid castling rights '%s'" s
+      | Invalid_en_passant s -> sprintf "Invalid en passant square '%s'" s
+      | Invalid_halfmove s -> sprintf "Invalid halfmove clock '%s'" s
+      | Invalid_fullmove s -> sprintf "Invalid fullmove clock '%s'" s
+      | Invalid_position e ->
+        sprintf "Invalid position; %s" @@ Valid.Error.to_string e
+      | Invalid_number_of_sections n ->
+        sprintf "Invalid number of sections %d" n
+  end
+
+  type error = Error.t
+
+  module E = Monad.Result.Make(Error)(Monad.Ident)
+
+  open E.Syntax
+
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-
-  let parse_placement s =
-    let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
-    let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
-    (* Split the ranks so we can parse them individually. *)
-    let ranks = match String.split s ~on:'/' with
-      | [_; _; _; _; _; _; _; _] as ranks -> List.rev ranks
-      | ranks -> invalid_arg @@
-        sprintf "Invalid number of ranks %d in placement string '%s'"
-          (List.length ranks) s in
-    (* The main entry to parsing the rank. *)
-    let rec parse_rank rank file sym =
-      if Char.is_digit sym
-      then skip_file rank file sym
-      else place_piece rank file sym
-    (* Advance the file (we hit a numeric symbol). *)
-    and skip_file rank file sym =
-      let inc = Char.(to_int sym - to_int '0') in
-      let file' = file + inc in
-      if file' > Square.File.count then invalid_arg @@
-        sprintf "Invalid increment %d at square %s of placement string '%s'"
-          inc (Square.to_string @@ Square.create_exn ~rank ~file) s
-      else file'
-    (* Place a piece on the board (we hit an alphabetical symbol). *)
-    and place_piece rank file sym =
-      if file > Square.File.h then invalid_arg @@
-        sprintf "Invalid piece placement on full rank %d of placement \
-                 string '%s'" (rank + 1) s
-      else
-        let sq = Square.create_unsafe ~rank ~file in
-        match Piece.of_fen sym with
-        | Some p ->
-          let c = Piece.(color p |> Color.to_int) in
-          let k = Piece.(kind p |> Kind.to_int) in
-          color_tbl.(c) <- Bb.(color_tbl.(c) ++ sq);
-          kind_tbl.(k) <- Bb.(kind_tbl.(k) ++ sq);
-          file + 1
-        | None -> invalid_arg @@
-          sprintf "Invalid piece '%c' placed at square '%s' of placement \
-                   string '%s'" sym (Square.to_string sq) s in
-    (* Parse each rank individually. *)
-    List.iteri ranks ~f:(fun rank s ->
-        let file = String.fold s ~init:Square.File.a ~f:(parse_rank rank) in
-        let diff = Square.File.count - file in
-        if diff <> 0 then invalid_arg @@
-          (* All eight squares of the rank must be specified. *)
-          sprintf "Rank %d has %d unspecified square(s): '%s'"
-            (rank + 1) diff s);
-    (* Return the individual bitboards. *)
-    Piece.(
-      color_tbl.(Color.white),
-      color_tbl.(Color.black),
-      kind_tbl.(Kind.pawn),
-      kind_tbl.(Kind.knight),
-      kind_tbl.(Kind.bishop),
-      kind_tbl.(Kind.rook),
-      kind_tbl.(Kind.queen),
-      kind_tbl.(Kind.king))
-
-  let parse_active = function
-    | "w" -> Piece.White
-    | "b" -> Piece.Black
-    | s -> invalid_arg @@ sprintf "Invalid active color '%s'" s
-
-  let parse_castle = Castling_rights.of_string_exn
-
-  let parse_en_passant = function
-    | "-" -> None
-    | s -> Some (Square.of_string_exn s)
-
-  let parse_halfmove s =
-    try
-      let halfmove = Int.of_string s in
-      if halfmove < 0 then invalid_arg @@
-        sprintf "Invalid halfmove count '%d'" halfmove
-      else halfmove
-    with Failure _ -> invalid_arg (sprintf "Invalid halfmove count '%s'" s)
-
-  let parse_fullmove s =
-    try
-      let fullmove = Int.of_string s in
-      if fullmove < 0 then invalid_arg @@
-        sprintf "Invalid fullmove count '%d'" fullmove
-      else fullmove
-    with Failure _ -> invalid_arg @@ sprintf "Invalid halfmove count '%s'" s
-
-  let of_string_exn ?(validate = true) s = match String.split s ~on:' ' with
-    | [placement; active; castle; en_passant; halfmove; fullmove] ->
-      let white, black, pawn, knight, bishop, rook, queen, king =
-        parse_placement placement in
-      let pos = Fields.create
-          ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
-          ~active:(parse_active active)
-          ~castle:(parse_castle castle)
-          ~en_passant:(parse_en_passant en_passant)
-          ~halfmove:(parse_halfmove halfmove)
-          ~fullmove:(parse_fullmove fullmove) in
-      if not validate then pos
-      else begin match Valid.check pos with
-        | Ok () -> pos
-        | Error e -> invalid_arg @@
-          sprintf "FEN string '%s' produced an illegal position: %s"
-            s @@ Valid.Error.to_string e
-      end      
-    | _ -> invalid_arg @@
-      sprintf "Invalid number of sections in FEN string '%s'" s
-
-  let of_string ?(validate = true) s = Option.try_with @@
-    fun () -> of_string_exn s ~validate
 
   let string_of_placement pos =
     let rec aux rank file skip acc =
@@ -602,6 +536,106 @@ module Fen = struct
       (string_of_castle pos.castle)
       (string_of_en_passant pos.en_passant)
       pos.halfmove pos.fullmove
+
+  let parse_placement s =
+    let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
+    let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
+    (* Split the ranks so we can parse them individually. *)
+    begin match String.split s ~on:'/' with
+      | [_; _; _; _; _; _; _; _] as ranks -> E.return @@
+        List.mapi ~f:(fun rank s -> (rank, s)) @@ List.rev ranks
+      | ranks -> E.fail @@ Invalid_number_of_ranks (List.length ranks)
+    end >>= fun ranks ->
+    (* The main entry to parsing the rank. *)
+    let rec parse_rank rank file sym =
+      if Char.is_digit sym
+      then skip_file rank file sym
+      else place_piece rank file sym
+    (* Advance the file (we hit a numeric symbol). *)
+    and skip_file rank file sym =
+      let inc = Char.(to_int sym - to_int '0') in
+      let file' = file + inc in
+      if file' > Square.File.count then E.fail @@
+        Invalid_file_increment (inc, Square.create_exn ~rank ~file)
+      else E.return file'
+    (* Place a piece on the board (we hit an alphabetical symbol). *)
+    and place_piece rank file sym =
+      if file > Square.File.h then E.fail @@ Rank_full rank
+      else
+        let sq = Square.create_unsafe ~rank ~file in
+        match Piece.of_fen sym with
+        | Some p ->
+          let c = Piece.(color p |> Color.to_int) in
+          let k = Piece.(kind p |> Kind.to_int) in
+          color_tbl.(c) <- Bb.(color_tbl.(c) ++ sq);
+          kind_tbl.(k) <- Bb.(kind_tbl.(k) ++ sq);
+          E.return (file + 1)
+        | None -> E.fail @@ Invalid_piece_symbol (sym, sq) in
+    (* Parse each rank individually. *)
+    E.List.iter ranks ~f:(fun (rank, s) ->
+        let init = Square.File.a and f = parse_rank rank in
+        let syms = String.to_list s in
+        E.List.fold syms ~init ~f >>= fun file ->
+        let diff = Square.File.count - file in
+        (* All eight squares of the rank must be specified. *)
+        if diff <> 0 then E.fail @@ Unspecified_squares (rank, diff)
+        else E.return ()) >>= fun () ->
+    (* Return the individual bitboards. *)
+    E.return @@ Piece.(
+        color_tbl.(Color.white),
+        color_tbl.(Color.black),
+        kind_tbl.(Kind.pawn),
+        kind_tbl.(Kind.knight),
+        kind_tbl.(Kind.bishop),
+        kind_tbl.(Kind.rook),
+        kind_tbl.(Kind.queen),
+        kind_tbl.(Kind.king))
+
+  let parse_active = function
+    | "w" -> E.return Piece.White
+    | "b" -> E.return Piece.Black
+    | s -> E.fail @@ Invalid_active_color s
+
+  let parse_castle s = try E.return @@ Castling_rights.of_string_exn s with
+    | _ -> E.fail @@ Invalid_castling_rights s
+
+  let parse_en_passant = function
+    | "-" -> E.return None
+    | s -> try E.return @@ Some (Square.of_string_exn s) with
+      | _ -> E.fail @@ Invalid_en_passant s
+
+  let parse_halfmove s = try
+      E.return @@ Int.of_string s
+    with _ -> E.fail @@ Invalid_halfmove s
+
+  let parse_fullmove s = try
+      E.return @@ Int.of_string s
+    with _ -> E.fail @@ Invalid_fullmove s
+
+  let validate_and_map pos = Error.(
+      Valid.check pos |>
+      Result.map_error ~f:(fun e -> Invalid_position e)) >>= fun () ->
+    E.return pos
+
+  let of_string ?(validate = true) s = match String.split s ~on:' ' with
+    | [placement; active; castle; en_passant; halfmove; fullmove] ->
+      parse_placement placement >>=
+      fun (white, black, pawn, knight, bishop, rook, queen, king) ->
+      parse_active active >>= fun active ->
+      parse_castle castle >>= fun castle ->
+      parse_en_passant en_passant >>= fun en_passant ->
+      parse_halfmove halfmove >>= fun halfmove ->
+      parse_fullmove fullmove >>= fun fullmove ->
+      let pos = Fields.create
+          ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
+          ~active ~castle ~en_passant ~halfmove ~fullmove in
+      if validate then validate_and_map pos else E.return pos
+    | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
+
+  let of_string_exn ?(validate = true) s = match of_string s ~validate with
+    | Ok pos -> pos
+    | Error err -> invalid_arg @@ sprintf
+        "Failed to parse fen string '%s': %s" s (Error.to_string err)
 end
 
 let start = Fen.(of_string_exn start)
