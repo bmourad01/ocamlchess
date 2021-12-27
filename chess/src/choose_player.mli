@@ -17,6 +17,8 @@
       number of moves the opponent can make.
     - ["max-oppt-moves"]: this player will attempt to maximize the
       number of moves the opponent can make.
+    - ["suicide-king"]: this player will attempt to minimize the
+      distance between both kings.
 
     Any other choices will raise [Invalid_argument].
  *)

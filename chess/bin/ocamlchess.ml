@@ -17,6 +17,8 @@ let man_players = [
       moves the opponent can make.";
   `P "max-oppt-moves: the player that attempts to maximize the number of \
       moves the opponent can make.";
+  `P "suicide-king: the player that attempts to minimize the distance between \
+      both kings.";
 ]
 
 let choose_player ?(none_ok = true) = function
