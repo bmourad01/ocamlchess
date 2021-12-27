@@ -17,7 +17,7 @@ let rec perft pos depth =
 let expect pos depth expected =
   let nodes = perft pos depth in
   assert_equal nodes expected ~cmp:Int64.equal
-    ~msg:(sprintf "At depth %d, expected %Ld nodes, got %Ld nodes"
+    ~msg:(sprintf "At depth %d, expected %Lu nodes, got %Lu nodes"
             depth expected nodes)
 
 let go pos =

@@ -11,7 +11,7 @@ let rec perft ?(first = false) pos depth =
         let m, pos = Position.Legal_move.decomp mv in
         let nodes = perft pos (depth - 1) in
         if first then begin
-          printf "%s: %Ld\n%!" (Move.to_string m) nodes
+          printf "%s: %Lu\n%!" (Move.to_string m) nodes
         end;
         Int64.(acc + nodes))
 
@@ -21,8 +21,7 @@ let go depth pos =
   let t' = Time.now () in
   let sec = Time.(Span.to_sec @@ diff t' t) in
   let nps = Float.(to_int64 (of_int64 n / (sec + epsilon_float))) in
-  let istr = Int64.to_string_hum ~delimiter:',' in
   printf "\n%!";
   printf "Time taken: %fs\n%!" sec;
-  printf "Nodes searched: %s\n%!" @@ istr n;
-  printf "Nodes per second: %s\n%!" @@ istr nps
+  printf "Nodes searched: %Lu\n%!" n;
+  printf "Nodes per second: %Lu\n%!" nps
