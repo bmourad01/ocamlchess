@@ -9,7 +9,7 @@ let opposite_color active sq =
   | White -> (rank land 1) = (file land 1)
   | Black -> (rank land 1) <> (file land 1)
 
-let choose lms = match Legals.decomp lms with
+let choose legals = match Legals.decomp legals with
   | [], _ -> raise Player.No_moves
   | moves, pos ->
     let active = Position.active pos in

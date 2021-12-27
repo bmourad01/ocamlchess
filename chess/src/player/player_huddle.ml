@@ -9,7 +9,7 @@ let chebyshev sq sq' =
   let rank', file' = Square.decomp sq' in
   max (abs (rank - rank')) (abs (file - file'))
 
-let choose lms = match Legals.decomp lms with
+let choose legals = match Legals.decomp legals with
   | [], _ -> raise Player.No_moves
   | moves, pos ->
     let active = Position.active pos in

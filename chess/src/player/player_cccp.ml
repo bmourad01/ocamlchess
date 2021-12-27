@@ -50,7 +50,7 @@ let push pos moves =
           ~ignore_same:false ~king_danger:true in
       Option.return (num_controlled + promote_bonus))
     
-let choose lms = match Legals.decomp lms with
+let choose legals = match Legals.decomp legals with
   | [], _ -> raise Player.No_moves
   | moves, pos -> match checkmate moves with
     | (_ :: _) as moves -> List.random_element_exn moves

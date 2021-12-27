@@ -3,7 +3,7 @@ open Core_kernel
 module Legal = Position.Legal_move
 module Legals = Position.Legal_moves
 
-let choose lms = match Legals.moves lms with
+let choose legals = match Legals.moves legals with
   | [] -> raise Player.No_moves
   | moves ->
     Player.best_moves moves ~eval:(fun mv ->
