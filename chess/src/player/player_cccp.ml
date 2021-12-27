@@ -12,8 +12,7 @@ let checkmate = List.filter ~f:(fun mv ->
     | _ -> false)
     
 (* Try to check the enemy king. *)
-let check = List.filter ~f:(fun mv ->
-    Legal.position mv |> Position.in_check)
+let check = List.filter ~f:(fun mv -> Legal.position mv |> Position.in_check)
 
 (* Get the piece that was captured as a result of the move (if any). *)
 let captured enemy pos pos' =
@@ -36,19 +35,16 @@ let capture pos moves =
   let open Option.Monad_infix in
   let enemy = Position.enemy pos in
   Player.best_moves moves ~eval:(fun mv ->
-      Legal.position mv |> captured enemy pos >>| piece_value)
+      let pos' = Legal.position mv in
+      captured enemy pos pos' >>| piece_value)
 
-(* Push a piece that gains the the largest number of controlled squares,
-   with a bonus for promoting to a high-value piece. *)
+(* Push a piece that results in the the largest number of controlled
+   squares. *)
 let push pos moves =
   let active = Position.active pos in
   Player.best_moves moves ~eval:(fun mv ->
-      let m, pos' = Legal.decomp mv in
-      let promote_bonus =
-        Move.promote m |> Option.value_map ~default:0 ~f:piece_value in
-      let num_controlled = Bb.count @@ Position.Attacks.all pos' active
-          ~ignore_same:false ~king_danger:true in
-      Option.return (num_controlled + promote_bonus))
+      let pos = Legal.position mv in
+      Some (Bb.count @@ Position.Attacks.all pos active))
     
 let choose legals = match Legals.decomp legals with
   | [], _ -> raise Player.No_moves

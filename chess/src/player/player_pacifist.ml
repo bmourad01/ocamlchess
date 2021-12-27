@@ -19,7 +19,7 @@ let avoid_capture pos =
       let pos' = Legal.position mv in
       let b = Position.board_of_color pos enemy in
       let b' = Position.board_of_color pos' enemy in
-      Option.is_none Bb.(first_set (b ^ b')))
+      Bb.((b ^ b') = empty))
 
 let piece_value (k : Piece.kind) = match k with
   | Pawn -> 1
@@ -37,7 +37,7 @@ let capture_lowest_value pos moves =
       let b' = Position.board_of_color pos' enemy in
       Bb.(first_set (b ^ b')) >>=
       Position.piece_at_square pos >>| fun p ->
-      piece_value @@ Piece.kind p)
+      -(piece_value @@ Piece.kind p))
 
 let choose legals = match Legals.decomp legals with
   | [], _ -> raise Player.No_moves
