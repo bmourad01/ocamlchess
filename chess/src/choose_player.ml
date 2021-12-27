@@ -10,6 +10,7 @@ let players = Hashtbl.of_alist_exn (module String) [
     "min-oppt-moves", Player_minimize_opponent_moves.create;
     "max-oppt-moves", Player_maximize_opponent_moves.create;
     "suicide-king", Player_suicide_king.create;
+    "pacifist", Player_pacifist.create;
   ]
 
 let choose ?(limits = None) name =

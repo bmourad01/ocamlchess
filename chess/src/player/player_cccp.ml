@@ -9,7 +9,7 @@ let checkmate = List.filter ~f:(fun mv ->
     let pos = Legal.position mv in
     match Legals.moves @@ Position.legal_moves pos with
     | [] -> Position.in_check pos
-    | _ :: _ -> false)
+    | _ -> false)
     
 (* Try to check the enemy king. *)
 let check = List.filter ~f:(fun mv ->
@@ -52,13 +52,15 @@ let push pos moves =
     
 let choose legals = match Legals.decomp legals with
   | [], _ -> raise Player.No_moves
-  | moves, pos -> match checkmate moves with
-    | (_ :: _) as moves -> List.random_element_exn moves
-    | [] -> match check moves with
-      | (_ :: _) as moves -> List.random_element_exn moves
-      | [] -> match capture pos moves with
-        | (_ :: _) as moves -> List.random_element_exn moves
-        | [] -> push pos moves |> List.random_element_exn
+  | moves, pos ->
+    let moves = match checkmate moves with
+      | (_ :: _) as moves -> moves
+      | [] -> match check moves with
+        | (_ :: _) as moves -> moves
+        | [] -> match capture pos moves with
+          | (_ :: _) as moves -> moves
+          | [] -> push pos moves in
+    List.random_element_exn moves
                                          
 let create ?(limits = None) () = object
   method choose = choose

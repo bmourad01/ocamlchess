@@ -19,6 +19,10 @@
       number of moves the opponent can make.
     - ["suicide-king"]: this player will attempt to minimize the
       distance between both kings.
+    - ["pacifist"]: this player avoids, in the following priority,
+      checkmating the opponent, checking the opponent, and capturing
+      pieces. Failing that, it will capture the lowest-value piece
+      possible.
 
     Any other choices will raise [Invalid_argument].
  *)

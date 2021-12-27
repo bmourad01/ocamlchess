@@ -19,6 +19,9 @@ let man_players = [
       moves the opponent can make.";
   `P "suicide-king: the player that attempts to minimize the distance between \
       both kings.";
+  `P "pacifist: the player that avoids, in the following priority, \
+      checkmating the opponent, checking the opponent, and capturing pieces. \
+      Failing that, it will capture the lowest-value piece possible.";
 ]
 
 let choose_player ?(none_ok = true) = function
