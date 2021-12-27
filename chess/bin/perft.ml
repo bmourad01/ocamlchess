@@ -20,7 +20,7 @@ let go depth pos =
   let n = perft pos depth ~first:true in
   let t' = Time.now () in
   let sec = Time.(Span.to_sec @@ diff t' t) in
-  let nps = Float.to_int64 (Float.of_int64 n /. sec) in
+  let nps = Float.(to_int64 (of_int64 n / (sec + epsilon_float))) in
   let istr = Int64.to_string_hum ~delimiter:',' in
   printf "\n%!";
   printf "Time taken: %fs\n%!" sec;
