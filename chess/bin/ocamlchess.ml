@@ -28,12 +28,13 @@ let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
   | s -> Some (Chess.Choose_player.choose s)
 
-let validate =
-  let doc = "Validate the input FEN position" in
-  Arg.(value & flag (info ["validate"] ~doc))
+let no_validate =
+  let doc = "Don't validate the input FEN position" in
+  Arg.(value & flag (info ["no-validate"] ~doc))
 
 module Perft = struct
-  let go depth pos validate =
+  let go depth pos no_validate =
+    let validate = not no_validate in
     if depth < 1 then invalid_arg @@
       Format.sprintf "Invalid depth value %d" depth
     else Perft.go depth @@ Chess.Position.Fen.of_string_exn pos ~validate
@@ -48,7 +49,7 @@ module Perft = struct
          pos 1 string Chess.Position.Fen.start &
          info [] ~docv:"POSITION" ~doc)
 
-  let t = Term.(const go $ depth $ pos $ validate)
+  let t = Term.(const go $ depth $ pos $ no_validate)
 
   let info =
     let doc = "Runs the performance test; enumerates move paths." in
@@ -60,7 +61,8 @@ module Perft = struct
 end
 
 module Gui = struct
-  let go pos white black delay validate =
+  let go pos white black delay no_validate =
+    let validate = not no_validate in
     let pos = Chess.Position.Fen.of_string_exn pos ~validate in
     let white = choose_player white in
     let black = choose_player black in
@@ -88,7 +90,7 @@ module Gui = struct
                (only applies when both players are AI)" in
     Arg.(value & opt float 0.0 (info ["delay"] ~docv:"DELAY" ~doc))
   
-  let t = Term.(const go $ pos $ white $ black $ delay $ validate)
+  let t = Term.(const go $ pos $ white $ black $ delay $ no_validate)
 
   let info =
     let doc = "Runs the testing GUI." in
