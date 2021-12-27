@@ -502,7 +502,31 @@ module Fen = struct
 
   type error = Error.t
 
-  module E = Monad.Result.Make(Error)(Monad.Ident)
+  module E = struct
+    include Monad.Result.Make(Error)(Monad.Ident)
+
+    module String = struct
+      let fold =
+        let rec loop s i acc ~f ~len =
+          if i = len then return acc
+          else
+            f acc s.[i] >>= fun acc ->
+            loop s (i + 1) acc ~f ~len in
+        fun s ~init ~f -> loop s 0 init ~f ~len:(String.length s)
+    end
+
+    module List = struct
+      include List
+      
+      let iteri =
+        let rec loop i ~f = function
+          | [] -> return ()
+          | x :: xs ->
+            f i x >>= fun () ->
+            loop (i + 1) xs ~f in
+        fun l ~f -> loop 0 l ~f
+    end
+  end
 
   open E.Syntax
 
@@ -542,8 +566,7 @@ module Fen = struct
     let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
     (* Split the ranks so we can parse them individually. *)
     begin match String.split s ~on:'/' with
-      | [_; _; _; _; _; _; _; _] as ranks -> E.return @@
-        List.mapi ~f:(fun rank s -> (rank, s)) @@ List.rev ranks
+      | [_; _; _; _; _; _; _; _] as ranks -> E.return @@ List.rev ranks
       | ranks -> E.fail @@ Invalid_number_of_ranks (List.length ranks)
     end >>= fun ranks ->
     (* The main entry to parsing the rank. *)
@@ -570,10 +593,9 @@ module Fen = struct
           E.return (file + 1)
         | None -> E.fail @@ Invalid_piece_symbol (sym, sq) in
     (* Parse each rank individually. *)
-    E.List.iter ranks ~f:(fun (rank, s) ->
+    E.List.iteri ranks ~f:(fun rank s ->
         let init = Square.File.a and f = parse_rank rank in
-        let syms = String.to_list s in
-        E.List.fold syms ~init ~f >>= fun file ->
+        E.String.fold s ~init ~f >>= fun file ->
         let diff = Square.File.count - file in
         (* All eight squares of the rank must be specified. *)
         if diff <> 0 then E.fail @@ Unspecified_squares (rank, diff)
