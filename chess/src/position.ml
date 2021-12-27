@@ -547,13 +547,11 @@ module Fen = struct
       | ranks -> E.fail @@ Invalid_number_of_ranks (List.length ranks)
     end >>= fun ranks ->
     (* The main entry to parsing the rank. *)
-    let rec parse_rank rank file sym =
-      if Char.is_digit sym
-      then skip_file rank file sym
-      else place_piece rank file sym
+    let rec parse_rank rank file sym = match Char.get_digit sym with
+      | Some inc -> skip_file rank file inc
+      | None -> place_piece rank file sym
     (* Advance the file (we hit a numeric symbol). *)
-    and skip_file rank file sym =
-      let inc = Char.(to_int sym - to_int '0') in
+    and skip_file rank file inc =
       let file' = file + inc in
       if file' > Square.File.count then E.fail @@
         Invalid_file_increment (inc, Square.create_exn ~rank ~file)
