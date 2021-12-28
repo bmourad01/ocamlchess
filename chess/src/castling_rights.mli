@@ -68,8 +68,8 @@ val union : t -> t -> t
 (** [compl x] returns the complement of castling rights for [x]. *)
 val compl : t -> t
 
-(** [diff x y] is equivalent to [inter x (compl y)]. *)
-val diff : t -> t -> t
+(** [minus x y] is equivalent to [inter x (compl y)]. *)
+val minus : t -> t -> t
 
 (** [mem x color side] tests whether [color] has castling rights on [side] in
     [x]. *)

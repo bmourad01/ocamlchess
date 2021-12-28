@@ -716,10 +716,10 @@ module Apply = struct
   module CR = Castling_rights
 
   let clear_white_castling_rights = P.read () >>| fun pos ->
-    set_castle pos @@ CR.(diff pos.castle white)
+    set_castle pos @@ CR.(minus pos.castle white)
 
   let clear_black_castling_rights = P.read () >>| fun pos ->
-    set_castle pos @@ CR.(diff pos.castle black)
+    set_castle pos @@ CR.(minus pos.castle black)
 
   let white_kingside_castle =
     clear_square Piece.white_rook Square.h1 >>
@@ -756,13 +756,13 @@ module Apply = struct
      that particular side. *)
   let[@inline] rook_moved_or_captured sq = function
     | Piece.White when Square.(sq = h1) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(diff pos.castle white_kingside)
+      set_castle pos @@ CR.(minus pos.castle white_kingside)
     | Piece.White when Square.(sq = a1) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(diff pos.castle white_queenside)
+      set_castle pos @@ CR.(minus pos.castle white_queenside)
     | Piece.Black when Square.(sq = h8) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(diff pos.castle black_kingside)
+      set_castle pos @@ CR.(minus pos.castle black_kingside)
     | Piece.Black when Square.(sq = a8) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(diff pos.castle black_queenside)
+      set_castle pos @@ CR.(minus pos.castle black_queenside)
     | _ -> P.return ()
 
   (* Rook moved from a square. *)

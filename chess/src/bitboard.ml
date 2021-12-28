@@ -65,12 +65,12 @@ let file i =
 let inter = Int64.bit_and
 let union = Int64.bit_or
 let compl = Int64.bit_not
-let xor   = Int64.bit_xor
+let diff  = Int64.bit_xor
 
-let[@inline] diff x y = inter x @@ compl y
+let[@inline] minus x y = inter x @@ compl y
 let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
 let[@inline] set b sq = union b @@ singleton sq
-let[@inline] clear b sq = diff b @@ singleton sq
+let[@inline] clear b sq = minus b @@ singleton sq
 let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
 
 let count = Int64.popcount
@@ -149,8 +149,8 @@ module Syntax = struct
   let (&) = inter
   let (+) = union
   let (~~) = compl
-  let (^) = xor
-  let (-) = diff
+  let (^) = diff
+  let (-) = minus
   let (!!) = singleton
   let (++) = set
   let (--) = clear

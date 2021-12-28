@@ -49,7 +49,7 @@ let[@inline] singleton c s = match c, s with
 let[@inline] inter x y = x land y
 let[@inline] union x y = x lor y
 let[@inline] compl x = all land lnot x
-let[@inline] diff x y = inter x @@ compl y
+let[@inline] minus x y = inter x @@ compl y
 
 (* Testing membership. *)
 

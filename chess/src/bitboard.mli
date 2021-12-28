@@ -95,11 +95,12 @@ val union : t -> t -> t
 (** [compl b] is the complement of a bitboard [b]. *)
 val compl : t -> t
 
-(** [diff x y] is equivalent to [inter x (compl y)]. *)
-val diff : t -> t -> t
+(** [minus x y] is equivalent to [inter x (compl y)]. *)
+val minus : t -> t -> t
 
-(** [xor x y] is the exclusive-OR of boards [x] and [y]. *)
-val xor : t -> t -> t
+(** [diff x y] is the difference between (exclusive-OR of) boards [x] and
+    [y]. *)
+val diff : t -> t -> t
 
 (** [count b] returns the number of occupied squares in [b]. *)
 val count : t -> int
@@ -110,7 +111,7 @@ val singleton : Square.t -> t
 (** [set b sq] is equivalent to [union b (singleton sq)]. *)
 val set : t -> Square.t -> t
 
-(** [clear b sq] is equivalent to [diff b (singleton sq)] *)
+(** [clear b sq] is equivalent to [minus b (singleton sq)] *)
 val clear : t -> Square.t -> t
 
 (** [mem b sq] tests if the square [sq] is occupied in [b]. *)
@@ -171,7 +172,7 @@ module Syntax : sig
   (** [x + y] is equivalent to [union x y]. *)
   val (+) : t -> t -> t
 
-  (** [x - y] is equivalent to [diff x y]. *)
+  (** [x - y] is equivalent to [minus x y]. *)
   val (-) : t -> t -> t
 
   (** [x ^ y] is equivalent to [xor x y]. *)
