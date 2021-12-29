@@ -9,7 +9,7 @@ For best performance, please ensure that a Flambda-enabled OCaml compiler is ins
 The following OCaml packages are required, available via `opam install <pkg>`:
 
 - cmdliner
-- core
+- core_kernel
 - dune
 - monads
 - ounit2

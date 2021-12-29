@@ -1,5 +1,4 @@
-open Core
-open Base
+open Core_kernel
 
 let bits = 6
 let count = 64

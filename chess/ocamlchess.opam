@@ -8,7 +8,7 @@ build: [
 ]
 depends: [
   "cmdliner"
-  "core" {>= "0.14.2"}
+  "core_kernel" {>= "0.14.2"}
   "dune" {>= "2.9.1"}
   "monads"
   "ocaml" {>= "4.09"}

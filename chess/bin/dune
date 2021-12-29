@@ -1,7 +1,7 @@
 (executable
  (name ocamlchess)
  (public_name ocamlchess)
- (libraries cmdliner core chess monads)
+ (libraries cmdliner core_kernel chess monads)
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_fields_conv))
  (foreign_stubs
