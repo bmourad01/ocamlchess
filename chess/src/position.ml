@@ -1072,15 +1072,17 @@ module Moves = struct
         end
       | _ -> false in
     let p = Piece.create pos.active k in
-    let apply acc m =
+    let apply acc move =
+      (* Create a copy of the current position which can then be freely
+         mutated. *)
       let new_position = copy pos in
-      Monad.Reader.run (Apply.move p m) new_position;
+      Monad.Reader.run (Apply.move p move) new_position;
       let capture =
         (* We could return this information from the makemove routine, but
            this technique seems to be faster in practice. *)
         Bb.(first_set (enemy_board ^ active_board new_position)) |>
         Option.map ~f:(fun sq -> which_kind_exn pos sq, sq) in
-      Legal.Fields.create ~move:m ~new_position ~capture :: acc in
+      Legal.Fields.create ~move ~new_position ~capture :: acc in
     if is_promote then Bb.fold b ~init ~f:(fun init dst ->
         Pawn.promote src dst |> List.fold ~init ~f:apply)
     else Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> apply acc)
