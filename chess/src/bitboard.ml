@@ -73,10 +73,8 @@ let[@inline] set b sq = union b @@ singleton sq
 let[@inline] clear b sq = minus b @@ singleton sq
 let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
 
-external popcount : (int64[@unboxed]) -> (int[@untagged]) =
+external count : (int64[@unboxed]) -> (int[@untagged]) =
   "ml_int64_popcount" "ml_int64_popcount_unboxed" [@@noalloc]
-
-let count = popcount
 
 (* Higher-order functions. *)
 
