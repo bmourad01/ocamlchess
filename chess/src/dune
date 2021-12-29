@@ -7,7 +7,8 @@
  (ocamlopt_flags -O3)
  (foreign_stubs
   (language c)
-  (names int64_stubs))
+  (names int64_stubs)
+  (flags -mpopcnt))
  (preprocess (pps ppx_compare
                   ppx_fields_conv
                   ppx_hash
