@@ -1,8 +1,7 @@
 open Core_kernel
 open Chess
 
-module Legal = Position.Legal_move
-module Legals = Position.Legal_moves
+module Legal = Position.Legal
 
 let perft pos depth =
   let worklist = Stack.singleton (pos, depth) in
@@ -11,18 +10,18 @@ let perft pos depth =
     | Some (_, depth) when depth <= 0 -> loop Int64.(n + 1L)
     | Some (pos, depth) ->
       let depth = depth - 1 in
-      Position.legal_moves pos |> Legals.moves |> List.iter ~f:(fun mv ->
-          Stack.push worklist (Legal.position mv, depth));
+      Position.legal_moves pos |> List.iter ~f:(fun m ->
+          Stack.push worklist (Legal.new_position m, depth));
       loop n in
   loop 0L
 
 let go depth pos =
   let t = Time.now () in
-  let roots = Position.legal_moves pos |> Legals.moves in
+  let roots = Position.legal_moves pos in
   let n =
     let depth = depth - 1 in
-    List.fold roots ~init:0L ~f:(fun acc mv ->
-        let m, pos = Legal.decomp mv in
+    List.fold roots ~init:0L ~f:(fun acc m ->
+        let m = Legal.move m and pos = Legal.new_position m in
         let n = perft pos depth in
         printf "%s: %Lu\n%!" (Move.to_string m) n;
         Int64.(acc + n)) in

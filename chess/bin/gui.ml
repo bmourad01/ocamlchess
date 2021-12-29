@@ -2,8 +2,7 @@ open Core_kernel
 open Chess
 open Monads.Std
 
-module Legal = Position.Legal_move
-module Legals = Position.Legal_moves
+module Legal = Position.Legal
 
 module Window = struct
   type t
@@ -36,8 +35,8 @@ module State = struct
     type t = {
       window : Window.t;
       pos : Position.t;
-      legal : Position.legal_moves;
-      sel : (Square.t * Position.legal_move list) option;
+      legal : Position.legal list;
+      sel : (Square.t * Position.legal list) option;
       prev : Move.t option;
       endgame : endgame option;
       white : Player.t option;
@@ -103,21 +102,21 @@ let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
     | Some (sq', _) when Square.(sq = sq') -> {st with sel = None}
     | None ->
       let moves =
-        Legals.moves legal |> List.filter ~f:(fun mv ->
-            Square.(sq = Move.src (Legal.move mv))) in
+        List.filter legal ~f:(fun m ->
+            Square.(sq = Move.src (Legal.move m))) in
       let sel = if List.is_empty moves then None else Some (sq, moves) in
       {st with sel}
     | Some (_, moves) -> match List.find moves ~f:(find_move sq) with
       | None -> st
-      | Some mv ->
-        let m, pos = Legal.decomp mv in
+      | Some m ->
+        let m = Legal.move m and pos = Legal.new_position m in
         let m, pos = match Move.promote m with
           | None -> m, pos
           | Some _ ->
             promote_prompt ();
             let k = promote () in
-            List.find_exn moves ~f:(find_promote sq k) |>
-            Legal.decomp in
+            let m = List.find_exn moves ~f:(find_promote sq k) in
+            Legal.(move m, new_position m) in
         let legal = Position.legal_moves pos in
         {st with pos; legal; sel = None; prev = Some m}
 
@@ -145,7 +144,7 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   let endgame =
     if is_insufficient_material pos then Some Insufficient_material
     else if is_fifty_move pos then Some Fifty_move
-    else if List.is_empty @@ Legals.moves legal then
+    else if List.is_empty legal then
       if Position.in_check pos
       then Some (Checkmate (Position.enemy pos))
       else Some Stalemate
@@ -161,17 +160,18 @@ let human_move = State.(gets endgame) >>= function
   | Some _ -> State.return None
   | None -> poll >> check_and_print_endgame
 
-let ai_move player = State.(gets legal) >>= fun legal ->
-  let m, pos = Legal.decomp @@ player#choose legal in
+let ai_move pos player = State.(gets legal) >>= fun legal ->
+  let m = player#choose pos legal in
+  let m = Legal.move m and pos = Legal.new_position m in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
   end >> check_and_print_endgame
 
-let human_or_ai_move = function
+let human_or_ai_move pos = function
   | None -> human_move
   | Some player -> State.(gets endgame) >>= function
-    | None -> ai_move player
+    | None -> ai_move pos player
     | Some _ -> State.return None
 
 let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
@@ -192,7 +192,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     begin match Position.active pos with
       | White -> State.(gets white)
       | Black -> State.(gets black)
-    end >>= human_or_ai_move >>= fun endgame ->
+    end >>= human_or_ai_move pos >>= fun endgame ->
     (* New position? *)
     State.(gets pos) >>= fun pos' ->
     State.(gets legal) >>= fun legal ->
@@ -202,7 +202,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
         (Position.Fen.to_string pos');
-      printf "%d legal moves\n%!" (List.length @@ Legals.moves legal);
+      printf "%d legal moves\n%!" @@ List.length legal;
       printf "\n%!"
     end;
     (* Get the valid squares for our selected piece to move to. *)
@@ -251,8 +251,8 @@ let go pos ~white ~black ~delay =
       | None -> printf "Black is human\n%!"
       | Some player -> printf "Black is AI: %s\n%!" player#name
     end;
-    printf "Starting position: %s\n%!" (Position.Fen.to_string pos);
-    printf "%d legal moves\n%!" (List.length @@ Legals.moves legal);
+    printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
+    printf "%d legal moves\n%!" @@ List.length legal;
     printf "\n%!";
     Monad.State.eval (start_with_endgame_check delay) @@
     State.Fields.create ~window ~pos ~legal

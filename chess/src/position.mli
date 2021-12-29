@@ -83,7 +83,7 @@ val board_of_kind : t -> Piece.kind -> Bitboard.t
     [pos]. *)
 val board_of_piece : t -> Piece.t -> Bitboard.t
 
-(** [is_en_passant t sq] returns [true] if an en passant square exists
+(** [is_en_passant pos sq] returns [true] if an en passant square exists
     in [pos] and it is equal to [sq]. *)
 val is_en_passant : t -> Square.t -> bool
 
@@ -106,6 +106,10 @@ val find_piece : t -> Piece.t -> Square.t list
 (** [piece_at_square pos sq] returns the piece, if any, occupying the square
     [sq] on position [pos]. *)
 val piece_at_square : t -> Square.t -> Piece.t option
+
+(** [piece_at_square_exn pos sq] returns the piece, if any, occupying the
+    square [sq] on position [pos]. Raises [Invalid_argument] otherwise. *)
+val piece_at_square_exn : t -> Square.t -> Piece.t
 
 (** [all_pieces pos] returns a list of square-piece pairs for each occupied
     square on position [pos]. *)
@@ -275,46 +279,27 @@ end
 val in_check : t -> bool
 
 (** A legal move. *)
-type legal_move
+type legal [@@deriving compare, equal, sexp]
 
-module Legal_move : sig
+module Legal : sig
   (** The actual move that was made. *)
-  val move : legal_move -> Move.t
+  val move : legal -> Move.t
 
   (** The resulting position. *)
-  val position : legal_move -> t
+  val new_position : legal -> t
 
-  (** Decomposes the structure into its constituents. *)
-  val decomp : legal_move -> Move.t * t
+  (** The kind of piece that was captured, as well as the square it previously
+      occupied, if any. *)
+  val capture : legal -> (Piece.kind * Square.t) option
 
   (** A legal move. *)
-  type t = legal_move [@@deriving compare, equal, sexp]
+  type t = legal [@@deriving compare, equal, sexp]
 
   include Comparable.S with type t := t
 end
 
-(** A list of legal moves for a position. *)
-type legal_moves
-
-module Legal_moves : sig
-  (** The list of legal moves. *)
-  val moves : legal_moves -> legal_move list
-
-  (** The parent position. *)
-  val position : legal_moves -> t
-
-  (** Decomposes the structure into its constituents. *)
-  val decomp : legal_moves -> legal_move list * t
-
-  (** A list of legal moves for a position. *)
-  type t = legal_moves [@@deriving compare, equal, sexp]
-
-  include Comparable.S with type t := t
-end
-
-(** [legal_moves pos] returns a list of move-position pairs, which represents
-    all of the legal moves for the active color of position [pos]. It is
-    assumed that [pos] is reachable from the starting position. May raise
-    if [pos] is not valid. No particular order is guaranteed for the resulting
-    list. *)
-val legal_moves : t -> legal_moves
+(** [legal_moves pos] returns a list of legal moves for the active color of
+    position [pos]. It is assumed that [pos] is reachable from the starting 
+    position. May raise if [pos] is not valid. No particular order is
+    guaranteed for the resulting list. *)
+val legal_moves : t -> legal list

@@ -173,3 +173,8 @@ let to_string sq = sprintf "%c%c" (file_char sq) (rank_char sq)
 include Bits
 
 let first = a1 and last = h8
+
+let chebyshev sq2 sq1 =
+  let rank1, file1 = decomp sq1 in
+  let rank2, file2 = decomp sq2 in
+  max (abs (rank1 - rank2)) (abs (file1 - file2))

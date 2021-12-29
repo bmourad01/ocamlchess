@@ -1,25 +1,19 @@
 open Core_kernel
 
 module Bb = Bitboard
-module Legal = Position.Legal_move
-module Legals = Position.Legal_moves
+module Legal = Position.Legal
 
-let avoid_checkmate = List.filter ~f:(fun mv ->
-    let pos = Legal.position mv in
-    match Legals.moves @@ Position.legal_moves pos with
+let avoid_checkmate = List.filter ~f:(fun m ->
+    let pos = Legal.new_position m in
+    match Position.legal_moves pos with
     | [] -> not @@ Position.in_check pos
     | _ -> true)
 
-let avoid_check = List.filter ~f:(fun mv ->
-    Legal.position mv |> Position.in_check |> not)
+let avoid_check = List.filter ~f:(fun m ->
+    Legal.new_position m |> Position.in_check |> not)
 
-let avoid_capture pos =
-  let enemy = Position.enemy pos in
-  List.filter ~f:(fun mv ->
-      let pos' = Legal.position mv in
-      let b = Position.board_of_color pos enemy in
-      let b' = Position.board_of_color pos' enemy in
-      Bb.((b ^ b') = empty))
+let avoid_capture =
+  List.filter ~f:(fun m -> Option.is_none @@ Legal.capture m)
 
 let piece_value (k : Piece.kind) = match k with
   | Pawn -> 1
@@ -28,27 +22,20 @@ let piece_value (k : Piece.kind) = match k with
   | Queen -> 9
   | King -> 0
 
-let capture_lowest_value pos moves =
-  let enemy = Position.enemy pos in
-  Player.best_moves moves ~eval:(fun mv ->
-      let open Option.Monad_infix in
-      let pos' = Legal.position mv in
-      let b = Position.board_of_color pos enemy in
-      let b' = Position.board_of_color pos' enemy in
-      Bb.(first_set (b ^ b')) >>=
-      Position.piece_at_square pos >>| fun p ->
-      -(piece_value @@ Piece.kind p))
+let capture_lowest_value =
+  Player.best_moves ~eval:(fun m ->
+      Legal.capture m |> Option.map ~f:(fun (k, _) -> -(piece_value k)))
 
-let choose legals = match Legals.decomp legals with
-  | [], _ -> raise Player.No_moves
-  | moves, pos ->
+let choose _ = function
+  | []-> raise Player.No_moves
+  | moves ->
     let moves = match avoid_checkmate moves with
       | (_ :: _) as moves -> moves
       | [] -> match avoid_check moves with
         | (_ :: _) as moves -> moves
-        | [] -> match avoid_capture pos moves with
+        | [] -> match avoid_capture moves with
           | (_ :: _) as moves -> moves
-          | [] -> capture_lowest_value pos moves in
+          | [] -> capture_lowest_value moves in
     List.random_element_exn moves
 
 let create ?(limits = None) () = object

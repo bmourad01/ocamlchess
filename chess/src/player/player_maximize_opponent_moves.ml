@@ -1,14 +1,13 @@
 open Core_kernel
 
-module Legal = Position.Legal_move
-module Legals = Position.Legal_moves
+module Legal = Position.Legal
 
-let choose legals = match Legals.moves legals with
+let choose _ = function
   | [] -> raise Player.No_moves
   | moves ->
-    Player.best_moves moves ~eval:(fun mv ->
-        let pos = Legal.position mv in
-        Some (List.length @@ Legals.moves @@ Position.legal_moves pos)) |>
+    Player.best_moves moves ~eval:(fun m ->
+        let pos = Legal.new_position m in
+        Some (List.length @@ Position.legal_moves pos)) |>
     List.random_element_exn
 
 let create ?(limits = None) () = object

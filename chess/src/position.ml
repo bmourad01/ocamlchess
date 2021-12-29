@@ -80,6 +80,13 @@ let which_color pos sq =
   else if sq @ pos.black then Some Piece.Black
   else None
 
+let which_color_exn pos sq =
+  let open Bb.Syntax in
+  if sq @ pos.white then Piece.White
+  else if sq @ pos.black then Piece.Black
+  else invalid_arg @@
+    sprintf "No piece exists at square %s" (Square.to_string sq)
+
 let which_kind pos sq =
   let open Bb.Syntax in
   if sq @ pos.pawn then Some Piece.Pawn
@@ -89,6 +96,17 @@ let which_kind pos sq =
   else if sq @ pos.queen then Some Piece.Queen
   else if sq @ pos.king then Some Piece.King
   else None
+
+let which_kind_exn pos sq =
+  let open Bb.Syntax in
+  if sq @ pos.pawn then Piece.Pawn
+  else if sq @ pos.knight then Piece.Knight
+  else if sq @ pos.bishop then Piece.Bishop
+  else if sq @ pos.rook then Piece.Rook
+  else if sq @ pos.queen then Piece.Queen
+  else if sq @ pos.king then Piece.King
+  else invalid_arg @@
+    sprintf "No piece exists at square %s" (Square.to_string sq)
 
 let find_color pos c =
   board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
@@ -108,6 +126,9 @@ let find_piece pos p =
 let piece_at_square pos sq =
   let open Option.Monad_infix in
   which_color pos sq >>= fun c -> which_kind pos sq >>| Piece.create c
+
+let piece_at_square_exn pos sq =
+  Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
 
 let all_pieces pos =
   all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
@@ -290,11 +311,9 @@ module Valid = struct
         else E.return ()
 
     let check_sep pos =
-      let wrank, wfile =
-        Square.decomp @@ Bb.(first_set_exn (pos.white & pos.king)) in
-      let brank, bfile =
-        Square.decomp @@ Bb.(first_set_exn (pos.black & pos.king)) in
-      if max (abs (wrank - brank)) (abs (wfile - bfile)) <= 1
+      let k1 = Bb.(first_set_exn (pos.white & pos.king)) in
+      let k2 = Bb.(first_set_exn (pos.black & pos.king)) in
+      if Square.chebyshev k1 k2 <= 1
       then E.fail Kings_not_separated
       else E.return ()
 
@@ -322,9 +341,7 @@ module Valid = struct
       then E.fail @@ Invalid_number_of_checkers (pos.active, num_checkers)
       else
         let checkers = Bb.fold checkers ~init:[] ~f:(fun acc sq ->
-            match which_kind pos sq with
-            | None -> assert false
-            | Some k -> k :: acc) in
+            which_kind_exn pos sq :: acc) in
         match checkers with
         | [Pawn; Pawn] ->
           E.fail @@ Invalid_two_checkers (pos.active, Pawn, Pawn)
@@ -862,6 +879,21 @@ end
 (* I for Info *)
 module I = Monad.Reader.Make(Info)(Monad.Ident)
 
+module Legal = struct
+  module T = struct
+    type t = {
+      move : Move.t;
+      new_position : T.t;
+      capture : (Piece.kind * Square.t) option;
+    } [@@deriving compare, equal, sexp, fields]
+  end
+
+  include T
+  include Comparable.Make(T)
+end
+
+type legal = Legal.t [@@deriving compare, equal, sexp]
+
 module Moves = struct
   open I.Syntax
 
@@ -1029,7 +1061,7 @@ module Moves = struct
     move + castle
 
   (* Get the new positions from the bitboard of squares we can move to. *)
-  let[@inline] exec src k init b = I.read () >>| fun {pos; _} ->
+  let[@inline] exec src k init b = I.read () >>| fun {pos; enemy_board; _} ->
     let is_promote = match k with
       | Piece.Pawn -> begin
           (* If we're promoting, then the back rank should be the only
@@ -1041,9 +1073,14 @@ module Moves = struct
       | _ -> false in
     let p = Piece.create pos.active k in
     let apply acc m =
-      let pos = copy pos in
-      Monad.Reader.run (Apply.move p m) pos;
-      (m, pos) :: acc in
+      let new_position = copy pos in
+      Monad.Reader.run (Apply.move p m) new_position;
+      let capture =
+        (* We could return this information from the makemove routine, but
+           this technique seems to be faster in practice. *)
+        Bb.(first_set (enemy_board ^ active_board new_position)) |>
+        Option.map ~f:(fun sq -> which_kind_exn pos sq, sq) in
+      Legal.Fields.create ~move:m ~new_position ~capture :: acc in
     if is_promote then Bb.fold b ~init ~f:(fun init dst ->
         Pawn.promote src dst |> List.fold ~init ~f:apply)
     else Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> apply acc)
@@ -1102,10 +1139,10 @@ let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
        block the attack. Otherwise, they may only be captured. *)
     let open Bb.Syntax in
     let sq = Bb.first_set_exn checkers in
-    match which_kind pos sq with
-    | Some (Bishop | Rook | Queen) ->
+    match which_kind_exn pos sq with
+    | Bishop | Rook | Queen ->
       checkers + Pre.between king_sq sq, Bb.empty
-    | Some Pawn ->
+    | Pawn ->
       (* Edge case for being able to get out of check via en passant
          capture. *)
       let rank, file = Square.decomp sq in
@@ -1115,10 +1152,7 @@ let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
       checkers, Option.value_map ep ~default:Bb.empty ~f:(fun ep ->
           if Option.exists pos.en_passant ~f:(Square.equal ep)
           then !!ep else Bb.empty)
-    | Some _ -> checkers, Bb.empty
-    | None -> failwith @@
-      sprintf "Expected to find first set square in bitboard %016LX"
-        (checkers :> int64)
+    |  _ -> checkers, Bb.empty
 
 (* Populate info needed for generating legal moves. *)
 let[@inline] create_info pos =
@@ -1149,39 +1183,8 @@ let[@inline] create_info pos =
     ~enemy_attacks  ~pinners ~num_checkers ~check_mask
     ~en_passant_check_mask ~enemy_sliders
 
-type legal_move = Move.t * T.t [@@deriving compare, equal, sexp]
-
-module Legal_move = struct
-  module T = struct
-    type t = legal_move [@@deriving compare, equal, sexp]
-  end
-
-  include T
-  include Comparable.Make(T)
-
-  let[@inline] move m = fst m
-  let[@inline] position m = snd m
-  let[@inline] decomp m = m
-end
-
-type legal_moves = legal_move list * T.t [@@deriving compare, equal, sexp]
-
-module Legal_moves = struct
-  module T = struct
-    type t = legal_moves [@@deriving compare, equal, sexp]
-  end
-
-  include T
-  include Comparable.Make(T)
-
-  let[@inline] moves m = fst m
-  let[@inline] position m = snd m
-  let[@inline] decomp m = m
-end
-
 (* Generate all legal moves from the position. *)
 let legal_moves pos =
-  let moves = create_info pos |> Monad.Reader.run Moves.go in
-  moves, pos
+  create_info pos |> Monad.Reader.run Moves.go
 
 include Comparable.Make(T)

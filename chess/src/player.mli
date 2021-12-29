@@ -11,16 +11,17 @@ exception No_moves
 
 (** The player is expected to implement this interface.
 
-    The [choose] method chooses which move to play based on the position.
-    May raise [No_moves] if there are no legal moves available.
+    - [choose pos moves] will choose, from [moves], which move to play based on
+      the position [pos]. May raise [No_moves] if [moves] is empty. [moves]
+      must be the list of moves derived from position [pos].
 
-    The [limits] method returns the search limits, if any, that were used
-    to construct the player.
+    - [limits] returns the search limits, if any, that were used to construct
+      the player.
 
-    The [name] method returns the name of the player.
+    - [name] returns the name of the player.
 *)
 type t = <
-  choose : Position.legal_moves -> Position.legal_move;
+  choose : Position.t -> Position.legal list -> Position.legal;
   limits : limits option;
   name : string;
 >
@@ -33,6 +34,6 @@ type create = ?limits:limits option -> unit -> t
     same score). If [eval] returns [None] for a particular move, then it
     is discarded from the final solution. *)
 val best_moves :
-  Position.legal_move list ->
-  eval:(Position.legal_move -> int option) ->
-  Position.legal_move list
+  Position.legal list ->
+  eval:(Position.legal -> int option) ->
+  Position.legal list

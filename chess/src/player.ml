@@ -8,7 +8,7 @@ type limits = {
 exception No_moves
 
 type t = <
-  choose : Position.legal_moves -> Position.legal_move;
+  choose : Position.t -> Position.legal list -> Position.legal;
   limits : limits option;
   name : string;
 >
