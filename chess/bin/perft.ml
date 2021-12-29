@@ -10,9 +10,10 @@ let perft pos depth =
     | None -> n
     | Some (_, depth) when depth <= 0 -> loop Int64.(n + 1L)
     | Some (pos, depth) ->
+      let depth = depth - 1 in
       Position.legal_moves pos |> Legals.moves |>
       List.iter ~f:(fun mv ->
-          Stack.push worklist (Legal.position mv, depth - 1));
+          Stack.push worklist (Legal.position mv, depth));
       loop n in
   loop 0L
 
