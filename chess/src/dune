@@ -3,7 +3,7 @@
 (library
  (name chess)
  (public_name ocamlchess)
- (libraries core_kernel core_kernel.univ monads)
+ (libraries core_kernel monads)
  (ocamlopt_flags -O3)
  (foreign_stubs
   (language c)
