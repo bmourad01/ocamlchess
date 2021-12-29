@@ -89,7 +89,7 @@ let test_position_6 () =
     4, 3_894_594L;
     (* 5, 164_075_551L; *)
   ]
-  
+
 let suite = "Test perft" >::: [
     ("Starting position" >:: fun _ -> test_starting_position ());
     ("Position 2" >:: fun _ -> test_position_2 ());

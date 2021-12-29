@@ -432,23 +432,19 @@ module Valid = struct
         else E.fail @@ Invalid_castling_rights (c, King)
       else E.return ()
 
-    let check_rook_moved pos c b =
-      if Castling_rights.mem pos.castle c `king ||
-         Castling_rights.mem pos.castle c `queen
-      then
-        let sq1, sq2 = match c with
-          | White -> Square.(a1, h1)
-          | Black -> Square.(a8, h8) in
-        let mask = Bb.(b & pos.rook) in
-        if Bb.(sq1 @ mask && sq2 @ mask) then E.return ()
+    let check_rook_moved pos c b s sq =
+      if Castling_rights.mem pos.castle c s then
+        if Bb.(sq @ (b & pos.rook)) then E.return ()
         else E.fail @@ Invalid_castling_rights (c, Rook)
       else E.return ()
 
     let go pos =
       check_king_moved pos White pos.white >>
       check_king_moved pos Black pos.black >>
-      check_rook_moved pos White pos.white >>
-      check_rook_moved pos Black pos.black
+      check_rook_moved pos White pos.white `king Square.h1 >>
+      check_rook_moved pos White pos.white `queen Square.a1 >>
+      check_rook_moved pos Black pos.black `king Square.h8 >>
+      check_rook_moved pos Black pos.black `queen Square.a8
   end
 
   module Half_and_fullmove = struct
@@ -758,7 +754,7 @@ module Apply = struct
     set_square Piece.black_rook Square.d8 >>
     clear_black_castling_rights
 
-  (* If this move is actually a castling, then we need to move the rook
+  (* If we're castling our king on this move, then we need to move the rook
      as well as clear our rights. *)
   let[@inline] king_moved_or_castled sq sq' =
     P.read () >>= fun {active; _} -> match active with
@@ -794,7 +790,7 @@ module Apply = struct
   (* Handle castling-related details. *)
   let[@inline] update_castle p sq sq' = match Piece.kind p with
     | King -> king_moved_or_castled sq sq'
-    | Rook -> rook_moved sq >> rook_captured sq
+    | Rook -> rook_moved sq >> rook_captured sq'
     | _ -> rook_captured sq'
 
   (* Update the en passant square if a pawn double push occurred. We're
