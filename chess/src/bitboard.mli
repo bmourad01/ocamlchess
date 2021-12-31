@@ -2,7 +2,7 @@ open Base
 
 (** Representation of the board as a 64-bit number. Each set bit represents
     an occupied square. The LSB represents the a1 square, while the MSB
-    represents the h8 square. *)
+    represents the h8 square. Files are ascended first, then ranks. *)
 type t = private int64 [@@deriving compare, equal, hash, sexp]
 
 include Comparable.S with type t := t
