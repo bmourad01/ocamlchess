@@ -711,14 +711,13 @@ module Apply = struct
     | Some p -> map_piece p ~f:Bb.(fun b -> b -- sq) >>
       P.return @@ Some (Piece.kind p, sq)
 
-  (* The halfmove clock is reset after captures or pawn moves, and
-     incremented otherwise. *)
+  (* The halfmove clock is reset after captures or pawn moves, and incremented
+     otherwise. *)
   let[@inline] update_halfmove is_en_passant sq sq' = P.read () >>| fun pos ->
     let open Bb.Syntax in
-    let is_pawn = sq @ pos.pawn in
-    let is_capture =
-      (sq' @ all_board pos) || (is_pawn && is_en_passant) in
-    set_halfmove pos @@ if is_pawn || is_capture then 0 else succ pos.halfmove
+    set_halfmove pos @@
+    if is_en_passant || (sq @ pos.pawn) || (sq' @ all_board pos)
+    then 0 else succ pos.halfmove
 
   let clear_white_castling_rights = P.read () >>| fun pos ->
     set_castle pos @@ Cr.(minus pos.castle white)
@@ -746,8 +745,8 @@ module Apply = struct
     set_square Piece.black_rook Square.d8 >>
     clear_black_castling_rights
 
-  (* If we're castling our king on this move, then we need to move the rook
-     as well as clear our rights. *)
+  (* If we're castling our king on this move, then we need to move the rook as
+     well as clear our rights. *)
   let[@inline] king_moved_or_castled sq sq' =
     P.read () >>= fun {active; _} -> match active with
     | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
@@ -820,7 +819,7 @@ module Apply = struct
     set_square p sq' >>
     (* Check if this was an en passant capture. *)
     let open Piece in
-    if is_en_passant && is_pawn p then
+    if is_en_passant then
       let rank, file = Square.decomp sq' in
       begin P.read () >>| fun {active; _} -> match active with
         | White -> Square.create_unsafe ~rank:(rank - 1) ~file, black_pawn
@@ -1059,7 +1058,8 @@ module Moves = struct
     let new_position = copy pos in
     let dst = Move.dst move in
     let p' = piece_at_square pos dst in
-    let is_en_passant = Option.exists pos.en_passant ~f:(Square.equal dst) in
+    let is_en_passant =
+      Piece.is_pawn p && Option.exists pos.en_passant ~f:(Square.equal dst) in
     let capture =
       Monad.Reader.run (Apply.move is_en_passant p p' move) new_position in
     Legal.Fields.create ~move ~new_position ~capture ~is_en_passant :: acc
