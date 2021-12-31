@@ -713,11 +713,11 @@ module Apply = struct
 
   (* The halfmove clock is reset after captures or pawn moves, and
      incremented otherwise. *)
-  let[@inline] update_halfmove sq sq' = P.read () >>| fun pos ->
+  let[@inline] update_halfmove is_en_passant sq sq' = P.read () >>| fun pos ->
     let open Bb.Syntax in
     let is_pawn = sq @ pos.pawn in
     let is_capture =
-      (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
+      (sq' @ all_board pos) || (is_pawn && is_en_passant) in
     set_halfmove pos @@ if is_pawn || is_capture then 0 else succ pos.halfmove
 
   let clear_white_castling_rights = P.read () >>| fun pos ->
@@ -793,10 +793,10 @@ module Apply = struct
     if Piece.is_pawn p then
       let rank = Square.rank sq and rank', file = Square.decomp sq' in
       P.read () >>| fun {active; _} -> match active with
-      | Piece.White when Square.Rank.(rank = two && rank' = four) ->
-        Some (Square.create_unsafe ~rank:(pred rank') ~file)
-      | Piece.Black when Square.Rank.(rank = seven && rank' = five) ->
-        Some (Square.create_unsafe ~rank:(succ rank') ~file)
+      | Piece.White when rank' - rank = 2 ->
+        Some (Square.create_unsafe ~rank:(rank' - 1) ~file)
+      | Piece.Black when rank - rank' = 2 ->
+        Some (Square.create_unsafe ~rank:(rank' + 1) ~file)
       | _ -> None
     else P.return None end >>= fun ep ->
     P.read () >>| (Fn.flip set_en_passant @@ ep)
@@ -816,11 +816,11 @@ module Apply = struct
     | Some k -> P.read () >>| fun {active; _} -> Piece.create active k
     | None -> P.return p
 
-  let[@inline] move_with_en_passant p sq' ep =
+  let[@inline] move_with_en_passant is_en_passant p sq' =
     set_square p sq' >>
     (* Check if this was an en passant capture. *)
     let open Piece in
-    if Option.exists ep ~f:(Square.equal sq') && is_pawn p then
+    if is_en_passant && is_pawn p then
       let rank, file = Square.decomp sq' in
       begin P.read () >>| fun {active; _} -> match active with
         | White -> Square.create_unsafe ~rank:(rank - 1) ~file, black_pawn
@@ -830,17 +830,16 @@ module Apply = struct
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. *)
-  let[@inline] move p p' m =
+  let[@inline] move is_en_passant p p' m =
     Move.decomp m |> fun (sq, sq', promote) ->
-    P.read () >>= fun {en_passant = ep; _} ->
     (* Do the stuff that relies on the initial state. *)
-    update_halfmove sq sq' >>
+    update_halfmove is_en_passant sq sq' >>
     update_en_passant p sq sq' >>
     update_castle p p' sq sq' >>
     (* Move the piece. *)
     clear_square p sq >> clear_square_capture p' sq' >>= fun capture ->
     do_promote p promote >>= fun p ->
-    move_with_en_passant p sq' ep >>= fun ep_capture ->
+    move_with_en_passant is_en_passant p sq' >>= fun ep_capture ->
     (* Prepare for the next move. *)
     update_fullmove >> flip_active >>
     (* Return the capture that was made, if any. *)
@@ -1054,14 +1053,15 @@ module Moves = struct
     castle >>| fun castle ->
     move + castle
 
-  (* Create a copy of the current position which can then be freely
-     mutated. Then, apply the move to this position. *)
+  (* Create a copy of the current position which can then be freely mutated.
+     Then, apply the move to this position. *)
   let[@inline] make_move pos p acc move =
     let new_position = copy pos in
     let dst = Move.dst move in
     let p' = piece_at_square pos dst in
-    let capture = Monad.Reader.run (Apply.move p p' move) new_position in
     let is_en_passant = Option.exists pos.en_passant ~f:(Square.equal dst) in
+    let capture =
+      Monad.Reader.run (Apply.move is_en_passant p p' move) new_position in
     Legal.Fields.create ~move ~new_position ~capture ~is_en_passant :: acc
 
   (* Get the new positions from the bitboard of squares we can move to. *)
@@ -1163,9 +1163,9 @@ let[@inline] create_info pos =
      would be illegal for the king to attack those squares. *)
   let enemy_attacks =
     Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
-  let enemy_pieces = find_color pos enemy in
   let enemy_sliders =
-    List.filter enemy_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
+    find_color pos enemy |>
+    List.filter ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
   let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
   let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
   (* Number of checkers is important for how we can decide to get out of

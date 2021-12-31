@@ -5,6 +5,9 @@ let kind_bits = 3
 let bits = color_bits + kind_bits
 
 module Bits = struct
+  let color_mask = 0b1_000
+  let kind_mask = 0b0_111
+  
   module Color = struct
     let white = 0b0
     let black = 0b1
@@ -40,7 +43,7 @@ module Bits = struct
 
   (* Extract the bits *)
   let[@inline] color p = p lsr kind_bits
-  let[@inline] kind p = p land 0b111
+  let[@inline] kind p = p land kind_mask
 end
 
 type color = White | Black [@@deriving compare, equal, hash, sexp]
@@ -130,8 +133,8 @@ let[@inline] create color kind =
 
 (* Testing membership *)
 
-let[@inline] is_white p = Bits.(color p = white)
-let[@inline] is_black p = Bits.(color p = black)
+let[@inline] is_white p = p land Bits.color_mask = 0b0_000
+let[@inline] is_black p = p land Bits.color_mask = 0b1_000
 let[@inline] is_pawn p = Bits.(kind p = pawn)
 let[@inline] is_knight p = Bits.(kind p = knight)
 let[@inline] is_bishop p = Bits.(kind p = bishop)
