@@ -1059,7 +1059,7 @@ module Moves = struct
     let capture = Monad.Reader.run (Apply.move p p' move) new_position in
     let is_en_passant = Option.exists pos.en_passant ~f:(Square.equal dst) in
     Legal.Fields.create ~move ~new_position ~capture ~is_en_passant :: acc
-  
+
   (* Get the new positions from the bitboard of squares we can move to. *)
   let[@inline] exec src k init b = I.read () >>| fun {pos; _} ->
     let is_promote = match k with
