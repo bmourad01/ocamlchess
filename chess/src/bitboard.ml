@@ -76,73 +76,117 @@ let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
 external count : (int64[@unboxed]) -> (int[@untagged]) =
   "ml_int64_popcount" "ml_int64_popcount_unboxed" [@@noalloc]
 
+let[@inline] next_square b = Square.of_int_unsafe @@ Int64.ctz b
+
+let[@inline] next_square_rev b =
+  Square.of_int_unsafe (Square.last - Int64.clz b)
+
 (* Higher-order functions. *)
 
-let[@inline] next_square ?(rev = false) =
-  (* These are intrinsics which hopefully map to hardware instructions
-     (such as `lzcnt/tzcnt` on x86). Note that the results are undefined
-     if `b` is zero. *)
-  if rev then fun b -> Square.last - Int64.clz b
-  else Int64.ctz
-
-let fold ?(rev = false) b ~init ~f =
-  let next = next_square ~rev in
+let fold b ~init ~f =
   let rec aux b acc =
     if b = empty then acc
     else
-      let sq = Square.of_int_unsafe @@ next b in
+      let sq = next_square b in
       aux (clear b sq) @@ f acc sq in
   aux b init
 
-let fold_until ?(rev = false) b ~init ~f ~finish =
+let fold_rev b ~init ~f =
+  let rec aux b acc =
+    if b = empty then acc
+    else
+      let sq = next_square_rev b in
+      aux (clear b sq) @@ f acc sq in
+  aux b init
+
+let fold_until b ~init ~f ~finish =
   let open Continue_or_stop in
-  let next = next_square ~rev in
   let rec aux b acc =
     if b = empty then finish acc
     else
-      let sq = Square.of_int_unsafe @@ next b in
+      let sq = next_square b in
       match f acc sq with
-      | Stop x -> x
-      | Continue acc -> aux (clear b sq) acc in
+      | Continue acc -> aux (clear b sq) acc 
+      | Stop x -> x in
   aux b init
 
-let iter ?(rev = false) b ~f =
-  let next = next_square ~rev in
+let fold_until_rev b ~init ~f ~finish =
+  let open Continue_or_stop in
+  let rec aux b acc =
+    if b = empty then finish acc
+    else
+      let sq = next_square_rev b in
+      match f acc sq with
+      | Continue acc -> aux (clear b sq) acc 
+      | Stop x -> x in
+  aux b init
+
+let iter b ~f =
   let rec aux b =
     if b <> empty then begin
-      let sq = Square.of_int_unsafe @@ next b in
+      let sq = next_square b in
       f sq;
       aux @@ clear b sq
     end in
   aux b
 
-let iter_until ?(rev = false) b ~f =
-  let next = next_square ~rev in
+let iter_rev b ~f =
+  let rec aux b =
+    if b <> empty then begin
+      let sq = next_square_rev b in
+      f sq;
+      aux @@ clear b sq
+    end in
+  aux b
+
+let iter_until b ~f =
   let rec aux b =
     if b <> empty then
-      let sq = Square.of_int_unsafe @@ next b in
+      let sq = next_square b in
+      if not @@ f sq then aux @@ clear b sq in
+  aux b
+
+let iter_until_rev b ~f =
+  let rec aux b =
+    if b <> empty then
+      let sq = next_square_rev b in
       if not @@ f sq then aux @@ clear b sq in
   aux b
 
 let[@inline] filter b ~f =
   fold b ~init:b ~f:(fun acc sq -> if f sq then acc else clear acc sq)
 
-let find ?(rev = false) b ~f =
-  let next = next_square ~rev in
+let find b ~f =
   let rec aux b =
     if b = empty then None
     else
-      let sq = Square.of_int_unsafe @@ next b in
+      let sq = next_square b in
       if f sq then Some sq else aux @@ clear b sq in
   aux b
 
-let first_set_exn ?(rev = false) b =
-  if b = empty then invalid_arg "Find first set on an empty bitboard"
-  else Square.of_int_unsafe @@ next_square b ~rev
+let find_rev b ~f =
+  let rec aux b =
+    if b = empty then None
+    else
+      let sq = next_square_rev b in
+      if f sq then Some sq else aux @@ clear b sq in
+  aux b
 
-let first_set ?(rev = false) b =
+let first_set_exn b =
+  if b = empty then invalid_arg "Find first set on an empty bitboard"
+  else next_square b
+
+let first_set_rev_exn b =
+  if b = empty then invalid_arg "Find first set on an empty bitboard"
+  else next_square b
+
+let first_set b =
   if b = empty then None 
-  else Some (Square.of_int_unsafe @@ next_square b ~rev)
+  else Some (next_square b)
+
+let first_set_rev b =
+  if b = empty then None 
+  else Some (next_square_rev b)
 
 (* Infix operators. *)
 

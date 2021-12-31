@@ -117,53 +117,82 @@ val clear : t -> Square.t -> t
 (** [mem b sq] tests if the square [sq] is occupied in [b]. *)
 val mem : t -> Square.t -> bool
 
-(** [fold b ~init ~f ~rev] accumulates a result over each occupied square in
-    [b]. If [rev] is [true], then iteration starts from square h8, otherwise
-    from a1. *)
-val fold : ?rev:bool -> t -> init:'a -> f:('a -> Square.t -> 'a) -> 'a
+(** [fold b ~init ~f] accumulates a result over each occupied square in
+    [b], starting from square a1. *)
+val fold : t -> init:'a -> f:('a -> Square.t -> 'a) -> 'a
 
-(** [fold_until b ~init ~f ~finish ~rev] is a short-circuiting version of
-    [fold]. If [f] returns [Stop x], the result of the computation is [x]. If
+(** [fold_rev b ~init ~f] accumulates a result over each occupied square in
+    [b], starting from square h8. *)
+val fold_rev : t -> init:'a -> f:('a -> Square.t -> 'a) -> 'a
+
+(** [fold_until b ~init ~f ~finish] is a short-circuiting version of [fold].
+    If [f] returns [Stop x], the result of the computation is [x]. If
     [f] returns [Continue y], then the computation continues with [y] as the
     new accumulated value. If [f] never returns [Stop _], then the final
-    result is computed by [finish]. If [rev] is [true], then iteration starts
-    from square h8, otherwise from a1. *)
+    result is computed by [finish]. *)
 val fold_until :
-  ?rev:bool
-  -> t
-  -> init:'a
-  -> f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t)
-  -> finish:('a -> 'b)
-  -> 'b
+  t ->
+  init:'a ->
+  f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t) ->
+  finish:('a -> 'b) ->
+  'b
 
-(** [iter b ~f ~rev] applies [f] to each occupied square in [b]. If [rev] is
-    [true], then iteration starts from square h8, otherwise from a1. *)
-val iter : ?rev:bool -> t -> f:(Square.t -> unit) -> unit
+(** [fold_until_rev b ~init ~f ~finish] is a short-circuiting version of
+    [fold_rev]. If [f] returns [Stop x], the result of the computation is [x].
+    If [f] returns [Continue y], then the computation continues with [y] as the
+    new accumulated value. If [f] never returns [Stop _], then the final
+    result is computed by [finish]. *)
+val fold_until_rev :
+  t ->
+  init:'a ->
+  f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t) ->
+  finish:('a -> 'b) ->
+  'b
 
-(** [iter_until b ~f ~rev] applies [f] to each occupied square in [b] until
-    its result is [true]. If [rev] is [true], then iteration starts from
-    square h8, otherwise from a1. *)
-val iter_until : ?rev:bool -> t -> f:(Square.t -> bool) -> unit
+(** [iter b ~f] applies [f] to each occupied square in [b], starting from
+    a1. *)
+val iter : t -> f:(Square.t -> unit) -> unit
+
+(** [iter_rev b ~f] applies [f] to each occupied square in [b], starting from
+    h8. *)
+val iter_rev : t -> f:(Square.t -> unit) -> unit
+
+(** [iter_until b ~f] applies [f] to each occupied square in [b], starting from
+    a1, until its result is [true]. *)
+val iter_until : t -> f:(Square.t -> bool) -> unit
+
+(** [iter_until_rev b ~f] applies [f] to each occupied square in [b], starting
+    from h8, until its result is [true]. *)
+val iter_until_rev : t -> f:(Square.t -> bool) -> unit
 
 (** [filter b ~f] applies [f] to each occupied square [sq] in [b]. If [f sq]
     returns [false], then [sq] is cleared in the resulting bitboard.
     Otherwise, it is kept. *)
 val filter : t -> f:(Square.t -> bool) -> t
 
-(** [find b ~f ~rev] returns the first square [sq] of [b] which satisfies
-    [f sq], if it exists. If [rev] is [true], then iteration starts from
-    square h8, otherwise from a1. *)
-val find : ?rev:bool -> t -> f:(Square.t -> bool) -> Square.t option
+(** [find b ~f] returns the first square [sq] of [b], starting from a1, which
+    satisfies [f sq], if it exists. *)
+val find : t -> f:(Square.t -> bool) -> Square.t option
 
-(** [first_set_exn b] returns the first square [sq] of [b], if it exists.
-    Otherwise, [Invalid_argument] is raised. If [rev] is [true], then iteration
-    starts from square h8, otherwise from a1. *)
-val first_set_exn : ?rev:bool -> t -> Square.t
+(** [find_rev b ~f] returns the first square [sq] of [b], starting from h8, which
+    satisfies [f sq], if it exists. *)
+val find_rev : t -> f:(Square.t -> bool) -> Square.t option
 
-(** [first_set b] returns the first square [sq] of [b], if it exists.
-    Otherwise, [None] is returned. If [rev] is [true], then iteration starts
-    from square h8, otherwise from a1. *)
-val first_set : ?rev:bool -> t -> Square.t option
+(** [first_set_exn b] returns the first square [sq] of [b], starting from a1,
+    if it exists. Otherwise, [Invalid_argument] is raised. *)
+val first_set_exn : t -> Square.t
+
+(** [first_set_rev_exn b] returns the first square [sq] of [b], starting from h8,
+    if it exists. Otherwise, [Invalid_argument] is raised. *)
+val first_set_rev_exn : t -> Square.t
+
+(** [first_set b] returns the first square [sq] of [b], starting from a1, if it
+    exists. Otherwise, [None] is returned. *)
+val first_set : t -> Square.t option
+
+(** [first_set_rev b] returns the first square [sq] of [b], starting from h8,
+    if it exists. Otherwise, [None] is returned. *)
+val first_set_rev : t -> Square.t option
 
 module Syntax : sig
   (** [x & y] is equivalent to [inter x y]. *)

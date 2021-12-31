@@ -12,9 +12,8 @@ let test_fold_full () =
 
 let test_fold_full_rev () =
   let count, l =
-    Bitboard.fold Bitboard.full ~init:(0, [])
-      ~f:(fun (count, l) _ -> count + 1, count :: l)
-      ~rev:true in
+    Bitboard.fold_rev Bitboard.full ~init:(0, [])
+      ~f:(fun (count, l) _ -> count + 1, count :: l) in
   assert_equal count Square.count ~cmp:Int.equal;
   assert_equal l (List.init Square.count ~f:ident |> List.rev)
     ~cmp:(List.equal Int.equal)
@@ -26,9 +25,8 @@ let test_fold_empty () =
 
 let test_fold_empty_rev () =
   let count =
-    Bitboard.fold Bitboard.empty ~init:0
-      ~f:(fun count _ -> count + 1)
-      ~rev:true in
+    Bitboard.fold_rev Bitboard.empty ~init:0
+      ~f:(fun count _ -> count + 1) in
   assert_equal count 0 ~cmp:Int.equal
 
 let test_rank_accessor () =
