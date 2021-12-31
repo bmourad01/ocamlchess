@@ -530,7 +530,7 @@ module Fen = struct
 
     module List = struct
       include List
-      
+
       let iteri =
         let rec loop i ~f = function
           | [] -> return ()
@@ -668,7 +668,7 @@ module Fen = struct
   let of_string_exn ?(validate = true) s = match of_string s ~validate with
     | Ok pos -> pos
     | Error err -> invalid_arg @@ sprintf
-        "Failed to parse fen string '%s': %s" s (Error.to_string err)
+        "Failed to parse FEN string '%s': %s" s (Error.to_string err)
 end
 
 let start = Fen.(of_string_exn start)
@@ -696,26 +696,19 @@ module Apply = struct
     | Piece.Queen -> set_queen pos @@ f @@ queen pos
     | Piece.King -> set_king pos @@ f @@ king pos
 
-  let[@inline] map_piece p ~f =
+  (* Helper for setting both the color and the kind fields of the board. *)
+  let[@inline] map_piece p ~f = 
     let c, k = Piece.decomp p in
     map_color c ~f >> map_kind k ~f
-
-  (* A piece can be optionally provided. If not, then we will look up
-     the piece at that square. *)
-  let[@inline] handle_piece ?p sq = match p with
-    | None -> P.read () >>| (Fn.flip piece_at_square @@ sq)
-    | Some _ -> P.return p
-
-  (* Helper for setting both the color and the kind fields of the board. *)
-  let[@inline] map_square ?p sq ~f = handle_piece sq ?p >>= function
-    | Some p -> map_piece p ~f
-    | None -> P.return ()
 
   let[@inline] set_square p sq = map_piece p ~f:Bb.(fun b -> b ++ sq)
   let[@inline] clear_square p sq = map_piece p ~f:Bb.(fun b -> b -- sq)
 
-  let[@inline] clear_square_maybe ?p sq =
-    map_square sq ?p ~f:Bb.(fun b -> b -- sq)
+  (* Assume that if `p` exists, then it occupies square `sq`. *)
+  let[@inline] clear_square_capture p sq = match p with
+    | None -> P.return None
+    | Some p -> map_piece p ~f:Bb.(fun b -> b -- sq) >>
+      P.return @@ Some (Piece.kind p, sq)
 
   (* The halfmove clock is reset after captures or pawn moves, and
      incremented otherwise. *)
@@ -783,15 +776,15 @@ module Apply = struct
     rook_moved_or_captured sq active
 
   (* Rook was captured at a square. Assume that it is the enemy's color. *)
-  let[@inline] rook_captured sq = handle_piece sq >>= function
-    | Some p when Piece.is_rook p -> rook_moved_or_captured sq @@ Piece.color p
+  let[@inline] rook_captured p' sq' = match p' with
+    | Some p when Piece.is_rook p -> rook_moved_or_captured sq' @@ Piece.color p
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle p sq sq' = match Piece.kind p with
+  let[@inline] update_castle p p' sq sq' = match Piece.kind p with
     | King -> king_moved_or_castled sq sq'
-    | Rook -> rook_moved sq >> rook_captured sq'
-    | _ -> rook_captured sq'
+    | Rook -> rook_moved sq >> rook_captured p' sq' 
+    | _ -> rook_captured p' sq'
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
@@ -824,34 +817,37 @@ module Apply = struct
     | Some k -> P.read () >>| fun {active; _} -> Piece.create active k
     | None -> P.return p
 
-  let[@inline] move_or_capture p sq' ep =
+  let[@inline] move_with_en_passant p sq' ep =
     set_square p sq' >>
     (* Check if this was an en passant capture. *)
-    if Option.exists ep ~f:(Square.equal sq') && Piece.is_pawn p then
+    let open Piece in
+    if Option.exists ep ~f:(Square.equal sq') && is_pawn p then
       let rank, file = Square.decomp sq' in
       begin P.read () >>| fun {active; _} -> match active with
-        | Piece.White ->
-          Square.create_unsafe ~rank:(rank - 1) ~file, Piece.black_pawn
-        | Piece.Black ->
-          Square.create_unsafe ~rank:(rank + 1) ~file, Piece.white_pawn
-      end >>= fun (sq, p) -> clear_square p sq
-    else P.return ()
+        | White -> Square.create_unsafe ~rank:(rank - 1) ~file, black_pawn
+        | Black -> Square.create_unsafe ~rank:(rank + 1) ~file, white_pawn
+      end >>= fun (sq, p) -> clear_square p sq >> P.return @@ Some (Pawn, sq)
+    else P.return None
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. *)
-  let[@inline] move p m =
+  let[@inline] move p p' m =
     Move.decomp m |> fun (sq, sq', promote) ->
     P.read () >>= fun {en_passant = ep; _} ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove sq sq' >>
     update_en_passant p sq sq' >>
-    update_castle p sq sq' >>
+    update_castle p p' sq sq' >>
     (* Move the piece. *)
-    clear_square p sq >> clear_square_maybe sq' >>
+    clear_square p sq >> clear_square_capture p' sq' >>= fun capture ->
     do_promote p promote >>= fun p ->
-    move_or_capture p sq' ep >>
+    move_with_en_passant p sq' ep >>= fun ep_capture ->
     (* Prepare for the next move. *)
-    update_fullmove >> flip_active
+    update_fullmove >> flip_active >>
+    (* Return the capture that was made, if any. *)
+    P.return @@ Option.merge capture ep_capture ~f:(fun _ _ ->
+        invalid_arg "Encountered direct and en passant capture in the same \
+                     move")
 end
 
 
@@ -881,6 +877,7 @@ module Legal = struct
       move : Move.t;
       new_position : T.t;
       capture : (Piece.kind * Square.t) option;
+      is_en_passant : bool;
     } [@@deriving compare, equal, sexp, fields]
   end
 
@@ -909,10 +906,8 @@ module Moves = struct
 
     (* Check if our pawn or the captured pawn are along a pin ray. If so,
        then this capture would be illegal, since it would lead to a discovery
-       on the king.
-
-       En passant moves arise rarely across all chess positions, so we can
-       do a bit of heavy calculation here. *)
+       on the king. En passant moves arise rarely across all chess positions,
+       so we can do a bit of heavy calculation here. *)
     let[@inline] en_passant sq ep diag = I.read () >>|
       fun {pos; king_sq; occupied; enemy_sliders; _} ->
       (* Get the position of the pawn which made a double advance. *)
@@ -921,17 +916,16 @@ module Moves = struct
         match pos.active with
         | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
         | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file in
-      let open Bb in
       (* Remove our pawn and the captured pawn from the board. *)
+      let open Bb in
       let occupied = occupied -- sq -- pw in
       let init = diag ++ ep and finish = ident in
-      List.fold_until enemy_sliders ~init ~finish ~f:(fun acc (sq, k) ->
-          (* Check if an appropriate diagonal attack from the king would reach
-             that corresponding piece. *)
-          match k with
-          | Piece.Bishop when sq @ (Pre.bishop king_sq occupied) -> Stop diag
-          | Piece.Rook when sq @ (Pre.rook king_sq occupied) -> Stop diag
-          | Piece.Queen when sq @ (Pre.queen king_sq occupied) -> Stop diag
+      (* Check if an appropriate diagonal attack from the king would reach
+         that corresponding piece. *)
+      List.fold_until enemy_sliders ~init ~finish ~f:(fun acc -> function
+          | sq, Piece.Bishop when sq @ (Pre.bishop king_sq occupied) -> Stop diag
+          | sq, Piece.Rook when sq @ (Pre.rook king_sq occupied) -> Stop diag
+          | sq, Piece.Queen when sq @ (Pre.queen king_sq occupied) -> Stop diag
           | _ -> Continue acc)
 
     let[@inline] capture sq = I.read () >>= fun {pos; enemy_board; _} ->
@@ -1056,8 +1050,18 @@ module Moves = struct
     castle >>| fun castle ->
     move + castle
 
+  (* Create a copy of the current position which can then be freely
+     mutated. Then, apply the move to this position. *)
+  let[@inline] make_move pos p acc move =
+    let new_position = copy pos in
+    let dst = Move.dst move in
+    let p' = piece_at_square pos dst in
+    let capture = Monad.Reader.run (Apply.move p p' move) new_position in
+    let is_en_passant = Option.exists pos.en_passant ~f:(Square.equal dst) in
+    Legal.Fields.create ~move ~new_position ~capture ~is_en_passant :: acc
+  
   (* Get the new positions from the bitboard of squares we can move to. *)
-  let[@inline] exec src k init b = I.read () >>| fun {pos; enemy_board; _} ->
+  let[@inline] exec src k init b = I.read () >>| fun {pos; _} ->
     let is_promote = match k with
       | Piece.Pawn -> begin
           (* If we're promoting, then the back rank should be the only
@@ -1067,21 +1071,10 @@ module Moves = struct
           | Piece.Black -> Bb.((b & rank_1) = b)
         end
       | _ -> false in
-    let p = Piece.create pos.active k in
-    let apply acc move =
-      (* Create a copy of the current position which can then be freely
-         mutated. *)
-      let new_position = copy pos in
-      Monad.Reader.run (Apply.move p move) new_position;
-      let capture =
-        (* We could return this information from the makemove routine, but
-           this technique seems to be faster in practice. *)
-        Bb.(first_set (enemy_board ^ active_board new_position)) |>
-        Option.map ~f:(fun sq -> which_kind_exn pos sq, sq) in
-      Legal.Fields.create ~move ~new_position ~capture :: acc in
+    let f = make_move pos (Piece.create pos.active k) in
     if is_promote then Bb.fold b ~init ~f:(fun init dst ->
-        Pawn.promote src dst |> List.fold ~init ~f:apply)
-    else Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> apply acc)
+        Pawn.promote src dst |> List.fold ~init ~f)
+    else Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
 
   let[@inline] any sq = function
     | Piece.Pawn -> pawn sq

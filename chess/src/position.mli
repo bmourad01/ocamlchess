@@ -292,6 +292,9 @@ module Legal : sig
       occupied, if any. *)
   val capture : legal -> (Piece.kind * Square.t) option
 
+  (** Returns [true] if the move was an en passant capture. *)
+  val is_en_passant : legal -> bool
+
   (** A legal move. *)
   type t = legal [@@deriving compare, equal, sexp]
 
