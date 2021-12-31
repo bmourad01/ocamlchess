@@ -83,12 +83,13 @@ let[@inline] next_square_rev b =
 
 (* Higher-order functions. *)
 
+(* We can more efficiently pop the LSB from the board than with the MSB. *)
+let[@inline] clear_fast_fwd b = Int64.(b land pred b)
+
 let fold b ~init ~f =
   let rec aux b acc =
     if b = empty then acc
-    else
-      let sq = next_square b in
-      aux (clear b sq) @@ f acc sq in
+    else aux (clear_fast_fwd b) @@ f acc @@ next_square b in
   aux b init
 
 let fold_rev b ~init ~f =
@@ -103,10 +104,8 @@ let fold_until b ~init ~f ~finish =
   let open Continue_or_stop in
   let rec aux b acc =
     if b = empty then finish acc
-    else
-      let sq = next_square b in
-      match f acc sq with
-      | Continue acc -> aux (clear b sq) acc 
+    else match f acc @@ next_square b with
+      | Continue acc -> aux (clear_fast_fwd b) acc 
       | Stop x -> x in
   aux b init
 
@@ -124,9 +123,8 @@ let fold_until_rev b ~init ~f ~finish =
 let iter b ~f =
   let rec aux b =
     if b <> empty then begin
-      let sq = next_square b in
-      f sq;
-      aux @@ clear b sq
+      f @@ next_square b;
+      aux @@ clear_fast_fwd b;
     end in
   aux b
 
@@ -141,9 +139,8 @@ let iter_rev b ~f =
 
 let iter_until b ~f =
   let rec aux b =
-    if b <> empty then
-      let sq = next_square b in
-      if not @@ f sq then aux @@ clear b sq in
+    if b <> empty && not @@ f @@ next_square b
+    then aux @@ clear_fast_fwd b in
   aux b
 
 let iter_until_rev b ~f =
@@ -161,7 +158,7 @@ let find b ~f =
     if b = empty then None
     else
       let sq = next_square b in
-      if f sq then Some sq else aux @@ clear b sq in
+      if f @@ next_square b then Some sq else aux @@ clear_fast_fwd b in
   aux b
 
 let find_rev b ~f =
