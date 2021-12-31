@@ -3,6 +3,7 @@ open Monads.Std
 
 module Pre = Precalculated
 module Bb = Bitboard
+module Cr = Castling_rights
 
 module T = struct
   (* We'll use mutable fields since, when applying moves, this has a
@@ -719,13 +720,11 @@ module Apply = struct
       (sq' @ all_board pos) || (is_pawn && is_en_passant pos sq') in
     set_halfmove pos @@ if is_pawn || is_capture then 0 else succ pos.halfmove
 
-  module CR = Castling_rights
-
   let clear_white_castling_rights = P.read () >>| fun pos ->
-    set_castle pos @@ CR.(minus pos.castle white)
+    set_castle pos @@ Cr.(minus pos.castle white)
 
   let clear_black_castling_rights = P.read () >>| fun pos ->
-    set_castle pos @@ CR.(minus pos.castle black)
+    set_castle pos @@ Cr.(minus pos.castle black)
 
   let white_kingside_castle =
     clear_square Piece.white_rook Square.h1 >>
@@ -762,13 +761,13 @@ module Apply = struct
      that particular side. *)
   let[@inline] rook_moved_or_captured sq = function
     | Piece.White when Square.(sq = h1) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(minus pos.castle white_kingside)
+      set_castle pos @@ Cr.(minus pos.castle white_kingside)
     | Piece.White when Square.(sq = a1) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(minus pos.castle white_queenside)
+      set_castle pos @@ Cr.(minus pos.castle white_queenside)
     | Piece.Black when Square.(sq = h8) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(minus pos.castle black_kingside)
+      set_castle pos @@ Cr.(minus pos.castle black_kingside)
     | Piece.Black when Square.(sq = a8) -> P.read () >>| fun pos ->
-      set_castle pos @@ CR.(minus pos.castle black_queenside)
+      set_castle pos @@ Cr.(minus pos.castle black_queenside)
     | _ -> P.return ()
 
   (* Rook moved from a square. *)
@@ -973,23 +972,28 @@ module Moves = struct
 
     let castle = I.read () >>|
       fun {pos; occupied; enemy_attacks; num_checkers; _} ->
+      (* Cannot castle out of check. *)
       if num_checkers > 0 then Bb.empty
       else
-        let open Bb.Syntax in
-        let c sq s =
+        let open Bb in
+        let castle sq s =
           let m, b = Pre.castle pos.castle pos.active s in
           (* Check the actual squares to move our pieces to. *)
-          let ok = Bb.count (b - occupied - enemy_attacks) = 2 in
+          let ok = Int.equal 2 @@ count (b - occupied - enemy_attacks) in
+          (* For queenside, the extra b-file square needs to be unoccupied, so
+             check the mask. *)
           let ok = match s with
-            | `king -> ok
-            | `queen ->
-              (* For queenside, the extra b-file square needs to be
-                 unoccupied, so check the mask. *)
-              ok && Bb.count (m - occupied) = 3 in
-          if ok then !!sq else Bb.empty in
+            | `queen -> ok && Int.equal 3 @@ count (m - occupied)
+            | `king -> ok in
+          (* If both checks succeeded, then we can castle. *)
+          if ok then !!sq else empty in
+        (* Skip if we don't have any rights at all. *)
         match pos.active with
-        | Piece.White -> c Square.g1 `king + c Square.c1 `queen
-        | Piece.Black -> c Square.g8 `king + c Square.c8 `queen
+        | Piece.White when Cr.(inter pos.castle white <> none) ->
+          castle Square.g1 `king + castle Square.c1 `queen
+        | Piece.Black when Cr.(inter pos.castle black <> none) ->
+          castle Square.g8 `king + castle Square.c8 `queen
+        | _ -> empty
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
