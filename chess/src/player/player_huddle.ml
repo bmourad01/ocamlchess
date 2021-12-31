@@ -12,7 +12,7 @@ let choose pos = function
         let active_board = Position.board_of_color pos active in
         let king = Position.king pos in
         let king_sq = Bb.(first_set_exn (king & active_board)) in
-        Position.find_color pos active |>
+        Position.collect_color pos active |>
         List.fold ~init:0 ~f:(fun acc (sq, _) ->
             acc - Square.chebyshev king_sq sq) |>
         Option.return) |>

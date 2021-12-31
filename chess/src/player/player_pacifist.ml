@@ -23,7 +23,7 @@ let choose _ = function
         | [] when in_check -> Int.min_value
         | _ when in_check -> Int.min_value / 2
         | _ ->
-          Position.find_active pos |>
+          Position.collect_active pos |>
           List.fold ~init:0 ~f:(fun material (_, k) ->
               material + piece_value k) in
       Some score) |> List.random_element_exn

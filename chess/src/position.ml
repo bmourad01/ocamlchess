@@ -109,19 +109,19 @@ let which_kind_exn pos sq =
   else invalid_arg @@
     sprintf "No piece exists at square %s" (Square.to_string sq)
 
-let find_color pos c =
+let collect_color pos c =
   board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
       which_kind pos sq |> Option.value_map ~default:acc
         ~f:(fun k -> (sq, k) :: acc))
 
-let find_active pos = find_color pos pos.active
+let collect_active pos = collect_color pos pos.active
 
-let find_kind pos k =
+let collect_kind pos k =
   board_of_kind pos k |> Bb.fold ~init:[] ~f:(fun acc sq ->
       which_color pos sq |> Option.value_map ~default:acc
         ~f:(fun c -> (sq, c) :: acc))
 
-let find_piece pos p =
+let collect_piece pos p =
   board_of_piece pos p |> Bb.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
 
 let piece_at_square pos sq =
@@ -131,7 +131,7 @@ let piece_at_square pos sq =
 let piece_at_square_exn pos sq =
   Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
 
-let all_pieces pos =
+let collect_all pos =
   all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
       piece_at_square pos sq |> Option.value_map ~default:acc
         ~f:(fun p -> (sq, p) :: acc))
@@ -192,7 +192,7 @@ module Attacks = struct
   let[@inline] aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
     let open Bb.Syntax in
     let occupied = occupied pos c king_danger in
-    find_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
+    collect_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
         if f k then acc + pre_of_kind sq occupied c k else acc) |>
     fun b -> if ignore_same then ignore_color pos c b else b
 
@@ -1092,7 +1092,7 @@ module Moves = struct
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
     if num_checkers > 1 then king king_sq >>= exec king_sq King []
-    else find_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
+    else collect_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
         any sq k >>= exec sq k acc)
 end
 
@@ -1164,7 +1164,7 @@ let[@inline] create_info pos =
   let enemy_attacks =
     Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
   let enemy_sliders =
-    find_color pos enemy |>
+    collect_color pos enemy |>
     List.filter ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
   let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
   let checkers = checkers pos ~king_sq ~enemy_board ~occupied in

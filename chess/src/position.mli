@@ -87,21 +87,21 @@ val board_of_piece : t -> Piece.t -> Bitboard.t
     in [pos] and it is equal to [sq]. *)
 val is_en_passant : t -> Square.t -> bool
 
-(** [find_color pos c] returns a list of square-kind pairs where pieces of
+(** [collect_color pos c] returns a list of square-kind pairs where pieces of
     color [c] occupy squares on position [pos]. *)
-val find_color : t -> Piece.color -> (Square.t * Piece.kind) list
+val collect_color : t -> Piece.color -> (Square.t * Piece.kind) list
 
-(** [find_active pos] returns a list of square-kind pairs where pieces of
+(** [collect_active pos] returns a list of square-kind pairs where pieces of
     the active color occupy squares on position [pos]. *)
-val find_active : t -> (Square.t * Piece.kind) list
+val collect_active : t -> (Square.t * Piece.kind) list
 
-(** [find_kind pos k] returns a list of square-color pairs where pieces of
+(** [collect_kind pos k] returns a list of square-color pairs where pieces of
     kind [k] occupy squares on position [pos]. *)
-val find_kind : t -> Piece.kind -> (Square.t * Piece.color) list
+val collect_kind : t -> Piece.kind -> (Square.t * Piece.color) list
 
-(** [find_piece pos p] returns a list of squares where pieces matching [p]
+(** [collect_piece pos p] returns a list of squares where pieces matching [p]
     occupy squares on position [pos]. *)
-val find_piece : t -> Piece.t -> Square.t list
+val collect_piece : t -> Piece.t -> Square.t list
 
 (** [piece_at_square pos sq] returns the piece, if any, occupying the square
     [sq] on position [pos]. *)
@@ -111,9 +111,9 @@ val piece_at_square : t -> Square.t -> Piece.t option
     square [sq] on position [pos]. Raises [Invalid_argument] otherwise. *)
 val piece_at_square_exn : t -> Square.t -> Piece.t
 
-(** [all_pieces pos] returns a list of square-piece pairs for each occupied
+(** [collect_all pos] returns a list of square-piece pairs for each occupied
     square on position [pos]. *)
-val all_pieces : t -> (Square.t * Piece.t) list
+val collect_all : t -> (Square.t * Piece.t) list
 
 (** This submodule is concerned with checking the validity of a given
     position (it may not be exhaustive!). *)
