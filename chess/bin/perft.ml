@@ -3,17 +3,12 @@ open Chess
 
 module Legal = Position.Legal
 
-let perft pos depth =
-  let worklist = Stack.singleton (pos, depth) in
-  let rec loop n = match Stack.pop worklist with
-    | None -> n
-    | Some (_, depth) when depth <= 0 -> loop Int64.(n + 1L)
-    | Some (pos, depth) ->
-      let depth = depth - 1 in
-      Position.legal_moves pos |> List.iter ~f:(fun m ->
-          Stack.push worklist (Legal.new_position m, depth));
-      loop n in
-  loop 0L
+let rec perft pos depth =
+  if depth <= 0 then 1L
+  else
+    let depth = depth - 1 in
+    Position.legal_moves pos |> List.fold ~init:0L ~f:(fun acc m ->
+        Int64.(acc + perft (Legal.new_position m) depth))
 
 let go depth pos =
   let t = Time.now () in
