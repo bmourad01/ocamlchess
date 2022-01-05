@@ -124,10 +124,14 @@ let collect_kind pos k =
 let collect_piece pos p =
   board_of_piece pos p |> Bb.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
 
-let piece_at_square pos sq =
-  let open Option.Monad_infix in
-  which_color pos sq >>= fun c -> which_kind pos sq >>| Piece.create c
-
+let piece_at_square pos sq = match which_color pos sq with
+  | None -> None
+  | Some c -> match which_kind pos sq with
+    | Some k -> Some (Piece.create c k)
+    | None -> failwith @@
+      sprintf "Color %s is set at square %s, but not the piece kind"
+        (Piece.Color.to_string_hum c) (Square.to_string sq)
+  
 let piece_at_square_exn pos sq =
   Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
 
