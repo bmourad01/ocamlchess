@@ -215,18 +215,117 @@ let in_check pos =
   let attacks = Attacks.all pos (enemy pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
-(* Attacks of all piece kinds, starting from the king, intersected with
-   the squares occupied by enemy pieces. *)
-let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
-  let open Bb.Syntax in
-  let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
-  let n = Pre.knight king_sq & pos.knight in
-  let bishop = Pre.bishop king_sq occupied in
-  let rook = Pre.rook king_sq occupied in
-  let bq = bishop & (pos.bishop + pos.queen) in
-  let rq = rook & (pos.rook + pos.queen) in
-  let k = Pre.king king_sq & pos.king in
-  (p + n + bq + rq + k) & enemy_board
+(* Relevant info about the position for generating moves. *)
+
+module Analysis = struct
+  module T = struct
+    type t = {
+      pos : T.t;
+      king_sq : Square.t;
+      en_passant_pawn : Square.t option;
+      occupied : Bb.t;
+      active_board : Bb.t;
+      enemy_board : Bb.t;
+      enemy_attacks : Bb.t;
+      pinners : Bb.t Map.M(Square).t;
+      num_checkers : int;
+      check_mask : Bb.t;
+      en_passant_check_mask : Bb.t;
+      enemy_sliders : (Square.t * Piece.kind) list;
+    } [@@deriving fields]
+  end
+
+  (* Attacks of all piece kinds, starting from the king, intersected with
+     the squares occupied by enemy pieces. *)
+  let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
+    let open Bb.Syntax in
+    let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
+    let n = Pre.knight king_sq & pos.knight in
+    let bishop = Pre.bishop king_sq occupied in
+    let rook = Pre.rook king_sq occupied in
+    let bq = bishop & (pos.bishop + pos.queen) in
+    let rq = rook & (pos.rook + pos.queen) in
+    let k = Pre.king king_sq & pos.king in
+    (p + n + bq + rq + k) & enemy_board
+
+  (* For each enemy sliding piece, calculate its attack set. Then,
+     intersect it with the same attack set from our king's square.
+     Then, intersect with the squares between the sliding piece and our
+     king. Any of our pieces that are in this intersection are thus
+     pinned. *)
+  let[@inline] pinners ~active_board ~king_sq ~enemy_sliders ~occupied =
+    let open Bb.Syntax in
+    let update pinners sq checker king mask =
+      match Bb.first_set (checker & king & mask) with
+      | None -> pinners
+      | Some sq' -> Map.update pinners sq' ~f:(function
+          | Some b -> b ++ sq
+          | None -> !!sq)
+    and mask = active_board -- king_sq
+    and init = Map.empty (module Square) in
+    List.fold enemy_sliders ~init ~f:(fun pinners (sq, k) ->
+        let mask = mask & Pre.between king_sq sq in
+        let checker, king = match k with
+          | Piece.Bishop -> Pre.(bishop sq occupied, bishop king_sq occupied)
+          | Piece.Rook -> Pre.(rook sq occupied, rook king_sq occupied)
+          | Piece.Queen -> Pre.(queen sq occupied, queen king_sq occupied)
+          | _ -> Bb.(empty, empty) in
+        update pinners sq checker king mask)
+
+  (* Generate the masks which may restrict movement in the event of a check. *)
+  let[@inline] check_masks pos
+      ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
+    if num_checkers <> 1
+    then Bb.full, Bb.empty
+    else
+      (* Test if the checker is a sliding piece. If so, then we can try to
+         block the attack. Otherwise, they may only be captured. *)
+      let open Bb.Syntax in
+      let sq = Bb.first_set_exn checkers in
+      match which_kind_exn pos sq with
+      | Bishop | Rook | Queen ->
+        checkers + Pre.between king_sq sq, Bb.empty
+      | Pawn when Option.exists en_passant_pawn ~f:(Square.equal sq) ->
+        (* Edge case for being able to get out of check via en passant
+           capture. *)
+        checkers, !!(Option.value_exn pos.en_passant ~message:"unreachable")
+      |  _ -> checkers, Bb.empty
+
+  (* Populate info needed for generating legal moves. *)
+  let[@inline] create pos =
+    (* First, find our king. *)
+    let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
+    (* Square of the en passant pawn. *)
+    let en_passant_pawn = Option.map pos.en_passant ~f:(fun ep ->
+        let rank, file = Square.decomp ep in
+        match pos.active with
+        | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
+        | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file) in
+    (* Most general info. *)
+    let enemy = Piece.Color.opposite pos.active in
+    let occupied = all_board pos in
+    let active_board = active_board pos in
+    let enemy_board = enemy_board pos in
+    (* We're considering attacked squares only for king moves. These squares
+       should include enemy pieces which may block an enemy attack, since it
+       would be illegal for the king to attack those squares. *)
+    let enemy_attacks =
+      Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
+    let enemy_sliders =
+      collect_color pos enemy |>
+      List.filter ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
+    let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
+    let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
+    (* Number of checkers is important for how we can decide to get out of
+       check. *)
+    let num_checkers = Bb.count checkers in
+    let check_mask, en_passant_check_mask =
+      check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq in
+    T.Fields.create
+      ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board ~enemy_board
+      ~enemy_attacks  ~pinners ~num_checkers ~check_mask
+      ~en_passant_check_mask ~enemy_sliders
+end
 
 (* Validation *)
 
@@ -336,7 +435,7 @@ module Valid = struct
       let king_sq = Bb.(first_set_exn (active_board & pos.king)) in
       let enemy_board = enemy_board pos in
       let occupied = Bb.(active_board + enemy_board) in
-      let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
+      let checkers = Analysis.checkers pos ~king_sq ~enemy_board ~occupied in
       let num_checkers = Bb.count checkers in
       if num_checkers >= 3
       then E.fail @@ Invalid_number_of_checkers (pos.active, num_checkers)
@@ -846,27 +945,8 @@ module Apply = struct
                      move")
 end
 
-
-(* Relevant info about the position for generating moves. *)
-module Info = struct
-  type t = {
-    pos : T.t;
-    king_sq : Square.t;
-    en_passant_pawn : Square.t option;
-    occupied : Bb.t;
-    active_board : Bb.t;
-    enemy_board : Bb.t;
-    enemy_attacks : Bb.t;
-    pinners : Bb.t Map.M(Square).t;
-    num_checkers : int;
-    check_mask : Bb.t;
-    en_passant_check_mask : Bb.t;
-    enemy_sliders : (Square.t * Piece.kind) list;
-  } [@@deriving fields]
-end
-
-(* I for Info *)
-module I = Monad.Reader.Make(Info)(Monad.Ident)
+(* A for Analysis *)
+module A = Monad.Reader.Make(Analysis.T)(Monad.Ident)
 
 module Legal = struct
   module T = struct
@@ -885,14 +965,14 @@ end
 type legal = Legal.t [@@deriving compare, equal, sexp]
 
 module Moves = struct
-  open I.Syntax
+  open A.Syntax
 
   module Pawn = struct
-    let[@inline] push sq = I.read () >>| fun {pos; occupied; _} ->
+    let[@inline] push sq = A.read () >>| fun {pos; occupied; _} ->
       let open Bb.Syntax in
       Pre.pawn_advance sq pos.active - occupied
 
-    let[@inline] push2 rank file = I.read () >>| fun {pos; occupied; _} ->
+    let[@inline] push2 rank file = A.read () >>| fun {pos; occupied; _} ->
       let open Bb.Syntax in
       match pos.active with
       | Piece.White when Square.Rank.(rank = two) ->
@@ -905,7 +985,7 @@ module Moves = struct
        then this capture would be illegal, since it would lead to a discovery
        on the king. En passant moves arise rarely across all chess positions,
        so we can do a bit of heavy calculation here. *)
-    let[@inline] en_passant sq ep pw diag = I.read () >>|
+    let[@inline] en_passant sq ep pw diag = A.read () >>|
       fun {king_sq; occupied; enemy_sliders; _} ->
       (* Remove our pawn and the captured pawn from the board. *)
       let open Bb in
@@ -919,14 +999,14 @@ module Moves = struct
           | sq, Piece.Queen when sq @ (Pre.queen king_sq occupied) -> Stop diag
           | _ -> Continue acc)
 
-    let[@inline] capture sq = I.read () >>=
+    let[@inline] capture sq = A.read () >>=
       fun {pos; en_passant_pawn; enemy_board; _} ->
       let open Bb.Syntax in
       let diag' = Pre.pawn_capture sq pos.active in
       let diag = diag' & enemy_board in
       match pos.en_passant, en_passant_pawn with
       | Some ep, Some pw when ep @ diag' -> en_passant sq ep pw diag
-      | _ -> I.return diag
+      | _ -> A.return diag
 
     let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
 
@@ -937,22 +1017,22 @@ module Moves = struct
   end
 
   module Knight = struct
-    let[@inline] jump sq = I.read () >>| fun {active_board; _} ->
+    let[@inline] jump sq = A.read () >>| fun {active_board; _} ->
       Bb.(Pre.knight sq - active_board)
   end
 
   module Bishop = struct
-    let[@inline] slide sq = I.read () >>| fun {occupied; active_board; _} ->
+    let[@inline] slide sq = A.read () >>| fun {occupied; active_board; _} ->
       Bb.(Pre.bishop sq occupied - active_board)
   end
 
   module Rook = struct
-    let[@inline] slide sq = I.read () >>| fun {occupied; active_board; _} ->
+    let[@inline] slide sq = A.read () >>| fun {occupied; active_board; _} ->
       Bb.(Pre.rook sq occupied - active_board)
   end
 
   module Queen = struct
-    let[@inline] slide sq = I.read () >>| fun {occupied; active_board; _} ->
+    let[@inline] slide sq = A.read () >>| fun {occupied; active_board; _} ->
       Bb.(Pre.queen sq occupied - active_board)
   end
 
@@ -960,10 +1040,10 @@ module Moves = struct
     (* Note that `enemy_attacks` includes squares occupied by enemy pieces.
        Therefore, the king may not attack those squares. *)
     let[@inline] move sq =
-      I.read () >>| fun {active_board; enemy_attacks; _} ->
+      A.read () >>| fun {active_board; enemy_attacks; _} ->
       Bb.(Pre.king sq - active_board - enemy_attacks)
 
-    let castle = I.read () >>|
+    let castle = A.read () >>|
       fun {pos; occupied; enemy_attacks; num_checkers; _} ->
       (* Cannot castle out of check. *)
       if num_checkers > 0 then Bb.empty
@@ -990,7 +1070,7 @@ module Moves = struct
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
-  let[@inline] pin_mask sq = I.read () >>| fun {king_sq; pinners; _} ->
+  let[@inline] pin_mask sq = A.read () >>| fun {king_sq; pinners; _} ->
     match Map.find pinners sq with
     | None -> Bb.full
     | Some p ->
@@ -1001,11 +1081,11 @@ module Moves = struct
         Bb.(mask ++ sq')
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let check_mask = I.read () >>| Info.check_mask
+  let check_mask = A.read () >>| Analysis.T.check_mask
 
   (* Special case for pawns, with en passant capture being an option to escape
      check. *)
-  let[@inline] check_mask_pawn capture = I.read () >>|
+  let[@inline] check_mask_pawn capture = A.read () >>|
     fun {num_checkers; check_mask; en_passant_check_mask; _} ->
     if num_checkers <> 1 then check_mask
     else Bb.(check_mask + (capture & en_passant_check_mask))
@@ -1027,7 +1107,7 @@ module Moves = struct
     let open Bb.Syntax in
     push sq >>= fun push -> begin
       (* Only allow double push if a single push is available. *)
-      if Bb.(push = empty) then I.return push
+      if Bb.(push = empty) then A.return push
       else
         let rank, file = Square.decomp sq in
         push2 rank file >>| (+) push
@@ -1060,7 +1140,7 @@ module Moves = struct
     Legal.Fields.create ~move ~new_position ~capture ~is_en_passant :: acc
 
   (* Get the new positions from the bitboard of squares we can move to. *)
-  let[@inline] exec src k init b = I.read () >>| fun {pos; _} ->
+  let[@inline] exec src k init b = A.read () >>| fun {pos; _} ->
     let is_promote = match k with
       | Piece.Pawn -> begin
           (* If we're promoting, then the back rank should be the only
@@ -1084,99 +1164,17 @@ module Moves = struct
     | Piece.Queen -> queen sq
     | Piece.King -> king sq
 
-  let go = I.read () >>= fun {pos; king_sq; num_checkers; _} ->
+  let go = A.read () >>= fun {pos; king_sq; num_checkers; _} ->
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
     if num_checkers > 1 then king king_sq >>= exec king_sq King []
     else collect_active pos |>
-         I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
+         A.List.fold ~init:[] ~f:(fun acc (sq, k) ->
              any sq k >>= exec sq k acc)
 end
 
-(* For each enemy sliding piece, calculate its attack set. Then,
-   intersect it with the same attack set from our king's square.
-   Then, intersect with the squares between the sliding piece and our
-   king. Any of our pieces that are in this intersection are thus
-   pinned. *)
-let[@inline] pinners ~active_board ~king_sq ~enemy_sliders ~occupied =
-  let open Bb.Syntax in
-  let update pinners sq p k mask =
-    match Bb.first_set (p & k & mask) with
-    | None -> pinners
-    | Some sq' -> Map.update pinners sq' ~f:(function
-        | Some b -> b ++ sq
-        | None -> !!sq)
-  and mask = active_board -- king_sq
-  and init = Map.empty (module Square) in
-  List.fold enemy_sliders ~init ~f:(fun pinners (sq, k) ->
-      let mask = mask & Pre.between king_sq sq in
-      match k with
-      | Piece.Bishop ->
-        let b, k = Pre.(bishop sq occupied, bishop king_sq occupied) in
-        update pinners sq b k mask
-      | Piece.Rook ->
-        let r, k = Pre.(rook sq occupied, rook king_sq occupied) in
-        update pinners sq r k mask
-      | Piece.Queen ->
-        let q, k = Pre.(queen sq occupied, queen king_sq occupied) in
-        update pinners sq q k mask
-      | _ -> pinners) 
-
-(* Generate the masks which may restrict movement in the event of a check. *)
-let[@inline] check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
-  if num_checkers <> 1
-  then Bb.full, Bb.empty
-  else
-    (* Test if the checker is a sliding piece. If so, then we can try to
-       block the attack. Otherwise, they may only be captured. *)
-    let open Bb.Syntax in
-    let sq = Bb.first_set_exn checkers in
-    match which_kind_exn pos sq with
-    | Bishop | Rook | Queen ->
-      checkers + Pre.between king_sq sq, Bb.empty
-    | Pawn when Option.exists en_passant_pawn ~f:(Square.equal sq) ->
-      (* Edge case for being able to get out of check via en passant
-         capture. *)
-      checkers, !!(Option.value_exn pos.en_passant ~message:"unreachable")
-    |  _ -> checkers, Bb.empty
-
-(* Populate info needed for generating legal moves. *)
-let[@inline] create_info pos =
-  (* First, find our king. *)
-  let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
-  (* Square of the en passant pawn. *)
-  let en_passant_pawn = Option.map pos.en_passant ~f:(fun ep ->
-      let rank, file = Square.decomp ep in
-      match pos.active with
-      | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
-      | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file) in
-  (* Most general info. *)
-  let enemy = Piece.Color.opposite pos.active in
-  let occupied = all_board pos in
-  let active_board = active_board pos in
-  let enemy_board = enemy_board pos in
-  (* We're considering attacked squares only for king moves. These squares
-     should include enemy pieces which may block an enemy attack, since it
-     would be illegal for the king to attack those squares. *)
-  let enemy_attacks =
-    Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
-  let enemy_sliders =
-    collect_color pos enemy |>
-    List.filter ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
-  let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
-  let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
-  (* Number of checkers is important for how we can decide to get out of
-     check. *)
-  let num_checkers = Bb.count checkers in
-  let check_mask, en_passant_check_mask =
-    check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq in
-  Info.Fields.create
-    ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board ~enemy_board
-    ~enemy_attacks  ~pinners ~num_checkers ~check_mask
-    ~en_passant_check_mask ~enemy_sliders
-
 (* Generate all legal moves from the position. *)
 let legal_moves pos =
-  create_info pos |> Monad.Reader.run Moves.go
+  Analysis.create pos |> Monad.Reader.run Moves.go
 
 include Comparable.Make(T)
