@@ -788,8 +788,7 @@ module Apply = struct
      skipping the check on whether the file changed, since our assumption is
      that the move is legal. For the check if `p` is a pawn or not, we assume
      that it belongs to the active color. *) 
-  let[@inline] update_en_passant p sq sq' = begin
-    if Piece.is_pawn p then
+  let[@inline] update_en_passant p sq sq' = begin if Piece.is_pawn p then
       let rank = Square.rank sq and rank', file = Square.decomp sq' in
       P.read () >>| fun {active; _} -> match active with
       | Piece.White when rank' - rank = 2 ->
@@ -1076,9 +1075,10 @@ module Moves = struct
         end
       | _ -> false in
     let f = make_move pos (Piece.create pos.active k) in
-    if is_promote then Bb.fold b ~init ~f:(fun init dst ->
-        Pawn.promote src dst |> List.fold ~init ~f)
-    else Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
+    if not is_promote
+    then Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
+    else Bb.fold b ~init ~f:(fun acc dst ->
+        Pawn.promote src dst |> List.fold ~init:acc ~f)
 
   let[@inline] any sq = function
     | Piece.Pawn -> pawn sq
@@ -1092,8 +1092,9 @@ module Moves = struct
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
     if num_checkers > 1 then king king_sq >>= exec king_sq King []
-    else collect_active pos |> I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
-        any sq k >>= exec sq k acc)
+    else collect_active pos |>
+         I.List.fold ~init:[] ~f:(fun acc (sq, k) ->
+             any sq k >>= exec sq k acc)
 end
 
 (* For each enemy sliding piece, calculate its attack set. Then,
