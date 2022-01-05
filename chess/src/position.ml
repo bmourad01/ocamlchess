@@ -334,6 +334,8 @@ module Analysis = struct
       ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board
       ~enemy_board ~enemy_attacks ~pinners ~num_checkers
       ~check_mask ~en_passant_check_mask ~enemy_sliders
+
+  include T
 end
 
 (* Validation *)
@@ -1093,7 +1095,7 @@ module Moves = struct
         Bb.(mask ++ sq')
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let check_mask = A.read () >>| Analysis.T.check_mask
+  let check_mask = A.read () >>| Analysis.check_mask
 
   (* Special case for pawns, with en passant capture being an option to escape
      check. *)
