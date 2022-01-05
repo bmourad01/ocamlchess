@@ -86,7 +86,8 @@ let which_color_exn pos sq =
   if sq @ pos.white then Piece.White
   else if sq @ pos.black then Piece.Black
   else invalid_arg @@
-    sprintf "No piece exists at square %s" (Square.to_string sq)
+    sprintf "No piece exists at square %s" @@
+    Square.to_string sq
 
 let which_kind pos sq =
   let open Bb.Syntax in
@@ -107,7 +108,8 @@ let which_kind_exn pos sq =
   else if sq @ pos.queen then Piece.Queen
   else if sq @ pos.king then Piece.King
   else invalid_arg @@
-    sprintf "No piece exists at square %s" (Square.to_string sq)
+    sprintf "No piece exists at square %s" @@
+    Square.to_string sq
 
 let collect_color pos c =
   board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
