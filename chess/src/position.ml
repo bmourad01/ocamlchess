@@ -1070,7 +1070,7 @@ module Moves = struct
           | Piece.Black -> Bb.((b & rank_1) = b)
         end
       | _ -> false in
-    let f = make_move pos (Piece.create pos.active k) in
+    let f = make_move pos @@ Piece.create pos.active k in
     if not is_promote
     then Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
     else Bb.fold b ~init ~f:(fun acc dst ->
