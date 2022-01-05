@@ -113,15 +113,13 @@ let which_kind_exn pos sq =
 
 let collect_color pos c =
   board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      which_kind pos sq |> Option.value_map ~default:acc
-        ~f:(fun k -> (sq, k) :: acc))
+      (sq, which_kind_exn pos sq) :: acc)
 
 let collect_active pos = collect_color pos pos.active
 
 let collect_kind pos k =
   board_of_kind pos k |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      which_color pos sq |> Option.value_map ~default:acc
-        ~f:(fun c -> (sq, c) :: acc))
+      (sq, which_color_exn pos sq) :: acc)
 
 let collect_piece pos p =
   board_of_piece pos p |> Bb.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
@@ -135,8 +133,8 @@ let piece_at_square_exn pos sq =
 
 let collect_all pos =
   all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      piece_at_square pos sq |> Option.value_map ~default:acc
-        ~f:(fun p -> (sq, p) :: acc))
+      let c = which_color_exn pos sq and k = which_kind_exn pos sq in
+      (sq, Piece.create c k) :: acc)
 
 (* Attack patterns. *)
 
