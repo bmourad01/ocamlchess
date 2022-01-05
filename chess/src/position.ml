@@ -852,6 +852,7 @@ module Info = struct
   type t = {
     pos : T.t;
     king_sq : Square.t;
+    en_passant_pawn : Square.t option;
     occupied : Bb.t;
     active_board : Bb.t;
     enemy_board : Bb.t;
@@ -904,14 +905,8 @@ module Moves = struct
        then this capture would be illegal, since it would lead to a discovery
        on the king. En passant moves arise rarely across all chess positions,
        so we can do a bit of heavy calculation here. *)
-    let[@inline] en_passant sq ep diag = I.read () >>|
-      fun {pos; king_sq; occupied; enemy_sliders; _} ->
-      (* Get the position of the pawn which made a double advance. *)
-      let pw =
-        let rank, file = Square.decomp ep in
-        match pos.active with
-        | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
-        | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file in
+    let[@inline] en_passant sq ep pw diag = I.read () >>|
+      fun {king_sq; occupied; enemy_sliders; _} ->
       (* Remove our pawn and the captured pawn from the board. *)
       let open Bb in
       let occupied = occupied -- sq -- pw in
@@ -924,12 +919,13 @@ module Moves = struct
           | sq, Piece.Queen when sq @ (Pre.queen king_sq occupied) -> Stop diag
           | _ -> Continue acc)
 
-    let[@inline] capture sq = I.read () >>= fun {pos; enemy_board; _} ->
+    let[@inline] capture sq = I.read () >>=
+      fun {pos; en_passant_pawn; enemy_board; _} ->
       let open Bb.Syntax in
       let diag' = Pre.pawn_capture sq pos.active in
       let diag = diag' & enemy_board in
-      match pos.en_passant with
-      | Some ep when ep @ diag' -> en_passant sq ep diag
+      match pos.en_passant, en_passant_pawn with
+      | Some ep, Some pw when ep @ diag' -> en_passant sq ep pw diag
       | _ -> I.return diag
 
     let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
@@ -1127,7 +1123,7 @@ let[@inline] pinners ~active_board ~king_sq ~enemy_sliders ~occupied =
       | _ -> pinners) 
 
 (* Generate the masks which may restrict movement in the event of a check. *)
-let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
+let[@inline] check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
   if num_checkers <> 1
   then Bb.full, Bb.empty
   else
@@ -1138,22 +1134,22 @@ let[@inline] check_masks pos ~num_checkers ~checkers ~king_sq ~enemy =
     match which_kind_exn pos sq with
     | Bishop | Rook | Queen ->
       checkers + Pre.between king_sq sq, Bb.empty
-    | Pawn ->
+    | Pawn when Option.exists en_passant_pawn ~f:(Square.equal sq) ->
       (* Edge case for being able to get out of check via en passant
          capture. *)
-      let rank, file = Square.decomp sq in
-      let ep = match (enemy : Piece.color) with
-        | White -> Square.create ~rank:(pred rank) ~file
-        | Black -> Square.create ~rank:(succ rank) ~file in
-      checkers, Option.value_map ep ~default:Bb.empty ~f:(fun ep ->
-          if Option.exists pos.en_passant ~f:(Square.equal ep)
-          then !!ep else Bb.empty)
+      checkers, !!(Option.value_exn pos.en_passant ~message:"unreachable")
     |  _ -> checkers, Bb.empty
 
 (* Populate info needed for generating legal moves. *)
 let[@inline] create_info pos =
   (* First, find our king. *)
   let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
+  (* Square of the en passant pawn. *)
+  let en_passant_pawn = Option.map pos.en_passant ~f:(fun ep ->
+      let rank, file = Square.decomp ep in
+      match pos.active with
+      | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
+      | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file) in
   (* Most general info. *)
   let enemy = Piece.Color.opposite pos.active in
   let occupied = all_board pos in
@@ -1173,9 +1169,9 @@ let[@inline] create_info pos =
      check. *)
   let num_checkers = Bb.count checkers in
   let check_mask, en_passant_check_mask =
-    check_masks pos ~num_checkers ~checkers ~king_sq ~enemy in
+    check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq in
   Info.Fields.create
-    ~pos ~king_sq ~occupied ~active_board ~enemy_board
+    ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board ~enemy_board
     ~enemy_attacks  ~pinners ~num_checkers ~check_mask
     ~en_passant_check_mask ~enemy_sliders
 
