@@ -322,9 +322,9 @@ module Analysis = struct
     let check_mask, en_passant_check_mask =
       check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq in
     T.Fields.create
-      ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board ~enemy_board
-      ~enemy_attacks  ~pinners ~num_checkers ~check_mask
-      ~en_passant_check_mask ~enemy_sliders
+      ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board
+      ~enemy_board ~enemy_attacks ~pinners ~num_checkers
+      ~check_mask ~en_passant_check_mask ~enemy_sliders
 end
 
 (* Validation *)
