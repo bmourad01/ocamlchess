@@ -53,11 +53,11 @@ let file_exn i =
   else Array.unsafe_get files i
 
 let rank i =
-  if Int.(i < 0 || i >= Square.Rank.count) then None
+  if Int.(i land Square.Rank.nmask <> 0) then None
   else Some (Array.unsafe_get ranks i)
 
 let file i =
-  if Int.(i < 0 || i >= Square.File.count) then None
+  if Int.(i land Square.File.nmask <> 0) then None
   else Some (Array.unsafe_get files i)
 
 (* Bitwise operators. *)
