@@ -129,9 +129,9 @@ let piece_at_square pos sq = match which_color pos sq with
   | Some c -> match which_kind pos sq with
     | Some k -> Some (Piece.create c k)
     | None -> failwith @@
-      sprintf "Color %s is set at square %s, but not the piece kind"
-        (Piece.Color.to_string_hum c) (Square.to_string sq)
-  
+      sprintf "Square %s is set for color %s, but no piece kind is available"
+        (Square.to_string sq) (Piece.Color.to_string_hum c)
+
 let piece_at_square_exn pos sq =
   Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
 
