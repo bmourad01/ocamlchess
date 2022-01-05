@@ -315,16 +315,21 @@ module Analysis = struct
        would be illegal for the king to attack those squares. *)
     let enemy_attacks =
       Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
+    (* Sliding pieces will be used to calculate pins. *)
     let enemy_sliders =
       collect_color pos enemy |>
       List.filter ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
+    (* Pinned pieces. *)
     let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
+    (* Pieces checking our king. *)
     let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
     (* Number of checkers is important for how we can decide to get out of
        check. *)
     let num_checkers = Bb.count checkers in
+    (* Masks which will may allow us to escape check. *)
     let check_mask, en_passant_check_mask =
       check_masks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq in
+    (* Construct the analyzed position. *)
     T.Fields.create
       ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board
       ~enemy_board ~enemy_attacks ~pinners ~num_checkers
@@ -985,7 +990,7 @@ module Moves = struct
         !!(Square.create_unsafe ~rank:Square.Rank.five ~file) - occupied
       | _ -> Bb.empty
 
-    (* Check if our pawn or the captured pawn are along a pin ray. If so,
+    (* Check if our pawn or the captured pawn is along a pin ray. If so,
        then this capture would be illegal, since it would lead to a discovery
        on the king. En passant moves arise rarely across all chess positions,
        so we can do a bit of heavy calculation here. *)
@@ -997,10 +1002,13 @@ module Moves = struct
       let init = diag ++ ep and finish = ident in
       (* Check if an appropriate diagonal attack from the king would reach
          that corresponding piece. *)
+      let bishop = lazy (Pre.bishop king_sq occupied) in
+      let rook = lazy (Pre.rook king_sq occupied) in
+      let queen = lazy (Pre.queen king_sq occupied) in
       List.fold_until enemy_sliders ~init ~finish ~f:(fun acc -> function
-          | sq, Piece.Bishop when sq @ (Pre.bishop king_sq occupied) -> Stop diag
-          | sq, Piece.Rook when sq @ (Pre.rook king_sq occupied) -> Stop diag
-          | sq, Piece.Queen when sq @ (Pre.queen king_sq occupied) -> Stop diag
+          | sq, Piece.Bishop when sq @ (Lazy.force bishop) -> Stop diag
+          | sq, Piece.Rook when sq @ (Lazy.force rook) -> Stop diag
+          | sq, Piece.Queen when sq @ (Lazy.force queen) -> Stop diag
           | _ -> Continue acc)
 
     let[@inline] capture sq = A.read () >>=
