@@ -294,7 +294,7 @@ module Analysis = struct
              capture. *)
           match pos.en_passant, en_passant_pawn with
           | Some ep, Some pw when Square.(sq = pw) -> checkers, !!ep
-          | None, None -> checkers, Bb.empty
+          | Some _, Some _ | None, None -> checkers, Bb.empty
           | _ -> failwith "En passant and pawn squares are not consistent"
         end
       |  _ -> checkers, Bb.empty
