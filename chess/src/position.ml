@@ -289,10 +289,14 @@ module Analysis = struct
       match which_kind_exn pos sq with
       | Bishop | Rook | Queen ->
         checkers + Pre.between king_sq sq, Bb.empty
-      | Pawn when Option.exists en_passant_pawn ~f:(Square.equal sq) ->
-        (* Edge case for being able to get out of check via en passant
-           capture. *)
-        checkers, !!(Option.value_exn pos.en_passant ~message:"unreachable")
+      | Pawn -> begin
+          (* Edge case for being able to get out of check via en passant
+             capture. *)
+          match pos.en_passant, en_passant_pawn with
+          | Some ep, Some pw when Square.(sq = pw) -> checkers, !!ep
+          | None, None -> checkers, Bb.empty
+          | _ -> failwith "En passant and pawn squares are not consistent"
+        end
       |  _ -> checkers, Bb.empty
 
   (* Populate info needed for generating legal moves. *)
