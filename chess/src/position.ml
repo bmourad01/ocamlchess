@@ -656,34 +656,42 @@ module Fen = struct
 
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-  let string_of_placement pos =
-    let rec aux rank file skip acc =
-      if rank < 0 then acc
-      else if file > 7 then
-        let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
-        let acc = if rank > 0 then acc ^ "/" else acc in
-        aux (rank - 1) 0 0 acc
-      else match piece_at_square pos @@ Square.create_unsafe ~rank ~file with
-        | None -> aux rank (file + 1) (skip + 1) acc
+  let emit_placement buf pos =
+    let adds = Buffer.add_string buf and addc = Buffer.add_char buf in
+    let rec aux rank file skip =
+      if rank < 0 then ()
+      else if file > 7 then begin
+        if skip > 0 then adds @@ Int.to_string skip;
+        if rank > 0 then addc '/';
+        aux (rank - 1) 0 0
+      end else match piece_at_square pos @@ Square.create_exn ~rank ~file with
+        | None -> aux rank (file + 1) (skip + 1)
         | Some p ->
-          let acc = if skip > 0 then acc ^ Int.to_string skip else acc in
-          let acc = acc ^ String.of_char @@ Piece.to_fen p in
-          aux rank (file + 1) 0 acc in
-    aux 7 0 0 ""
+          if skip > 0 then adds @@ Int.to_string skip;
+          addc @@ Piece.to_fen p;
+          aux rank (file + 1) 0 in
+    aux 7 0 0
 
-  let string_of_active = function
-    | Piece.White -> "w"
-    | Piece.Black -> "b"
+  let emit_active buf = function
+    | Piece.White -> Buffer.add_char buf 'w'
+    | Piece.Black -> Buffer.add_char buf 'b'
 
-  let string_of_castle = Castling_rights.to_string
-  let string_of_en_passant = Option.value_map ~default:"-" ~f:Square.to_string
+  let emit_castle buf cr = Buffer.add_string buf @@
+    Castling_rights.to_string cr
 
-  let to_string (pos : t) =
-    sprintf "%s %s %s %s %d %d" (string_of_placement pos)
-      (string_of_active pos.active)
-      (string_of_castle pos.castle)
-      (string_of_en_passant pos.en_passant)
-      pos.halfmove pos.fullmove
+  let emit_en_passant buf ep = Buffer.add_string buf @@
+    Option.value_map ep ~default:"-" ~f:Square.to_string
+
+  let to_string pos =
+    let buf = Buffer.create 100 in
+    let sep () = Buffer.add_char buf ' ' in
+    emit_placement buf pos; sep ();
+    emit_active buf @@ active pos; sep ();
+    emit_castle buf @@ castle pos; sep ();
+    emit_en_passant buf @@ en_passant pos; sep ();
+    Buffer.add_string buf @@ Int.to_string @@ halfmove pos; sep ();
+    Buffer.add_string buf @@ Int.to_string @@ fullmove pos;
+    Buffer.contents buf
 
   let parse_placement s =
     let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
