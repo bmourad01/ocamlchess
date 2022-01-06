@@ -727,17 +727,16 @@ module Fen = struct
         let diff = Square.File.count - file in
         (* All eight squares of the rank must be specified. *)
         if diff <> 0 then E.fail @@ Unspecified_squares (rank, diff)
-        else E.return ()) >>= fun () ->
+        else E.return ()) >>| fun () ->
     (* Return the individual bitboards. *)
-    E.return @@ Piece.(
-        color_tbl.(Color.white),
-        color_tbl.(Color.black),
-        kind_tbl.(Kind.pawn),
-        kind_tbl.(Kind.knight),
-        kind_tbl.(Kind.bishop),
-        kind_tbl.(Kind.rook),
-        kind_tbl.(Kind.queen),
-        kind_tbl.(Kind.king))
+    Piece.(color_tbl.(Color.white),
+           color_tbl.(Color.black),
+           kind_tbl.(Kind.pawn),
+           kind_tbl.(Kind.knight),
+           kind_tbl.(Kind.bishop),
+           kind_tbl.(Kind.rook),
+           kind_tbl.(Kind.queen),
+           kind_tbl.(Kind.king))
 
   let parse_active = function
     | "w" -> E.return Piece.White
