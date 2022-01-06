@@ -85,9 +85,7 @@ let which_color_exn pos sq =
   let open Bb.Syntax in
   if sq @ pos.white then Piece.White
   else if sq @ pos.black then Piece.Black
-  else invalid_arg @@
-    sprintf "No piece exists at square %s" @@
-    Square.to_string sq
+  else invalid_argf "No piece exists at square %s" (Square.to_string sq) ()
 
 let which_kind pos sq =
   let open Bb.Syntax in
@@ -107,9 +105,7 @@ let which_kind_exn pos sq =
   else if sq @ pos.rook then Piece.Rook
   else if sq @ pos.queen then Piece.Queen
   else if sq @ pos.king then Piece.King
-  else invalid_arg @@
-    sprintf "No piece exists at square %s" @@
-    Square.to_string sq
+  else invalid_argf "No piece exists at square %s" (Square.to_string sq) ()
 
 let collect_color pos c =
   board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
@@ -128,9 +124,9 @@ let piece_at_square pos sq = match which_color pos sq with
   | None -> None
   | Some c -> match which_kind pos sq with
     | Some k -> Some (Piece.create c k)
-    | None -> failwith @@
-      sprintf "Square %s is set for color %s, but no piece kind is available"
-        (Square.to_string sq) (Piece.Color.to_string_hum c)
+    | None ->
+      failwithf "Square %s is set for color %s, but no piece kind is available"
+        (Square.to_string sq) (Piece.Color.to_string_hum c) ()
 
 let piece_at_square_exn pos sq =
   Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
@@ -779,10 +775,10 @@ module Fen = struct
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
 
-  let of_string_exn ?(validate = true) s = match of_string s ~validate with
+  let of_string_exn ?(validate = true) s =
+    of_string s ~validate |> Result.map_error ~f:Error.to_string |> function
+    | Error e -> invalid_argf "Failed to parse FEN string '%s': %s" s e ()
     | Ok pos -> pos
-    | Error err -> invalid_arg @@ sprintf
-        "Failed to parse FEN string '%s': %s" s (Error.to_string err)
 end
 
 let start = Fen.(of_string_exn start)

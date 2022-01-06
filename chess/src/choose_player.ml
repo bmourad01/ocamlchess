@@ -15,5 +15,5 @@ let players = Hashtbl.of_alist_exn (module String) [
 
 let choose ?(limits = None) name =
   match Hashtbl.find players name with
-  | None -> invalid_arg @@ sprintf "Invalid player '%s'" name
+  | None -> invalid_argf "Invalid player '%s'" name ()
   | Some (create : Player.create) -> create ~limits ()

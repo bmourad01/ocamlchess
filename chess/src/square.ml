@@ -12,8 +12,8 @@ include T
 include Comparable.Make (T)
 
 let of_int_exn i =
-  if Int.(i land nmask <> 0) then
-    invalid_arg @@ sprintf "Invalid square integer '%d'" i
+  if Int.(i land nmask <> 0)
+  then invalid_argf "Invalid square integer '%d'" i ()
   else i
 
 let of_int_unsafe i = i
@@ -124,10 +124,10 @@ module Bits = struct
 end
 
 let create_exn ~rank ~file =
-  if rank land Bits.Rank.nmask <> 0 then
-    invalid_arg @@ sprintf "Invalid rank index '%d'" rank
-  else if file land Bits.File.nmask <> 0 then
-    invalid_arg @@ sprintf "Invalid file index '%d'" file
+  if rank land Bits.Rank.nmask <> 0
+  then invalid_argf "Invalid rank index '%d'" rank ()
+  else if file land Bits.File.nmask <> 0
+  then invalid_argf "Invalid file index '%d'" file ()
   else (rank lsl bits lsr 1) lor file
 
 let create ~rank ~file =
@@ -165,7 +165,7 @@ let of_string = Hashtbl.of_alist_exn (module String) Bits.[
   ] |> Hashtbl.find
 
 let of_string_exn s = match of_string s with
-  | None -> invalid_arg @@ sprintf "Invalid square string '%s'" s
+  | None -> invalid_argf "Invalid square string '%s'" s ()
   | Some sq -> sq
 
 let to_string sq = sprintf "%c%c" (file_char sq) (rank_char sq)

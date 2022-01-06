@@ -35,8 +35,7 @@ let no_validate =
 module Perft = struct
   let go depth pos no_validate =
     let validate = not no_validate in
-    if depth < 1 then invalid_arg @@
-      Format.sprintf "Invalid depth value %d" depth
+    if depth < 1 then Core_kernel.invalid_argf "Invalid depth value %d" depth ()
     else Perft.go depth @@ Chess.Position.Fen.of_string_exn pos ~validate
 
   let depth =

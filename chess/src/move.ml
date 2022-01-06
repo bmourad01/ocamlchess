@@ -43,7 +43,7 @@ let of_string_exn s = try
         assert (String.length s = 1);
         Some (s.[0] |> Piece.of_fen_exn |> Piece.kind) in
     create src dst ~promote
-  with Invalid_argument _ | Assert_failure _ -> invalid_arg @@
-    sprintf "Invalid move string '%s'" s
+  with Invalid_argument _ | Assert_failure _ ->
+    invalid_argf "Invalid move string '%s'" s ()
 
 let of_string s = Option.try_with @@ fun () -> of_string_exn s

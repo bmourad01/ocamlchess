@@ -61,8 +61,8 @@ module Color = struct
   let nmask = lnot 0b1
 
   let of_int_exn i =
-    if Int.(i land nmask <> 0) then invalid_arg @@
-      sprintf "Integer %d is not a valid color" i
+    if Int.(i land nmask <> 0)
+    then invalid_argf "Integer %d is not a valid color" i ()
     else ((Obj.magic i) : t)
 
   let[@inline] of_int i =
@@ -92,8 +92,8 @@ module Kind = struct
   let count = 6
 
   let of_int_exn i =
-    if Int.(i < 0 || i >= count) then invalid_arg @@
-      sprintf "Integer %d is not a valid kind" i
+    if Int.(i < 0 || i >= count)
+    then invalid_argf "Integer %d is not a valid kind" i ()
     else ((Obj.magic i) : t)
 
   let[@inline] of_int i =
@@ -148,12 +148,12 @@ let[@inline] is_sliding p = Kind.is_sliding @@ kind p
 
 let of_int_exn i =
   let color = Bits.color i in
-  if color land Color.nmask <> 0 then invalid_arg @@
-    sprintf "Invalid color index '%d'" color
+  if color land Color.nmask <> 0
+  then invalid_argf "Invalid color index '%d'" color ()
   else
     let kind = Bits.kind i in
-    if kind < 0 || kind >= Kind.count then invalid_arg @@
-      sprintf "Invalid kind index '%d'" kind
+    if kind < 0 || kind >= Kind.count
+    then invalid_argf "Invalid kind index '%d'" kind ()
     else i
 
 let of_int i =
@@ -182,7 +182,7 @@ let of_fen_exn = function
   | 'r' -> black_rook
   | 'q' -> black_queen
   | 'k' -> black_king
-  | c -> invalid_arg @@ sprintf "Invalid FEN piece '%c'" c
+  | c -> invalid_argf "Invalid FEN piece '%c'" c ()
 
 let of_fen c = Option.try_with @@ fun () -> of_fen_exn c
 
