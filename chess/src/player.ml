@@ -1,26 +1,28 @@
 open Core_kernel
 
-type limits = {
-  depth : int;
-  nodes : int;
-}
+include Player_intf
 
-exception No_moves
+let players = Hashtbl.create (module String)
 
-type t = <
-  choose : Position.t -> Position.legal list -> Position.legal;
-  limits : limits option;
-  name : string;
->
+let register player =
+  let key = player#name in
+  match Hashtbl.add players ~key ~data:player with
+  | `Duplicate -> invalid_argf "Player %s is already registered" key ()
+  | `Ok -> ()
 
-type create = ?limits:limits option -> unit -> t
+let lookup = Hashtbl.find players
+let enumerate () = Hashtbl.data players
 
-let best_moves moves ~eval =
-  let open Option.Monad_infix in
-  List.filter_map moves ~f:(fun m -> eval m >>| fun score -> (m, score)) |>
-  List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
-  List.fold_until ~init:([], 0) ~finish:fst
-    ~f:(fun (acc, score') (m, score) -> match acc with
-        | [] -> Continue (m :: acc, score)
-        | _ when score' > score -> Stop acc
-        | _ -> Continue (m :: acc, score'))
+let () =
+  (* These players are meant to be extremely simple. As such, they
+     shouldn't require any parameters (such as search limits). *)
+  register @@ Player_random.create ();
+  register @@ Player_same_color.create ();
+  register @@ Player_opposite_color.create ();
+  register @@ Player_cccp.create ();
+  register @@ Player_huddle.create ();
+  register @@ Player_swarm.create ();
+  register @@ Player_minimize_opponent_moves.create ();
+  register @@ Player_maximize_opponent_moves.create ();
+  register @@ Player_suicide_king.create ();
+  register @@ Player_pacifist.create ()

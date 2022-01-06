@@ -11,8 +11,8 @@ let piece_value (k : Piece.kind) = match k with
   | King -> 0
 
 let choose _ = function
-  | [] -> raise Player.No_moves
-  | moves -> Player.best_moves moves ~eval:(fun m ->
+  | [] -> raise Player_intf.No_moves
+  | moves -> Legal.best moves ~eval:(fun m ->
       let pos = Legal.new_position m in
       let in_check = Position.in_check pos in
       (* Give the highest possible penalty for checkmating the opponent.

@@ -22,19 +22,19 @@ let piece_value (k : Piece.kind) = match k with
   | King -> 0
     
 (* Try to capture an enemy piece of the highest value. *)
-let capture moves = Player.best_moves moves ~eval:(fun m ->
+let capture moves = Legal.best moves ~eval:(fun m ->
     Legal.capture m |> Option.map ~f:(fun (k, _) -> piece_value k))
 
 (* Push a piece that results in the the largest number of controlled
    squares. *)
 let push pos moves =
   let active = Position.active pos in
-  Player.best_moves moves ~eval:(fun m ->
+  Legal.best moves ~eval:(fun m ->
       let pos = Legal.new_position m in
       Some (Bb.count @@ Position.Attacks.all pos active))
     
 let choose pos = function
-  | [] -> raise Player.No_moves
+  | [] -> raise Player_intf.No_moves
   | moves ->
     let moves = match checkmate moves with
       | (_ :: _) as moves -> moves

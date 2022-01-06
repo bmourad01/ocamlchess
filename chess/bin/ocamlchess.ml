@@ -26,7 +26,7 @@ let man_players = [
 
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
-  | s -> Some (Chess.Choose_player.choose s)
+  | s -> Chess.Player.lookup s
 
 let no_validate =
   let doc = "Don't validate the input FEN position" in

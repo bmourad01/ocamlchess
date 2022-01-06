@@ -4,10 +4,10 @@ module Bb = Bitboard
 module Legal = Position.Legal
 
 let choose pos = function
-  | [] -> raise Player.No_moves
+  | [] -> raise Player_intf.No_moves
   | moves ->
     let active = Position.active pos in
-    Player.best_moves moves ~eval:(fun m ->
+    Legal.best moves ~eval:(fun m ->
         let pos = Legal.new_position m in
         let king = Position.king pos in
         let active_board = Position.board_of_color pos active in

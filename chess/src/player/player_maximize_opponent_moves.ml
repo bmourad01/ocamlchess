@@ -3,9 +3,9 @@ open Core_kernel
 module Legal = Position.Legal
 
 let choose _ = function
-  | [] -> raise Player.No_moves
+  | [] -> raise Player_intf.No_moves
   | moves ->
-    Player.best_moves moves ~eval:(fun m ->
+    Legal.best moves ~eval:(fun m ->
         let pos = Legal.new_position m in
         Some (List.length @@ Position.legal_moves pos)) |>
     List.random_element_exn
