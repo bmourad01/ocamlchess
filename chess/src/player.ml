@@ -208,7 +208,7 @@ module Same_color = struct
 
   let () = register @@ object
       method choose pos = function
-        | [] -> raise Player_intf.No_moves
+        | [] -> raise No_moves
         | moves ->
           let active = Position.active pos in
           Legal.best moves ~eval:(fun m ->
@@ -228,7 +228,7 @@ end
 module Suicide_king = struct
   let () = register @@ object
       method choose pos = function
-        | [] -> raise Player_intf.No_moves
+        | [] -> raise No_moves
         | moves ->
           let active = Position.active pos in
           Legal.best moves ~eval:(fun m ->
@@ -251,7 +251,7 @@ end
 module Swarm = struct
   let () = register @@ object
       method choose pos = function
-        | [] -> raise Player_intf.No_moves
+        | [] -> raise No_moves
         | moves ->
           let active = Position.active pos in
           let enemy = Position.enemy pos in
