@@ -7,7 +7,7 @@ module T = struct
 end
 
 include T
-include Comparable.Make (T)
+include Comparable.Make(T)
 
 let create ?(promote = None) src dst =
   let src = Square.to_int src in

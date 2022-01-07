@@ -54,7 +54,7 @@ module Color = struct
   end
 
   include T
-  include Comparable.Make (T)
+  include Comparable.Make(T)
   include Bits.Color
 
   let count = 2
@@ -86,7 +86,7 @@ module Kind = struct
   end
 
   include T
-  include Comparable.Make (T)
+  include Comparable.Make(T)
   include Bits.Kind
 
   let count = 6
@@ -119,7 +119,7 @@ module T = struct
 end
 
 include T
-include Comparable.Make (T)
+include Comparable.Make(T)
 include Bits.Pieces
 
 (* Converting to/from the ADTs *)

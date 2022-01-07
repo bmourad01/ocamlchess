@@ -9,7 +9,7 @@ module T = struct
 end
 
 include T
-include Comparable.Make (T)
+include Comparable.Make(T)
 
 let of_int_exn i =
   if Int.(i land nmask <> 0)

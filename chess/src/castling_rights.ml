@@ -8,7 +8,7 @@ module T = struct
 end
 
 include T
-include Comparable.Make (T)
+include Comparable.Make(T)
 
 type side = [`king | `queen]
 
