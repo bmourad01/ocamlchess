@@ -5,14 +5,15 @@ let man_players =
   `Pre "These are predefined algorithms for the computer. Most of them \
         implement weak, simple strategies, so they are mainly good for \
         testing and/or entertainment." :: begin
-    Chess.Player.enumerate () |>
-    Core_kernel.List.map ~f:(fun player ->
+    Chess.Player.enumerate () |> Base.List.map ~f:(fun player ->
         `P (Format.sprintf "%s: %s" player#name player#desc))
   end
 
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
-  | s -> Chess.Player.lookup s
+  | s -> match Chess.Player.lookup s with
+    | None -> Core_kernel.invalid_argf "Player %s is not registered" s ()
+    | Some _ as player -> player
 
 let no_validate =
   let doc = "Don't validate the input FEN position" in
