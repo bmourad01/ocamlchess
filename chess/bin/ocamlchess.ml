@@ -1,7 +1,7 @@
 open Cmdliner
 
 let man_players =
-  `S "PLAYER (predefined algorithm for the computer)" ::
+  `S "PLAYER" ::
   `Pre "These are predefined algorithms for the computer. Most of them \
         implement weak, simple strategies, so they are mainly good for \
         testing and/or entertainment." :: begin
