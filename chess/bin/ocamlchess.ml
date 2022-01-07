@@ -1,28 +1,14 @@
 open Cmdliner
 
-let man_players = [
-  `S "PLAYER (predefined algorithm for the computer)";
-  `P "random: the player that makes moves randomly";
-  `P "same-color: the player that tries to maximize the number of pieces \
-      that are on squares of its color";
-  `P "opposite-color: the player that tries to maximize the number of pieces \
-      that are on squares that are opposite of its color";
-  `P "cccp: the player that plays the 'checkmate, check, capture, push' \
-      strategy (in that order)";
-  `P "huddle: the player that tries to minimize the distance between its \
-      pieces and its king";
-  `P "swarm: the player that tries to minimize the distance between its \
-      pieces and the enemy king";
-  `P "min-oppt-moves: the player that attempts to minimize the number of \
-      moves the opponent can make.";
-  `P "max-oppt-moves: the player that attempts to maximize the number of \
-      moves the opponent can make.";
-  `P "suicide-king: the player that attempts to minimize the distance between \
-      both kings.";
-  `P "pacifist: the player that avoids, in the following priority, \
-      checkmating the opponent, checking the opponent, and capturing pieces. \
-      Failing that, it will capture the lowest-value piece possible.";
-]
+let man_players =
+  `S "PLAYER (predefined algorithm for the computer)" ::
+  `Pre "These are predefined algorithms for the computer. Most of them \
+        implement weak, simple strategies, so they are mainly good for \
+        testing and/or entertainment." :: begin
+    Chess.Player.enumerate () |>
+    Core_kernel.List.map ~f:(fun player ->
+        `P (Format.sprintf "%s: %s" player#name player#desc))
+  end
 
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
@@ -88,7 +74,7 @@ module Gui = struct
     let doc = "Delay (in seconds) between AI moves \
                (only applies when both players are AI)" in
     Arg.(value & opt float 0.0 (info ["delay"] ~docv:"DELAY" ~doc))
-  
+
   let t = Term.(const go $ pos $ white $ black $ delay $ no_validate)
 
   let info =

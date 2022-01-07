@@ -19,11 +19,14 @@ exception No_moves
       the player.
 
     - [name] returns the name of the player.
+
+    - [desc] returns a description of the player.
 *)
 type t = <
   choose : Position.t -> Position.legal list -> Position.legal;
   limits : limits option;
   name : string;
+  desc : string;
 >
 
 (** The instantiation signature. *)
