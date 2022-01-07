@@ -9,7 +9,6 @@
   (names gui_stubs))
  (link_flags
   ((-cclib -lstdc++)
-   (-cclib -lrt)
    (-cclib -lsfml-graphics)
    (-cclib -lsfml-system)
    (-cclib -lsfml-window))))
