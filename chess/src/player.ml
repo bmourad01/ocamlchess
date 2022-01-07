@@ -68,8 +68,8 @@ module Cccp = struct
 
       method limits = None
       method name = "cccp"
-      method desc = "The player that plays the 'checkmate, check, capture, push \
-                     strategy (in that order)."
+      method desc = "The player that plays the \"checkmate, check, capture, \
+                     push strategy\" (in that order)."
     end
 end
 
