@@ -10,7 +10,7 @@ let register (player : t) =
   | `Duplicate -> invalid_argf "Player %s is already registered" key ()
   | `Ok m -> players := m
 
-let lookup = Map.find !players
+let lookup name = Map.find !players name
 let enumerate () = Map.data !players
 
 (* Simple, weak players, taken directly from the paper:
