@@ -1,6 +1,20 @@
 open Core_kernel
 
-include Player_intf
+type limits = {
+  depth : int;
+  nodes : int;
+}
+
+exception No_moves
+
+type t = <
+  choose : Position.t -> Position.legal list -> Position.legal;
+  limits : limits option;
+  name : string;
+  desc : string;
+>
+
+type create = ?limits:limits option -> unit -> t
 
 (* We're using `Map` because we want the order to be consistent when displaying
    the available players. *)
