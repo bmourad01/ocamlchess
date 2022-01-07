@@ -2,6 +2,8 @@ open Core_kernel
 
 include Player_intf
 
+(* We're using `Map` because we want the order to be consistent when displaying
+   the available players. *)
 let players = ref @@ Map.empty (module String)
 
 let register (player : t) =
