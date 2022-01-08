@@ -20,7 +20,7 @@ type create = ?limits:limits option -> unit -> t
    the available players. *)
 let players = ref @@ Map.empty (module String)
 
-let register (player : t) =
+let register : t -> unit = fun player ->
   let key = player#name in
   match Map.add !players ~key ~data:player with
   | `Duplicate -> invalid_argf "Player %s is already registered" key ()
