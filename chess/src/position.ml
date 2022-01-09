@@ -808,12 +808,12 @@ module Makemove = struct
     | Piece.Black -> set_black pos @@ f @@ black pos
 
   let[@inline] map_kind k ~f = P.read () >>| fun pos -> match k with
-    | Piece.Pawn -> set_pawn pos @@ f @@ pawn pos
+    | Piece.Pawn   -> set_pawn pos   @@ f @@ pawn pos
     | Piece.Knight -> set_knight pos @@ f @@ knight pos
     | Piece.Bishop -> set_bishop pos @@ f @@ bishop pos
-    | Piece.Rook -> set_rook pos @@ f @@ rook pos
-    | Piece.Queen -> set_queen pos @@ f @@ queen pos
-    | Piece.King -> set_king pos @@ f @@ king pos
+    | Piece.Rook   -> set_rook pos   @@ f @@ rook pos
+    | Piece.Queen  -> set_queen pos  @@ f @@ queen pos
+    | Piece.King   -> set_king pos   @@ f @@ king pos
 
   (* Helper for setting both the color and the kind fields of the board. *)
   let[@inline] map_piece p ~f = 
@@ -866,9 +866,9 @@ module Makemove = struct
      well as clear our rights. *)
   let[@inline] king_moved_or_castled castle =
     P.read () >>= fun {active; _} -> match active, castle with
-    | Piece.White, Some Cr.Kingside -> white_kingside_castle
+    | Piece.White, Some Cr.Kingside  -> white_kingside_castle
     | Piece.White, Some Cr.Queenside -> white_queenside_castle
-    | Piece.Black, Some Cr.Kingside -> black_kingside_castle
+    | Piece.Black, Some Cr.Kingside  -> black_kingside_castle
     | Piece.Black, Some Cr.Queenside -> black_queenside_castle
     | Piece.White, None -> clear_white_castling_rights
     | Piece.Black, None -> clear_black_castling_rights
