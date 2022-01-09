@@ -10,7 +10,19 @@ end
 include T
 include Comparable.Make(T)
 
-type side = [`king | `queen] [@@deriving compare, equal, sexp]
+type side = Kingside | Queenside [@@deriving compare, equal, sexp]
+
+module Side = struct
+  module T = struct
+    type t = side [@@deriving compare, equal, sexp]
+  end
+
+  include T
+  include Comparable.Make(T)
+  
+  let is_kingside = equal Kingside
+  let is_queenside = equal Queenside
+end
 
 (* Integer conversion. *)
 
@@ -39,10 +51,10 @@ let all = white lor black
 (* Constructor *)
 
 let[@inline] singleton c s = match c, s with
-  | Piece.White, `king -> white_kingside
-  | Piece.White, `queen -> white_queenside
-  | Piece.Black, `king -> black_kingside
-  | Piece.Black, `queen -> black_queenside
+  | Piece.White, Kingside -> white_kingside
+  | Piece.White, Queenside -> white_queenside
+  | Piece.Black, Kingside -> black_kingside
+  | Piece.Black, Queenside -> black_queenside
 
 (* Logical operators. *)
 
@@ -54,10 +66,10 @@ let[@inline] minus x y = inter x @@ compl y
 (* Testing membership. *)
 
 let[@inline] mem x color side = match color, side with
-  | Piece.White, `king -> inter x white_kingside <> none
-  | Piece.White, `queen -> inter x white_queenside <> none
-  | Piece.Black, `king -> inter x black_kingside <> none
-  | Piece.Black, `queen -> inter x black_queenside <> none
+  | Piece.White, Kingside -> inter x white_kingside <> none
+  | Piece.White, Queenside -> inter x white_queenside <> none
+  | Piece.Black, Kingside -> inter x black_kingside <> none
+  | Piece.Black, Queenside -> inter x black_queenside <> none
 
 (* String operations. *)
 

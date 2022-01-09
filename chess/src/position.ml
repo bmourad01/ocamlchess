@@ -155,7 +155,7 @@ module Attacks = struct
   let[@inline] knight ?(ignore_same = true) pos c =
     gen pos c Knight Pre.knight ~ignore_same
 
-  (* Get the occupied squares for the board. `king_danger` indicates that the
+  (* Get the occupied squares for the board. Kingside_danger` indicates that the
      king of the opposite color should be ignored, so that sliding attacks
      can "see through" the enemy king. This is useful when the king is blocking
      the attack of a sliding piece. *)
@@ -533,7 +533,7 @@ module Valid = struct
 
   module Castling = struct
     let check_king_moved pos c b =
-      if Cr.(mem pos.castle c `king || mem pos.castle c `queen) then
+      if Cr.(mem pos.castle c Kingside || mem pos.castle c Queenside) then
         let sq = match c with
           | White -> Square.e1
           | Black -> Square.e8 in
@@ -550,10 +550,10 @@ module Valid = struct
     let go pos =
       check_king_moved pos White pos.white >>
       check_king_moved pos Black pos.black >>
-      check_rook_moved pos White pos.white `king Square.h1 >>
-      check_rook_moved pos White pos.white `queen Square.a1 >>
-      check_rook_moved pos Black pos.black `king Square.h8 >>
-      check_rook_moved pos Black pos.black `queen Square.a8
+      check_rook_moved pos White pos.white Kingside Square.h1 >>
+      check_rook_moved pos White pos.white Queenside Square.a1 >>
+      check_rook_moved pos Black pos.black Kingside Square.h8 >>
+      check_rook_moved pos Black pos.black Queenside Square.a8
   end
 
   module Half_and_fullmove = struct
@@ -864,12 +864,12 @@ module Apply = struct
      well as clear our rights. *)
   let[@inline] king_moved_or_castled castle =
     P.read () >>= fun {active; _} -> match active, castle with
-    | Piece.White, Some `king  -> white_kingside_castle
-    | Piece.White, Some `queen -> white_queenside_castle
-    | Piece.Black, Some `king  -> black_kingside_castle
-    | Piece.Black, Some `queen -> black_queenside_castle
-    | Piece.White, None        -> clear_white_castling_rights
-    | Piece.Black, None        -> clear_black_castling_rights
+    | Piece.White, Some Cr.Kingside -> white_kingside_castle
+    | Piece.White, Some Cr.Queenside -> white_queenside_castle
+    | Piece.Black, Some Cr.Kingside -> black_kingside_castle
+    | Piece.Black, Some Cr.Queenside -> black_queenside_castle
+    | Piece.White, None -> clear_white_castling_rights
+    | Piece.Black, None -> clear_black_castling_rights
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
@@ -1086,16 +1086,16 @@ module Moves = struct
           (* For queenside, the extra b-file square needs to be unoccupied, so
              check the mask. *)
           let ok = match s with
-            | `queen -> ok && Int.equal 3 @@ count (m - occupied)
-            | `king -> ok in
+            | Queenside -> ok && Int.equal 3 @@ count (m - occupied)
+            | Kingside -> ok in
           (* If both checks succeeded, then we can castle. *)
           if ok then !!sq else empty in
         (* Skip if we don't have any rights at all. *)
         match pos.active with
         | Piece.White when Cr.(inter pos.castle white <> none) ->
-          castle Square.g1 `king + castle Square.c1 `queen
+          castle Square.g1 Kingside + castle Square.c1 Queenside
         | Piece.Black when Cr.(inter pos.castle black <> none) ->
-          castle Square.g8 `king + castle Square.c8 `queen
+          castle Square.g8 Kingside + castle Square.c8 Queenside
         | _ -> empty
   end
 
@@ -1170,8 +1170,8 @@ module Moves = struct
         let file = Square.file @@ Move.src move in
         if Square.File.(file = e) then
           let file' = Square.file dst in
-          if Square.File.(file' = c) then Some `queen
-          else if Square.File.(file' = g) then Some `king
+          if Square.File.(file' = c) then Some Cr.Queenside
+          else if Square.File.(file' = g) then Some Cr.Kingside
           else None
         else None
       else None in

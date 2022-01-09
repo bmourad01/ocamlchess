@@ -264,10 +264,10 @@ let castle_tbl =
   let bk = Square.(!!f8 + !!g8) in
   let bq = Square.(!!b8 + !!c8 + !!d8) in
   let valid = [
-    Piece.White, `king,  (wk, wk);
-    Piece.White, `queen, (wq, wq -- Square.b1);
-    Piece.Black, `king,  (bk, bk);
-    Piece.Black, `queen, (bq, bq -- Square.b8);
+    Piece.White, Kingside,  (wk, wk);
+    Piece.White, Queenside, (wq, wq -- Square.b1);
+    Piece.Black, Kingside,  (bk, bk);
+    Piece.Black, Queenside, (bq, bq -- Square.b8);
   ] in
   Array.init (1 lsl bits) ~f:(fun i ->
       let x = of_int_unsafe i in

@@ -9,7 +9,19 @@ type t = private int [@@deriving compare, equal, hash, sexp]
 include Comparable.S with type t := t
 
 (** The side on which castling may occur. *)
-type side = [`king | `queen] [@@deriving compare, equal, sexp]
+type side = Kingside | Queenside [@@deriving compare, equal, sexp]
+
+module Side : sig
+  type t = side [@@deriving compare, equal, sexp]
+
+  include Comparable.S with type t := t
+
+  (** Returns [true] if it is on the king side. *)
+  val is_kingside : t -> bool
+
+  (** Returns [true] if it is on the queen side. *)
+  val is_queenside : t -> bool
+end
 
 (** Convert from integer representation. Raises [Invalid_argument] if the
     value is not within range. *)
