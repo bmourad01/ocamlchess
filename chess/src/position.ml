@@ -1169,10 +1169,11 @@ module Moves = struct
       Piece.is_pawn p && Option.exists pos.en_passant ~f:(Square.equal dst) in
     let castle =
       if Piece.is_king p then
-        if abs (Square.file (Move.src move) - Square.file dst) = 2 then
-          let file = Square.file dst in
-          if file = Square.File.c then Some `queen
-          else if file = Square.File.g then Some `king
+        let file = Square.file @@ Move.src move in
+        if Square.File.(file = e) then
+          let file' = Square.file dst in
+          if Square.File.(file' = c) then Some `queen
+          else if Square.File.(file' = g) then Some `king
           else None
         else None
       else None in
