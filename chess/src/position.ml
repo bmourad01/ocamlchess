@@ -19,7 +19,7 @@ module T = struct
     mutable queen : Bb.t;
     mutable king : Bb.t;
     mutable active : Piece.color;
-    mutable castle : Castling_rights.t;
+    mutable castle : Cr.t;
     mutable en_passant : Square.t option;
     mutable halfmove : int;
     mutable fullmove : int;
@@ -533,9 +533,7 @@ module Valid = struct
 
   module Castling = struct
     let check_king_moved pos c b =
-      if Castling_rights.mem pos.castle c `king ||
-         Castling_rights.mem pos.castle c `queen
-      then
+      if Cr.(mem pos.castle c `king || mem pos.castle c `queen) then
         let sq = match c with
           | White -> Square.e1
           | Black -> Square.e8 in
@@ -544,7 +542,7 @@ module Valid = struct
       else E.return ()
 
     let check_rook_moved pos c b s sq =
-      if Castling_rights.mem pos.castle c s then
+      if Cr.mem pos.castle c s then
         if Bb.(sq @ (b & pos.rook)) then E.return ()
         else E.fail @@ Invalid_castling_rights (c, Rook)
       else E.return ()
@@ -677,7 +675,7 @@ module Fen = struct
     | Piece.Black -> Buffer.add_char buf 'b'
 
   let emit_castle buf cr = Buffer.add_string buf @@
-    Castling_rights.to_string cr
+    Cr.to_string cr
 
   let emit_en_passant buf ep = Buffer.add_string buf @@
     Option.value_map ep ~default:"-" ~f:Square.to_string
@@ -747,7 +745,7 @@ module Fen = struct
     | "b" -> E.return Piece.Black
     | s -> E.fail @@ Invalid_active_color s
 
-  let parse_castle s = try E.return @@ Castling_rights.of_string_exn s with
+  let parse_castle s = try E.return @@ Cr.of_string_exn s with
     | _ -> E.fail @@ Invalid_castling_rights s
 
   let parse_en_passant = function
