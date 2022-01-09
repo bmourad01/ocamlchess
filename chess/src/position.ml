@@ -799,7 +799,7 @@ module P = Monad.Reader.Make(T)(Monad.Ident)
 
 (* Handling moves *)
 
-module Apply = struct
+module Makemove = struct
   open P.Syntax
 
   let[@inline] (>>) m n = m >>= fun _ -> n
@@ -949,7 +949,7 @@ module Apply = struct
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. `capture_maybe` is the (optional) piece at the destination
      square. *)
-  let[@inline] move m ~is_en_passant ~castle ~p ~capture_maybe =
+  let[@inline] go m ~is_en_passant ~castle ~p ~capture_maybe =
     Move.decomp m |> fun (sq, sq', promote) ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove is_en_passant sq sq' >>
@@ -1183,7 +1183,7 @@ module Moves = struct
         else None
       else None in
     let capture =
-      let m = Apply.move move ~is_en_passant ~castle ~p ~capture_maybe in
+      let m = Makemove.go move ~is_en_passant ~castle ~p ~capture_maybe in
       Monad.Reader.run m new_position in
     Legal.Fields.create
       ~move ~new_position ~capture ~is_en_passant ~castle :: acc
