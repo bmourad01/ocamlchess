@@ -986,7 +986,7 @@ module Legal = struct
           | [] -> Continue (m :: acc, score)
           | _ when score' > score -> Stop acc
           | _ -> Continue (m :: acc, score'))
-  
+
   include T
   include Comparable.Make(T)
 end
@@ -1218,7 +1218,6 @@ module Moves = struct
 end
 
 (* Generate all legal moves from the position. *)
-let legal_moves pos =
-  Analysis.create pos |> Monad.Reader.run Moves.go
+let legal_moves pos = Analysis.create pos |> Monad.Reader.run Moves.go
 
 include Comparable.Make(T)
