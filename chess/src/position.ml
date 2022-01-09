@@ -825,7 +825,7 @@ module Apply = struct
   let[@inline] clear_square p sq = map_piece p ~f:Bb.(fun b -> b -- sq)
 
   (* Assume that if `p` exists, then it occupies square `sq`. *)
-  let[@inline] clear_square_capture p sq = match p with
+  let[@inline] clear_square_capture sq = function
     | None -> P.return None
     | Some p -> map_piece p ~f:Bb.(fun b -> b -- sq) >>
       P.return @@ Some (Piece.kind p, sq)
@@ -893,15 +893,16 @@ module Apply = struct
     rook_moved_or_captured sq active
 
   (* Rook was captured at a square. Assume that it is the enemy's color. *)
-  let[@inline] rook_captured p' sq' = match p' with
+  let[@inline] rook_captured sq' = function
     | Some p when Piece.is_rook p -> rook_moved_or_captured sq' @@ Piece.color p
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle castle p p' sq sq' = match Piece.kind p with
+  let[@inline] update_castle castle p capture_maybe sq sq' =
+    match Piece.kind p with
     | King -> king_moved_or_castled castle
-    | Rook -> rook_moved sq >> rook_captured p' sq' 
-    | _ -> rook_captured p' sq'
+    | Rook -> rook_moved sq >> rook_captured sq' capture_maybe
+    | _ -> rook_captured sq' capture_maybe
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
@@ -916,7 +917,7 @@ module Apply = struct
         Some (Square.create_unsafe ~rank:(rank' + 1) ~file)
       | _ -> None
     else P.return None end >>= fun ep ->
-    P.read () >>| (Fn.flip set_en_passant @@ ep)
+    P.read () >>| fun pos -> set_en_passant pos ep
 
   (* After each halfmove, give the turn to the other player. *)
   let flip_active = P.read () >>| fun pos ->
@@ -946,15 +947,17 @@ module Apply = struct
     else P.return None
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
-     for legality. *)
-  let[@inline] move is_en_passant castle p p' m =
+     for legality. `capture_maybe` is the (optional) piece at the destination
+     square. *)
+  let[@inline] move m ~is_en_passant ~castle ~p ~capture_maybe =
     Move.decomp m |> fun (sq, sq', promote) ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove is_en_passant sq sq' >>
     update_en_passant p sq sq' >>
-    update_castle castle p p' sq sq' >>
+    update_castle castle p capture_maybe sq sq' >>
     (* Move the piece. *)
-    clear_square p sq >> clear_square_capture p' sq' >>= fun capture ->
+    clear_square p sq >>
+    clear_square_capture sq' capture_maybe >>= fun capture ->
     do_promote p promote >>= fun p ->
     move_with_en_passant is_en_passant p sq' >>= fun ep_capture ->
     (* Prepare for the next move. *)
@@ -1166,7 +1169,7 @@ module Moves = struct
   let[@inline] make_move pos p acc move =
     let new_position = copy pos in
     let dst = Move.dst move in
-    let p' = piece_at_square pos dst in
+    let capture_maybe = piece_at_square pos dst in
     let is_en_passant =
       Piece.is_pawn p && Option.exists pos.en_passant ~f:(Square.equal dst) in
     let castle =
@@ -1180,7 +1183,7 @@ module Moves = struct
         else None
       else None in
     let capture =
-      let m = Apply.move is_en_passant castle p p' move in
+      let m = Apply.move move ~is_en_passant ~castle ~p ~capture_maybe in
       Monad.Reader.run m new_position in
     Legal.Fields.create
       ~move ~new_position ~capture ~is_en_passant ~castle :: acc
