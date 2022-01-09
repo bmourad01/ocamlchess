@@ -734,15 +734,8 @@ module Fen = struct
         (* All eight squares of the rank must be specified. *)
         if diff <> 0 then E.fail @@ Unspecified_squares (rank, diff)
         else E.return ()) >>| fun () ->
-    (* Return the individual bitboards. *)
-    Piece.(color_tbl.(Color.white),
-           color_tbl.(Color.black),
-           kind_tbl.(Kind.pawn),
-           kind_tbl.(Kind.knight),
-           kind_tbl.(Kind.bishop),
-           kind_tbl.(Kind.rook),
-           kind_tbl.(Kind.queen),
-           kind_tbl.(Kind.king))
+    (* Return the bitboard tables. *)
+    color_tbl, kind_tbl
 
   let parse_active = function
     | "w" -> E.return Piece.White
@@ -772,8 +765,15 @@ module Fen = struct
 
   let of_string ?(validate = true) s = match String.split s ~on:' ' with
     | [placement; active; castle; en_passant; halfmove; fullmove] ->
-      parse_placement placement >>=
-      fun (white, black, pawn, knight, bishop, rook, queen, king) ->
+      parse_placement placement >>= fun (color_tbl, kind_tbl) ->
+      let white  = color_tbl.(Piece.Color.white) in
+      let black  = color_tbl.(Piece.Color.black) in
+      let pawn   =  kind_tbl.(Piece.Kind.pawn)   in
+      let knight =  kind_tbl.(Piece.Kind.knight) in
+      let bishop =  kind_tbl.(Piece.Kind.bishop) in
+      let rook   =  kind_tbl.(Piece.Kind.rook)   in
+      let queen  =  kind_tbl.(Piece.Kind.queen)  in
+      let king   =  kind_tbl.(Piece.Kind.king)   in
       parse_active active >>= fun active ->
       parse_castle castle >>= fun castle ->
       parse_en_passant en_passant >>= fun en_passant ->
