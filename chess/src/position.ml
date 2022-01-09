@@ -793,13 +793,12 @@ end
 
 let start = Fen.(of_string_exn start)
 
-(* P for Position. Since all the fields are mutable, this will act like a
-   pseudo-state monad. *)
-module P = Monad.Reader.Make(T)(Monad.Ident)
-
 (* Handling moves *)
 
 module Makemove = struct
+  (* P for Position. Since all the fields are mutable, this will act like a
+     pseudo-state monad. *)
+  module P = Monad.Reader.Make(T)(Monad.Ident)
   open P.Syntax
 
   let[@inline] (>>) m n = m >>= fun _ -> n
@@ -830,12 +829,11 @@ module Makemove = struct
     | Some p -> map_piece p ~f:Bb.(fun b -> b -- sq) >>
       P.return @@ Some (Piece.kind p, sq)
 
-  (* The halfmove clock is reset after captures or pawn moves, and incremented
+  (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
-  let[@inline] update_halfmove is_en_passant sq sq' = P.read () >>| fun pos ->
-    let open Bb.Syntax in
-    set_halfmove pos @@
-    if is_en_passant || (sq @ pos.pawn) || (sq' @ all_board pos)
+  let[@inline] update_halfmove capture_maybe is_en_passant p =
+    P.read () >>| fun pos -> set_halfmove pos @@
+    if is_en_passant || Piece.is_pawn p || Option.is_some capture_maybe
     then 0 else succ pos.halfmove
 
   let clear_white_castling_rights = P.read () >>| fun pos ->
@@ -889,27 +887,28 @@ module Makemove = struct
     | _ -> P.return ()
 
   (* Rook moved from a square. *)
-  let[@inline] rook_moved sq = P.read () >>= fun {active; _} ->
-    rook_moved_or_captured sq active
+  let[@inline] rook_moved src = P.read () >>= fun {active; _} ->
+    rook_moved_or_captured src active
 
   (* Rook was captured at a square. Assume that it is the enemy's color. *)
-  let[@inline] rook_captured sq' = function
-    | Some p when Piece.is_rook p -> rook_moved_or_captured sq' @@ Piece.color p
+  let[@inline] rook_captured dst = function
+    | Some p when Piece.is_rook p ->
+      rook_moved_or_captured dst @@ Piece.color p
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle castle p capture_maybe sq sq' =
+  let[@inline] update_castle castle p capture_maybe src dst =
     match Piece.kind p with
     | King -> king_moved_or_castled castle
-    | Rook -> rook_moved sq >> rook_captured sq' capture_maybe
-    | _ -> rook_captured sq' capture_maybe
+    | Rook -> rook_moved src >> rook_captured dst capture_maybe
+    | _ -> rook_captured dst capture_maybe
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
      that the move is legal. For the check if `p` is a pawn or not, we assume
      that it belongs to the active color. *) 
-  let[@inline] update_en_passant p sq sq' = begin if Piece.is_pawn p then
-      let rank = Square.rank sq and rank', file = Square.decomp sq' in
+  let[@inline] update_en_passant p src dst = begin if Piece.is_pawn p then
+      let rank = Square.rank src and rank', file = Square.decomp dst in
       P.read () >>| fun {active; _} -> match active with
       | Piece.White when rank' - rank = 2 ->
         Some (Square.create_unsafe ~rank:(rank' - 1) ~file)
@@ -934,12 +933,12 @@ module Makemove = struct
     | Some k -> P.read () >>| fun {active; _} -> Piece.create active k
     | None -> P.return p
 
-  let[@inline] move_with_en_passant is_en_passant p sq' =
-    set_square p sq' >>
+  let[@inline] move_with_en_passant is_en_passant p dst =
+    set_square p dst >>
     (* Check if this was an en passant capture. *)
     let open Piece in
     if is_en_passant then
-      let rank, file = Square.decomp sq' in
+      let rank, file = Square.decomp dst in
       begin P.read () >>| fun {active; _} -> match active with
         | White -> Square.create_unsafe ~rank:(rank - 1) ~file, black_pawn
         | Black -> Square.create_unsafe ~rank:(rank + 1) ~file, white_pawn
@@ -949,17 +948,16 @@ module Makemove = struct
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. `capture_maybe` is the (optional) piece at the destination
      square. *)
-  let[@inline] go m ~is_en_passant ~castle ~p ~capture_maybe =
-    Move.decomp m |> fun (sq, sq', promote) ->
+  let[@inline] go src dst promote ~is_en_passant ~castle ~p ~capture_maybe =
     (* Do the stuff that relies on the initial state. *)
-    update_halfmove is_en_passant sq sq' >>
-    update_en_passant p sq sq' >>
-    update_castle castle p capture_maybe sq sq' >>
+    update_halfmove capture_maybe is_en_passant p >>
+    update_en_passant p src dst >>
+    update_castle castle p capture_maybe src dst >>
     (* Move the piece. *)
-    clear_square p sq >>
-    clear_square_capture sq' capture_maybe >>= fun capture ->
+    clear_square p src >>
+    clear_square_capture dst capture_maybe >>= fun capture ->
     do_promote p promote >>= fun p ->
-    move_with_en_passant is_en_passant p sq' >>= fun ep_capture ->
+    move_with_en_passant is_en_passant p dst >>= fun ep_capture ->
     (* Prepare for the next move. *)
     update_fullmove >> flip_active >>
     (* Return the capture that was made, if any. *)
@@ -967,9 +965,6 @@ module Makemove = struct
         invalid_arg "Encountered direct and en passant capture in the same \
                      move")
 end
-
-(* A for Analysis *)
-module A = Monad.Reader.Make(Analysis.T)(Monad.Ident)
 
 module Legal = struct
   module T = struct
@@ -999,6 +994,8 @@ end
 type legal = Legal.t [@@deriving compare, equal, sexp]
 
 module Moves = struct
+  (* A for Analysis *)
+  module A = Monad.Reader.Make(Analysis.T)(Monad.Ident)
   open A.Syntax
 
   module Pawn = struct
@@ -1164,27 +1161,32 @@ module Moves = struct
     castle >>| fun castle ->
     move + castle
 
-  (* Create a copy of the current position which can then be freely mutated.
-     Then, apply the move to this position. *)
-  let[@inline] make_move pos p acc move =
-    let new_position = copy pos in
-    let dst = Move.dst move in
-    let capture_maybe = piece_at_square pos dst in
-    let is_en_passant =
-      Piece.is_pawn p && Option.exists pos.en_passant ~f:(Square.equal dst) in
-    let castle =
-      if Piece.is_king p then
-        let file = Square.file @@ Move.src move in
-        if Square.File.(file = e) then
-          let file' = Square.file dst in
-          if Square.File.(file' = c) then Some Cr.Queenside
-          else if Square.File.(file' = g) then Some Cr.Kingside
-          else None
+  let[@inline] is_castle p src dst =
+    if Piece.is_king p then
+      let file = Square.file src in
+      if Square.File.(file = e) then
+        let file' = Square.file dst in
+        if Square.File.(file' = c) then Some Cr.Queenside
+        else if Square.File.(file' = g) then Some Cr.Kingside
         else None
-      else None in
+      else None
+    else None 
+
+  let[@inline] make_move_aux pos src dst promote p =
+    let new_position = copy pos in
+    let capture_maybe = piece_at_square pos dst in
+    let is_en_passant = Piece.is_pawn p && is_en_passant pos dst in
+    let castle = is_castle p src dst in
     let capture =
-      let m = Makemove.go move ~is_en_passant ~castle ~p ~capture_maybe in
+      let m = Makemove.go src dst promote
+          ~is_en_passant ~castle ~p ~capture_maybe in
       Monad.Reader.run m new_position in
+    new_position, capture, is_en_passant, castle
+
+  let[@inline] accum_move pos p acc move =
+    let src, dst, promote = Move.decomp move in
+    let new_position, capture, is_en_passant, castle =
+      make_move_aux pos src dst promote p in
     Legal.Fields.create
       ~move ~new_position ~capture ~is_en_passant ~castle :: acc
 
@@ -1199,7 +1201,7 @@ module Moves = struct
           | Piece.Black -> Bb.((b & rank_1) = b)
         end
       | _ -> false in
-    let f = make_move pos @@ Piece.create pos.active k in
+    let f = accum_move pos @@ Piece.create pos.active k in
     if not is_promote
     then Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
     else Bb.fold b ~init ~f:(fun acc dst ->
@@ -1221,6 +1223,19 @@ module Moves = struct
          A.List.fold ~init:[] ~f:(fun acc (sq, k) ->
              any sq k >>= exec sq k acc)
 end
+
+let make_move ?(validate = false) pos move =
+  let src, dst, promote = Move.decomp move in
+  match piece_at_square pos src with
+  | Some p ->
+    let new_position, _, _, _ = Moves.make_move_aux pos src dst promote p in
+    if validate then
+      match Valid.check new_position with
+      | Ok () -> new_position
+      | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
+    else new_position    
+  | None -> invalid_argf "Invalid move: no piece exists at %s"
+              (Square.to_string src) ()
 
 (* Generate all legal moves from the position. *)
 let legal_moves pos = Analysis.create pos |> Monad.Reader.run Moves.go

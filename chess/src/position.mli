@@ -315,6 +315,14 @@ module Legal : sig
   include Comparable.S with type t := t
 end
 
+(** [make_move pos m ~validate] applies move [m] to position [pos], returning
+    thenew position. If there is no piece at the source square of [m], then
+    [Invalid_argument] is raised. The resulting position is not guaranteed
+    to be legal. If [validate] is [true], then the resulting position will be
+    checked for validity, raising [Invalid_argument] upon failure. By default,
+    it is [false]. It is assumed that [pos] is a legal position. *)
+val make_move : ?validate:bool -> t -> Move.t -> t
+
 (** [legal_moves pos] returns a list of legal moves for the active color of
     position [pos]. It is assumed that [pos] is reachable from the starting 
     position. May raise if [pos] is not valid. No particular order is
