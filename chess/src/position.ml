@@ -1201,12 +1201,12 @@ module Moves = struct
         Pawn.promote src dst |> List.fold ~init:acc ~f)
 
   let[@inline] any sq = function
-    | Piece.Pawn -> pawn sq
+    | Piece.Pawn   -> pawn sq
     | Piece.Knight -> knight sq
     | Piece.Bishop -> bishop sq
-    | Piece.Rook -> rook sq
-    | Piece.Queen -> queen sq
-    | Piece.King -> king sq
+    | Piece.Rook   -> rook sq
+    | Piece.Queen  -> queen sq
+    | Piece.King   -> king sq
 
   let go = A.read () >>= fun {pos; king_sq; num_checkers; _} ->
     (* If the king has more than one attacker, then it is the only piece
