@@ -295,6 +295,10 @@ module Legal : sig
   (** Returns [true] if the move was an en passant capture. *)
   val is_en_passant : legal -> bool
 
+  (** If the move was a castle, then returns the side that the castling was
+      performed on. Otherwise, returns [None]. *)
+  val castle : legal -> Castling_rights.side option
+  
   (** [best moves ~eval] will take a list of moves [moves], evaluate them with
       [eval], and then return a list of the highest scoring moves (with the
       same score). If [eval] returns [None] for a particular move, then it

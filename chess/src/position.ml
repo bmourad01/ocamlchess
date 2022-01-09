@@ -864,14 +864,14 @@ module Apply = struct
 
   (* If we're castling our king on this move, then we need to move the rook as
      well as clear our rights. *)
-  let[@inline] king_moved_or_castled sq sq' =
-    P.read () >>= fun {active; _} -> match active with
-    | Piece.White when Square.(sq = e1 && sq' = g1) -> white_kingside_castle
-    | Piece.White when Square.(sq = e1 && sq' = c1) -> white_queenside_castle
-    | Piece.Black when Square.(sq = e8 && sq' = g8) -> black_kingside_castle
-    | Piece.Black when Square.(sq = e8 && sq' = c8) -> black_queenside_castle
-    | Piece.White -> clear_white_castling_rights
-    | Piece.Black -> clear_black_castling_rights
+  let[@inline] king_moved_or_castled castle =
+    P.read () >>= fun {active; _} -> match active, castle with
+    | Piece.White, Some `king  -> white_kingside_castle
+    | Piece.White, Some `queen -> white_queenside_castle
+    | Piece.Black, Some `king  -> black_kingside_castle
+    | Piece.Black, Some `queen -> black_queenside_castle
+    | Piece.White, None        -> clear_white_castling_rights
+    | Piece.Black, None        -> clear_black_castling_rights
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
@@ -896,8 +896,8 @@ module Apply = struct
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle p p' sq sq' = match Piece.kind p with
-    | King -> king_moved_or_castled sq sq'
+  let[@inline] update_castle castle p p' sq sq' = match Piece.kind p with
+    | King -> king_moved_or_castled castle
     | Rook -> rook_moved sq >> rook_captured p' sq' 
     | _ -> rook_captured p' sq'
 
@@ -945,12 +945,12 @@ module Apply = struct
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. *)
-  let[@inline] move is_en_passant p p' m =
+  let[@inline] move is_en_passant castle p p' m =
     Move.decomp m |> fun (sq, sq', promote) ->
     (* Do the stuff that relies on the initial state. *)
     update_halfmove is_en_passant sq sq' >>
     update_en_passant p sq sq' >>
-    update_castle p p' sq sq' >>
+    update_castle castle p p' sq sq' >>
     (* Move the piece. *)
     clear_square p sq >> clear_square_capture p' sq' >>= fun capture ->
     do_promote p promote >>= fun p ->
@@ -973,6 +973,7 @@ module Legal = struct
       new_position : T.t;
       capture : (Piece.kind * Square.t) option;
       is_en_passant : bool;
+      castle : Cr.side option;
     } [@@deriving compare, equal, sexp, fields]
   end
 
@@ -1166,9 +1167,20 @@ module Moves = struct
     let p' = piece_at_square pos dst in
     let is_en_passant =
       Piece.is_pawn p && Option.exists pos.en_passant ~f:(Square.equal dst) in
+    let castle =
+      if Piece.is_king p then
+        if abs (Square.file (Move.src move) - Square.file dst) = 2 then
+          let file = Square.file dst in
+          if file = Square.File.c then Some `queen
+          else if file = Square.File.g then Some `king
+          else None
+        else None
+      else None in
     let capture =
-      Monad.Reader.run (Apply.move is_en_passant p p' move) new_position in
-    Legal.Fields.create ~move ~new_position ~capture ~is_en_passant :: acc
+      let m = Apply.move is_en_passant castle p p' move in
+      Monad.Reader.run m new_position in
+    Legal.Fields.create
+      ~move ~new_position ~capture ~is_en_passant ~castle :: acc
 
   (* Get the new positions from the bitboard of squares we can move to. *)
   let[@inline] exec src k init b = A.read () >>| fun {pos; _} ->

@@ -10,7 +10,7 @@ end
 include T
 include Comparable.Make(T)
 
-type side = [`king | `queen]
+type side = [`king | `queen] [@@deriving compare, equal, sexp]
 
 (* Integer conversion. *)
 

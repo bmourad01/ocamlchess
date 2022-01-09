@@ -9,7 +9,7 @@ type t = private int [@@deriving compare, equal, hash, sexp]
 include Comparable.S with type t := t
 
 (** The side on which castling may occur. *)
-type side = [`king | `queen]
+type side = [`king | `queen] [@@deriving compare, equal, sexp]
 
 (** Convert from integer representation. Raises [Invalid_argument] if the
     value is not within range. *)
