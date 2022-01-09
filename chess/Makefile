@@ -14,3 +14,6 @@ uninstall:
 
 test:
 	dune test
+
+doc:
+	dune build @doc

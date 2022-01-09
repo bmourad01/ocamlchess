@@ -18,3 +18,6 @@ uninstall:
 
 test:
 	$(MAKE) test -C $(DIR)
+
+doc:
+	$(MAKE) doc -C $(DIR)
