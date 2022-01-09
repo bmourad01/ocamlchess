@@ -1226,16 +1226,12 @@ end
 
 let make_move ?(validate = false) pos move =
   let src, dst, promote = Move.decomp move in
-  match piece_at_square pos src with
-  | Some p ->
-    let new_position, _, _, _ = Moves.make_move_aux pos src dst promote p in
-    if validate then
-      match Valid.check new_position with
-      | Ok () -> new_position
-      | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
-    else new_position    
-  | None -> invalid_argf "Invalid move: no piece exists at %s"
-              (Square.to_string src) ()
+  let p = piece_at_square_exn pos src in
+  let new_position, _, _, _ = Moves.make_move_aux pos src dst promote p in
+  if validate then match Valid.check new_position with
+    | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
+    | Ok () -> new_position
+  else new_position    
 
 (* Generate all legal moves from the position. *)
 let legal_moves pos = Analysis.create pos |> Monad.Reader.run Moves.go
