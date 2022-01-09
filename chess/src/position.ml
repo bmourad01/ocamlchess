@@ -678,8 +678,7 @@ module Fen = struct
     | Piece.White -> Buffer.add_char buf 'w'
     | Piece.Black -> Buffer.add_char buf 'b'
 
-  let emit_castle buf cr = Buffer.add_string buf @@
-    Cr.to_string cr
+  let emit_castle buf cr = Buffer.add_string buf @@ Cr.to_string cr
 
   let emit_en_passant buf ep = Buffer.add_string buf @@
     Option.value_map ep ~default:"-" ~f:Square.to_string
@@ -696,13 +695,14 @@ module Fen = struct
     Buffer.contents buf
 
   let parse_placement s =
-    let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
-    let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
     (* Split the ranks so we can parse them individually. *)
     begin match String.split s ~on:'/' with
       | [_; _; _; _; _; _; _; _] as ranks -> E.return @@ List.rev ranks
       | ranks -> E.fail @@ Invalid_number_of_ranks (List.length ranks)
     end >>= fun ranks ->
+    (* Tables for our bitboards. *)
+    let color_tbl = Array.create Bb.empty ~len:Piece.Color.count in
+    let kind_tbl = Array.create Bb.empty ~len:Piece.Kind.count in
     (* The main entry to parsing the rank. *)
     let rec parse_rank rank file sym = match Char.get_digit sym with
       | Some inc -> skip_file rank file inc
