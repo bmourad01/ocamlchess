@@ -1,5 +1,3 @@
-open Base
-
 (** Number of bits needed to store the square. *)
 val bits : int
 
@@ -10,7 +8,7 @@ val count : int
     the range [\[0, 63\]]. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
 
-include Comparable.S with type t := t
+include Base.Comparable.S with type t := t
 
 (** [of_int_exn i] creates a square from an integer [i]. Raises
     [Invalid_argument] if the integer is not within the specified range. *)

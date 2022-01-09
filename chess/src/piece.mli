@@ -1,5 +1,3 @@
-open Base
-
 (** Number of bits needed to store the color. *)
 
 val color_bits : int
@@ -18,7 +16,7 @@ type color = White | Black [@@deriving compare, equal, hash, sexp]
 module Color : sig
   type t = color [@@deriving compare, equal, hash, sexp]
 
-  include Comparable.S with type t := t
+  include Base.Comparable.S with type t := t
 
   (** The number of valid colors. *)
   val count : int
@@ -58,7 +56,7 @@ type kind = Pawn | Knight | Bishop | Rook | Queen | King
 module Kind : sig
   type t = kind [@@deriving compare, equal, hash, sexp]
 
-  include Comparable.S with type t := t
+  include Base.Comparable.S with type t := t
 
   (** The number of valid pieces. *)
   val count : int
@@ -103,7 +101,7 @@ end
     color and kind. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
 
-include Comparable.S with type t := t
+include Base.Comparable.S with type t := t
 
 (** The white pawn. *)
 val white_pawn : t

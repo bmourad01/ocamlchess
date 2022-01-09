@@ -1,9 +1,7 @@
-open Base
-
 (** Representation of a chess position. *)
 type t [@@deriving compare, equal, sexp]
 
-include Comparable.S with type t := t
+include Base.Comparable.S with type t := t
 
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
@@ -150,7 +148,7 @@ module Valid : sig
 
   (** [check pos] will return [Ok ()] if the position is valid (i.e. reachable
       from the starting position), and [Error err] otherwise. *)
-  val check : t -> (unit, error) Result.t
+  val check : t -> (unit, error) result
 end
 
 (** This submodule provides compatibility with FEN (Forsyth-Edwards
@@ -188,7 +186,7 @@ module Fen : sig
       is checked for legality, returning [Error err] upon failure. By default,
       it is [true]. Use of invalid chess positions (e.g. with the move
       generator) may result in undefined behavior. *)
-  val of_string : ?validate:bool -> string -> (t, error) Result.t
+  val of_string : ?validate:bool -> string -> (t, error) result
 
   (** [of_string_exn s ~validate] attempts to parse a FEN string [s] into a
       position. Raises [Invalid_argument] if [s] is not a syntactically valid
@@ -312,7 +310,7 @@ module Legal : sig
   (** A legal move. *)
   type t = legal [@@deriving compare, equal, sexp]
 
-  include Comparable.S with type t := t
+  include Base.Comparable.S with type t := t
 end
 
 (** [make_move pos m ~validate] applies move [m] to position [pos], returning

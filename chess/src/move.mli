@@ -1,5 +1,3 @@
-open Base
-
 (** The number of bits required to store the move information. *)
 val bits : int
 
@@ -8,7 +6,7 @@ val bits : int
     and an optional piece promotion. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
 
-include Comparable.S with type t := t
+include Base.Comparable.S with type t := t
 
 (** [create src dst ~promote] creates a move from square [src] to square
     [dst], with an optional promotion [promote]. *)
@@ -25,7 +23,7 @@ val promote : t -> Piece.kind option
 
 (** [decomp m] returns a triple containing the source, destination and
     promotion of move [m], in that order. *)
-val decomp : t -> (Square.t * Square.t * Piece.kind option)
+val decomp : t -> Square.t * Square.t * Piece.kind option
 
 (** [to_string m] returns the UCI-compatible string notation of move [m]. *)
 val to_string : t -> string

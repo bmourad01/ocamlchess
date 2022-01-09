@@ -1,11 +1,9 @@
-open Base
-
 (** Representation of the board as a 64-bit number. Each set bit represents
     an occupied square. The LSB represents the a1 square, while the MSB
     represents the h8 square. Files are ascended first, then ranks. *)
 type t = private int64 [@@deriving compare, equal, hash, sexp]
 
-include Comparable.S with type t := t
+include Base.Comparable.S with type t := t
 
 (** [of_int64 i] creates a bitboard with the bit representation [i]. *)
 val of_int64 : int64 -> t
@@ -133,7 +131,7 @@ val fold_rev : t -> init:'a -> f:('a -> Square.t -> 'a) -> 'a
 val fold_until :
   t ->
   init:'a ->
-  f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t) ->
+  f:('a -> Square.t -> ('a, 'b) Base.Continue_or_stop.t) ->
   finish:('a -> 'b) ->
   'b
 
@@ -145,7 +143,7 @@ val fold_until :
 val fold_until_rev :
   t ->
   init:'a ->
-  f:('a -> Square.t -> ('a, 'b) Continue_or_stop.t) ->
+  f:('a -> Square.t -> ('a, 'b) Base.Continue_or_stop.t) ->
   finish:('a -> 'b) ->
   'b
 

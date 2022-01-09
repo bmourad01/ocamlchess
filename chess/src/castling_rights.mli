@@ -1,12 +1,10 @@
-open Base
-
 (** The number of bits required to represent castling rights. *)
 val bits : int
 
 (** The representation of castling rights as an unboxed integer. *)
 type t = private int [@@deriving compare, equal, hash, sexp]
 
-include Comparable.S with type t := t
+include Base.Comparable.S with type t := t
 
 (** The side on which castling may occur. *)
 type side = Kingside | Queenside [@@deriving compare, equal, sexp]
@@ -14,7 +12,7 @@ type side = Kingside | Queenside [@@deriving compare, equal, sexp]
 module Side : sig
   type t = side [@@deriving compare, equal, sexp]
 
-  include Comparable.S with type t := t
+  include Base.Comparable.S with type t := t
 
   (** Returns [true] if it is on the king side. *)
   val is_kingside : t -> bool
