@@ -95,6 +95,10 @@ val collect_color : t -> Piece.color -> (Square.t * Piece.kind) list
     the active color occupy squares on position [pos]. *)
 val collect_active : t -> (Square.t * Piece.kind) list
 
+(** [collect_enemy pos] returns a list of square-kind pairs where pieces of
+    the opponent's color occupy squares on position [pos]. *)
+val collect_enemy : t -> (Square.t * Piece.kind) list
+
 (** [collect_kind pos k] returns a list of square-color pairs where pieces of
     kind [k] occupy squares on position [pos]. *)
 val collect_kind : t -> Piece.kind -> (Square.t * Piece.color) list

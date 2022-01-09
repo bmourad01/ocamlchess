@@ -112,6 +112,7 @@ let collect_color pos c =
       (sq, which_kind_exn pos sq) :: acc)
 
 let collect_active pos = collect_color pos pos.active
+let collect_enemy pos = collect_color pos @@ enemy pos
 
 let collect_kind pos k =
   board_of_kind pos k |> Bb.fold ~init:[] ~f:(fun acc sq ->
@@ -310,15 +311,18 @@ module Analysis = struct
     let occupied = all_board pos in
     let active_board = active_board pos in
     let enemy_board = enemy_board pos in
+    let enemy_pieces = collect_color pos enemy in
     (* We're considering attacked squares only for king moves. These squares
        should include enemy pieces which may block an enemy attack, since it
        would be illegal for the king to attack those squares. *)
     let enemy_attacks =
-      Attacks.all pos enemy ~ignore_same:false ~king_danger:true in
+      let open Bb in 
+      let occupied = occupied -- king_sq in
+      List.fold enemy_pieces ~init:empty ~f:(fun acc (sq, k) ->
+          acc + Attacks.pre_of_kind sq occupied enemy k) in
     (* Sliding pieces will be used to calculate pins. *)
     let enemy_sliders =
-      collect_color pos enemy |>
-      List.filter ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
+      List.filter enemy_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
     (* Pinned pieces. *)
     let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
     (* Pieces checking our king. *)
