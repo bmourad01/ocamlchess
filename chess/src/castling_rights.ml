@@ -19,7 +19,7 @@ module Side = struct
 
   include T
   include Comparable.Make(T)
-  
+
   let is_kingside = equal Kingside
   let is_queenside = equal Queenside
 end
