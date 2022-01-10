@@ -323,6 +323,6 @@ val make_move : ?validate:bool -> t -> Move.t -> t
 
 (** [legal_moves pos] returns a list of legal moves for the active color of
     position [pos]. It is assumed that [pos] is reachable from the starting 
-    position. May raise if [pos] is not valid. No particular order is
-    guaranteed for the resulting list. *)
+    position. May raise if this assumption is violated. No particular order
+    is guaranteed for the resulting list. *)
 val legal_moves : t -> legal list
