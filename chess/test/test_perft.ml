@@ -53,6 +53,7 @@ let test_position_3 () =
     3, 2_812L;
     4, 43_238L;
     5, 674_624L;
+    6, 11_030_083L;
   ]
 
 let test_position_4 () =

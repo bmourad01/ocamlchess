@@ -1018,9 +1018,11 @@ module Moves = struct
        so we can do a bit of heavy calculation here. *)
     let[@inline] en_passant sq ep pw diag = A.read () >>|
       fun {king_sq; occupied; enemy_sliders; _} ->
-      (* Remove our pawn and the captured pawn from the board. *)
       let open Bb in
-      let occupied = occupied -- sq -- pw in
+      (* Remove our pawn and the captured pawn from the board, but pretend that
+         the en passant square is occupied. This covers the case where we can
+         capture the pawn, but it may leave our pawn pinned. *)
+      let occupied = occupied -- sq -- pw ++ ep in
       let init = diag ++ ep and finish = ident in
       (* Check if an appropriate diagonal attack from the king would reach
          that corresponding piece. *)
