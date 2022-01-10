@@ -197,7 +197,7 @@ module Sliding = struct
 
   (* Compute the index into the magic hash table. *)
   let[@inline] hash occupied magic shift =
-    Int64.((occupied * magic) lsr Int.(64 - shift) |> to_int_exn)
+    Int64.((occupied * magic) lsr Int.(64 - shift) |> to_int_trunc)
 
   (* Generate the magic hash table for bishop and rook moves. *)
   let bishop, rook =
