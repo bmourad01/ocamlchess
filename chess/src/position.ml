@@ -1042,7 +1042,8 @@ module Moves = struct
       let diag = diag' & enemy_board in
       match pos.en_passant, en_passant_pawn with
       | Some ep, Some pw when ep @ diag' -> en_passant sq ep pw diag
-      | _ -> A.return diag
+      | Some _, Some _ | None, None -> A.return diag
+      | _ -> failwith "En passant square and pawn are inconsistent"
 
     let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
 
