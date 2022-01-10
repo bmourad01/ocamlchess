@@ -261,15 +261,18 @@ module Analysis = struct
       | None -> pinners
       | Some sq' -> Map.update pinners sq' ~f:(function
           | Some b -> b ++ sq
-          | None -> !!sq)
-    and mask = active_board -- king_sq
-    and init = Map.empty (module Square) in
+          | None -> !!sq) in
+    let bishop = lazy (Pre.bishop king_sq occupied) in
+    let rook = lazy (Pre.rook king_sq occupied) in
+    let queen = lazy (Pre.queen king_sq occupied) in
+    let mask = active_board -- king_sq in
+    let init = Map.empty (module Square) in
     List.fold enemy_sliders ~init ~f:(fun pinners (sq, k) ->
         let mask = mask & Pre.between king_sq sq in
         let checker, king = match k with
-          | Piece.Bishop -> Pre.(bishop sq occupied, bishop king_sq occupied)
-          | Piece.Rook -> Pre.(rook sq occupied, rook king_sq occupied)
-          | Piece.Queen -> Pre.(queen sq occupied, queen king_sq occupied)
+          | Piece.Bishop -> Pre.bishop sq occupied, Lazy.force bishop
+          | Piece.Rook -> Pre.rook sq occupied, Lazy.force rook
+          | Piece.Queen -> Pre.queen sq occupied, Lazy.force queen
           | _ -> Bb.(empty, empty) in
         update pinners sq checker king mask)
 
