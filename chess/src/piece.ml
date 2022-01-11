@@ -7,7 +7,7 @@ let bits = color_bits + kind_bits
 module Bits = struct
   let color_mask = 0b1_000
   let kind_mask = 0b0_111
-  
+
   module Color = struct
     let white = 0b0
     let black = 0b1

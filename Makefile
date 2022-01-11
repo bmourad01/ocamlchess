@@ -21,3 +21,6 @@ test:
 
 doc:
 	$(MAKE) doc -C $(DIR)
+
+indent:
+	sh tools/ocp-indent-all.sh
