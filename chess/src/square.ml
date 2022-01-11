@@ -128,36 +128,38 @@ let create_exn ~rank ~file =
   then invalid_argf "Invalid rank index '%d'" rank ()
   else if file land Bits.File.nmask <> 0
   then invalid_argf "Invalid file index '%d'" file ()
-  else (rank lsl bits lsr 1) lor file
+  else (rank lsl (bits lsr 1)) lor file
 
 let create ~rank ~file =
   if rank land Bits.Rank.nmask <> 0 then None
   else if file land Bits.File.nmask <> 0 then None
-  else Some ((rank lsl bits lsr 1) lor file)
+  else Some ((rank lsl (bits lsr 1)) lor file)
 
-let[@inline] create_unsafe ~rank ~file = (rank lsl bits lsr 1) lor file
+let[@inline] create_unsafe ~rank ~file = (rank lsl (bits lsr 1)) lor file
 
 let with_rank_exn sq rank =
   if rank land Bits.Rank.nmask <> 0
   then invalid_argf "Invalid rank index '%d'" rank ()
-  else (rank lsl bits lsr 1) lor Bits.file sq
+  else (rank lsl (bits lsr 1)) lor Bits.file sq
 
 let with_rank sq rank =
   if rank land Bits.Rank.nmask <> 0 then None
   else Some ((rank lsl bits lsr 1) lor Bits.file sq)
 
-let[@inline] with_rank_unsafe sq rank = (rank lsl bits lsr 1) lor Bits.file sq
+let[@inline] with_rank_unsafe sq rank =
+  (rank lsl (bits lsr 1)) lor Bits.file sq
 
 let with_file_exn sq file =
   if file land Bits.File.nmask <> 0
   then invalid_argf "Invalid file index '%d'" file ()
-  else (Bits.rank sq lsl bits lsr 1) lor file
+  else (Bits.rank sq lsl (bits lsr 1)) lor file
 
 let with_file sq file =
   if file land Bits.File.nmask <> 0 then None
-  else Some ((Bits.rank sq lsl bits lsr 1) lor file)
+  else Some ((Bits.rank sq lsl (bits lsr 1)) lor file)
 
-let[@inline] with_file_unsafe sq file = (Bits.rank sq lsl bits lsr 1) lor file
+let[@inline] with_file_unsafe sq file =
+  (Bits.rank sq lsl (bits lsr 1)) lor file
 
 let rank_char =
   let ranks = "12345678" in
