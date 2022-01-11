@@ -61,7 +61,7 @@ val with_file_unsafe : t -> int -> t
     within the range [\[0, 7\]], otherwise [None] is returned. *)
 val with_rank : t -> int -> t option
 
-(** [with_file_exn sq file] sets the file of [sq] to [file]. [file] must fall
+(** [with_file sq file] sets the file of [sq] to [file]. [file] must fall
     within the range [\[0, 7\]], otherwise [None] is returned. *)
 val with_file : t -> int -> t option
 
