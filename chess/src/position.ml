@@ -305,10 +305,9 @@ module Analysis = struct
     let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
     (* Square of the en passant pawn. *)
     let en_passant_pawn = Option.map pos.en_passant ~f:(fun ep ->
-        let rank, file = Square.decomp ep in
         match pos.active with
-        | Piece.White -> Square.create_unsafe ~rank:(rank - 1) ~file
-        | Piece.Black -> Square.create_unsafe ~rank:(rank + 1) ~file) in
+        | Piece.White -> Square.(with_rank_unsafe ep Rank.five)
+        | Piece.Black -> Square.(with_rank_unsafe ep Rank.four)) in
     (* Most general info. *)
     let enemy = Piece.Color.opposite pos.active in
     let occupied = all_board pos in
@@ -911,12 +910,12 @@ module Makemove = struct
      that the move is legal. For the check if `p` is a pawn or not, we assume
      that it belongs to the active color. *) 
   let[@inline] update_en_passant p src dst = begin if Piece.is_pawn p then
-      let rank = Square.rank src and rank', file = Square.decomp dst in
+      let rank = Square.rank src and rank' = Square.rank dst in
       P.read () >>| fun {active; _} -> match active with
       | Piece.White when rank' - rank = 2 ->
-        Some (Square.create_unsafe ~rank:(rank' - 1) ~file)
+        Some Square.(with_rank_unsafe dst Rank.three)
       | Piece.Black when rank - rank' = 2 ->
-        Some (Square.create_unsafe ~rank:(rank' + 1) ~file)
+        Some Square.(with_rank_unsafe dst Rank.six)
       | _ -> None
     else P.return None end >>= fun ep ->
     P.read () >>| fun pos -> set_en_passant pos ep
@@ -941,10 +940,9 @@ module Makemove = struct
     (* Check if this was an en passant capture. *)
     let open Piece in
     if is_en_passant then
-      let rank, file = Square.decomp dst in
       begin P.read () >>| fun {active; _} -> match active with
-        | White -> Square.create_unsafe ~rank:(rank - 1) ~file, black_pawn
-        | Black -> Square.create_unsafe ~rank:(rank + 1) ~file, white_pawn
+        | White -> Square.(with_rank_unsafe dst Rank.five), black_pawn
+        | Black -> Square.(with_rank_unsafe dst Rank.four), white_pawn
       end >>= fun (sq, p) -> clear_square p sq >> P.return @@ Some (Pawn, sq)
     else P.return None
 

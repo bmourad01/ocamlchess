@@ -39,6 +39,32 @@ val create_unsafe : rank:int -> file:int -> t
     returned. *)
 val create : rank:int -> file:int -> t option
 
+(** [with_rank_exn sq rank] sets the rank of [sq] to [rank]. [rank] must fall
+    within the range [\[0, 7\]], otherwise [Invalid_argument] is raised. *)
+val with_rank_exn : t -> int -> t
+
+(** [with_file_exn sq file] sets the file of [sq] to [file]. [file] must fall
+    within the range [\[0, 7\]], otherwise [Invalid_argument] is raised. *)
+val with_file_exn : t -> int -> t
+
+(** [with_rank_unsafe sq rank] sets the rank of [sq] to [rank]. No sanity
+    checks are performed, so invalid arguments may result in undefined
+    behavior. *)
+val with_rank_unsafe : t -> int -> t
+
+(** [with_file_unsafe sq file] sets the file of [sq] to [file]. No sanity
+    checks are performed, so invalid arguments may result in undefined
+    behavior. *)
+val with_file_unsafe : t -> int -> t
+
+(** [with_rank sq rank] sets the rank of [sq] to [rank]. [rank] must fall
+    within the range [\[0, 7\]], otherwise [None] is returned. *)
+val with_rank : t -> int -> t option
+
+(** [with_file_exn sq file] sets the file of [sq] to [file]. [file] must fall
+    within the range [\[0, 7\]], otherwise [None] is returned. *)
+val with_file : t -> int -> t option
+
 (** [to_int sq] returns the integer representation of [sq]. *)
 val to_int : t -> int
 
