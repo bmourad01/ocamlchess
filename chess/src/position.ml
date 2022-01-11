@@ -834,9 +834,9 @@ module Makemove = struct
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
-  let[@inline] update_halfmove capture_maybe is_en_passant p =
+  let[@inline] update_halfmove direct_capture is_en_passant p =
     P.read () >>| fun pos -> set_halfmove pos @@
-    if is_en_passant || Piece.is_pawn p || Option.is_some capture_maybe
+    if is_en_passant || Piece.is_pawn p || Option.is_some direct_capture
     then 0 else succ pos.halfmove
 
   let clear_white_castling_rights = P.read () >>| fun pos ->
@@ -900,11 +900,11 @@ module Makemove = struct
     | _ -> P.return ()
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle castle p capture_maybe src dst =
+  let[@inline] update_castle castle p direct_capture src dst =
     match Piece.kind p with
     | King -> king_moved_or_castled castle
-    | Rook -> rook_moved src >> rook_captured dst capture_maybe
-    | _ -> rook_captured dst capture_maybe
+    | Rook -> rook_moved src >> rook_captured dst direct_capture
+    | _ -> rook_captured dst direct_capture
 
   (* Update the en passant square if a pawn double push occurred. We're
      skipping the check on whether the file changed, since our assumption is
@@ -949,16 +949,16 @@ module Makemove = struct
     else P.return None
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
-     for legality. `capture_maybe` is the (optional) piece at the destination
+     for legality. `direct_capture` is the (optional) piece at the destination
      square. *)
-  let[@inline] go src dst promote ~is_en_passant ~castle ~p ~capture_maybe =
+  let[@inline] go src dst promote ~is_en_passant ~castle ~p ~direct_capture =
     (* Do the stuff that relies on the initial state. *)
-    update_halfmove capture_maybe is_en_passant p >>
+    update_halfmove direct_capture is_en_passant p >>
     update_en_passant p src dst >>
-    update_castle castle p capture_maybe src dst >>
+    update_castle castle p direct_capture src dst >>
     (* Move the piece. *)
     clear_square p src >>
-    clear_square_capture dst capture_maybe >>= fun capture ->
+    clear_square_capture dst direct_capture >>= fun capture ->
     do_promote p promote >>= fun p ->
     move_with_en_passant is_en_passant p dst >>= fun ep_capture ->
     (* Prepare for the next move. *)
@@ -1167,26 +1167,23 @@ module Moves = struct
     castle >>| fun castle ->
     move + castle
 
-  let[@inline] is_castle p src dst =
-    if Piece.is_king p then
-      let file = Square.file src in
-      if Square.File.(file = e) then
-        let file' = Square.file dst in
-        if Square.File.(file' = c) then Some Cr.Queenside
-        else if Square.File.(file' = g) then Some Cr.Kingside
-        else None
-      else None
-    else None 
-
   let[@inline] make_move_aux pos src dst promote p =
     let new_position = copy pos in
-    let capture_maybe = piece_at_square pos dst in
+    let direct_capture = piece_at_square pos dst in
     let is_en_passant = Piece.is_pawn p && is_en_passant pos dst in
-    let castle = is_castle p src dst in
+    let castle =
+      if Piece.is_king p then
+        let file = Square.file src in
+        if Square.File.(file = e) then
+          let file' = Square.file dst in
+          if Square.File.(file' = c) then Some Cr.Queenside
+          else if Square.File.(file' = g) then Some Cr.Kingside
+          else None
+        else None
+      else None  in
     let capture =
-      let m = Makemove.go src dst promote
-          ~is_en_passant ~castle ~p ~capture_maybe in
-      Monad.Reader.run m new_position in
+      Fn.flip Monad.Reader.run new_position @@
+      Makemove.go src dst promote ~is_en_passant ~castle ~p ~direct_capture in
     new_position, capture, is_en_passant, castle
 
   let[@inline] accum_move pos p acc move =
@@ -1239,7 +1236,6 @@ let make_move ?(validate = false) pos move =
     | Ok () -> new_position
   else new_position    
 
-(* Generate all legal moves from the position. *)
 let legal_moves pos = Analysis.create pos |> Monad.Reader.run Moves.go
 
 include Comparable.Make(T)
