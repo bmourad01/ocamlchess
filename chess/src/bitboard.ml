@@ -73,11 +73,8 @@ let[@inline] set b sq = union b @@ singleton sq
 let[@inline] clear b sq = minus b @@ singleton sq
 let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
 
-(* We could call to C with native popcount, but we sacrifice portability, as
-   well as the overhead of the C call itself. The Core library already 
-   implements a fast algorithm to compute the population count, so we'll use
-   that. *)
-let[@inline] count b = Int64.popcount b
+external count : (int64[@unboxed]) -> (int[@untagged]) =
+  "ml_int64_popcount" "ml_int64_popcount_unboxed" [@@noalloc]
 
 let[@inline] next_square b = Square.of_int_unsafe @@ Int64.ctz b
 
