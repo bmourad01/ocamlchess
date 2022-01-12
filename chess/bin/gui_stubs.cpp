@@ -12,11 +12,16 @@
 #include <SFML/Graphics.hpp>
 #include <cstdlib>
 
+/* Calling to OCaml */
+
+static const value *_piece_at_square, *_string_of_square;
+
 /*
   Assets
 
   XXX: don't rely on system installation for these
-*/
+
+ */
 
 static const char *const _piece_font_filename =
     "/usr/share/fonts/TTF/FreeSerif.ttf";
@@ -31,7 +36,14 @@ static const value *named_value_or_fail(const char *name) {
   if (auto p = caml_named_value(name)) {
     return p;
   } else {
-    fprintf(stderr, "Named value \"%s\" was not found", name);
+    fprintf(stderr, "Named value %s was not found\n", name);
+    abort();
+  }
+}
+
+static void init_font_or_fail(sf::Font &font, const char *name) {
+  if (!font.loadFromFile(name)) {
+    fprintf(stderr, "Couldn't load font %s\n", _piece_font_filename);
     abort();
   }
 }
@@ -94,21 +106,10 @@ static struct custom_operations sfml_window_custom_ops = {
 extern "C" {
 value ml_init_fonts(value dummy) {
   CAMLparam1(dummy);
-
-  if (!_piece_font.loadFromFile(_piece_font_filename)) {
-    fprintf(stderr, "couldn't load font %s\n", _piece_font_filename);
-    abort();
-  }
-
-  if (!_text_font.loadFromFile(_text_font_filename)) {
-    fprintf(stderr, "couldn't load font %s\n", _text_font_filename);
-    abort();
-  }
-
+  init_font_or_fail(_piece_font, _piece_font_filename);
+  init_font_or_fail(_text_font, _text_font_filename);
   CAMLreturn(Val_unit);
 }
-
-static const value *_piece_at_square, *_string_of_square;
 
 value ml_init_named_values(value dummy) {
   CAMLparam1(dummy);
