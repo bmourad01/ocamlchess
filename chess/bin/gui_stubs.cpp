@@ -27,9 +27,9 @@ static sf::Font _piece_font, _text_font;
 
 /* Helpers */
 
-static value named_value_or_fail(const char *name) {
+static const value *named_value_or_fail(const char *name) {
   if (auto p = caml_named_value(name)) {
-    return *p;
+    return p;
   } else {
     fprintf(stderr, "Named value \"%s\" was not found", name);
     abort();
@@ -97,14 +97,24 @@ value ml_init_fonts(value dummy) {
 
   if (!_piece_font.loadFromFile(_piece_font_filename)) {
     fprintf(stderr, "couldn't load font %s\n", _piece_font_filename);
-    CAMLreturn(Val_bool(false));
-  }
-  if (!_text_font.loadFromFile(_text_font_filename)) {
-    fprintf(stderr, "couldn't load font %s\n", _text_font_filename);
-    CAMLreturn(Val_bool(false));
+    abort();
   }
 
-  CAMLreturn(Val_bool(true));
+  if (!_text_font.loadFromFile(_text_font_filename)) {
+    fprintf(stderr, "couldn't load font %s\n", _text_font_filename);
+    abort();
+  }
+
+  CAMLreturn(Val_unit);
+}
+
+static const value *_piece_at_square, *_string_of_square;
+
+value ml_init_named_values(value dummy) {
+  CAMLparam1(dummy);
+  _piece_at_square = named_value_or_fail("piece_at_square");
+  _string_of_square = named_value_or_fail("string_of_square");
+  CAMLreturn(Val_unit);
 }
 
 value ml_window_create(value w, value h, value name) {
@@ -188,10 +198,7 @@ value ml_window_display(value window) {
 value ml_window_paint_board(value window, value position, value valid_squares,
                             value selected_square, value prev_move) {
   CAMLparam5(window, position, valid_squares, selected_square, prev_move);
-  CAMLlocal4(piece, sq_string, piece_at_square, string_of_square);
-
-  piece_at_square = named_value_or_fail("piece_at_square");
-  string_of_square = named_value_or_fail("string_of_square");
+  CAMLlocal2(piece, sq_string);
 
   auto sf_window = Sfml_window_val(window);
   auto size = sf_window->getSize();
@@ -241,7 +248,7 @@ value ml_window_paint_board(value window, value position, value valid_squares,
       sf_window->draw(tile);
 
       // Draw the piece at the current square (if any).
-      piece = caml_callback2(piece_at_square, position, Val_int(sq));
+      piece = caml_callback2(*_piece_at_square, position, Val_int(sq));
       if (piece != Val_none) {
         auto unicode = piece_unicode(Piece_color(Some_val(piece)),
                                      Piece_kind(Some_val(piece)));
@@ -256,7 +263,7 @@ value ml_window_paint_board(value window, value position, value valid_squares,
       }
 
       // Draw the name of the square in algebraic notation.
-      sq_string = caml_callback(string_of_square, Val_int(sq));
+      sq_string = caml_callback(*_string_of_square, Val_int(sq));
       sf::Text tile_text(String_val(sq_string), _text_font, sz2);
       tile_text.setPosition(x * tw, y * th);
       tile_text.setFillColor(sf::Color(0x00, 0x00, 0x00, 0x5F));

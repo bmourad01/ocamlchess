@@ -238,24 +238,26 @@ let () = Callback.register "string_of_square" Square.to_string
 
 let window_size = 640
 
-external init_fonts : unit -> bool = "ml_init_fonts"
+external init_fonts : unit -> unit = "ml_init_fonts"
+external init_named_values : unit -> unit = "ml_init_named_values"
 
 let go pos ~white ~black ~delay =
-  if init_fonts () then
-    let window = Window.create window_size window_size "chess" in
-    let legal = Position.legal_moves pos in
-    begin match white with
-      | None -> printf "White is human\n%!"
-      | Some player -> printf "White is AI: %s\n%!" player#name
-    end;
-    begin match black with
-      | None -> printf "Black is human\n%!"
-      | Some player -> printf "Black is AI: %s\n%!" player#name
-    end;
-    printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
-    printf "%d legal moves\n%!" @@ List.length legal;
-    printf "\n%!";
-    Monad.State.eval (start_with_endgame_check delay) @@
-    State.Fields.create ~window ~pos ~legal
-      ~sel:None ~prev:None ~endgame:None
-      ~white ~black
+  init_fonts ();
+  init_named_values ();
+  let window = Window.create window_size window_size "chess" in
+  let legal = Position.legal_moves pos in
+  begin match white with
+    | None -> printf "White is human\n%!"
+    | Some player -> printf "White is AI: %s\n%!" player#name
+  end;
+  begin match black with
+    | None -> printf "Black is human\n%!"
+    | Some player -> printf "Black is AI: %s\n%!" player#name
+  end;
+  printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
+  printf "%d legal moves\n%!" @@ List.length legal;
+  printf "\n%!";
+  Monad.State.eval (start_with_endgame_check delay) @@
+  State.Fields.create ~window ~pos ~legal
+    ~sel:None ~prev:None ~endgame:None
+    ~white ~black
