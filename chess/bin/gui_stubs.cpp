@@ -10,6 +10,7 @@
 #include <caml/version.h>
 
 #include <SFML/Graphics.hpp>
+#include <cstdlib>
 
 /*
   Assets
@@ -25,6 +26,15 @@ static const char *const _text_font_filename =
 static sf::Font _piece_font, _text_font;
 
 /* Helpers */
+
+static value named_value_or_fail(const char *name) {
+  if (auto p = caml_named_value(name)) {
+    return *p;
+  } else {
+    fprintf(stderr, "Named value \"%s\" was not found", name);
+    abort();
+  }
+}
 
 enum Color : int { White, Black };
 enum Kind : int { Pawn, Knight, Bishop, Rook, Queen, King };
@@ -49,7 +59,7 @@ static wchar_t piece_unicode(int color, int kind) {
   }
 }
 
-#define Sfml_window_val(v)                                          \
+#define Sfml_window_val(v)                                                     \
   (*reinterpret_cast<sf::RenderWindow **>(Data_custom_val(window)))
 
 #define Make_square(x, y) (static_cast<unsigned>(((y) << 3) | (x)))
@@ -67,7 +77,7 @@ static void sfml_finalize_window(value window) {
 }
 
 static struct custom_operations sfml_window_custom_ops = {
-  (char *)"sfml_window_custom_ops",
+  const_cast<char *>("sfml_window_custom_ops"),
   sfml_finalize_window,
   custom_compare_default,
   custom_compare_ext_default,
@@ -178,7 +188,10 @@ value ml_window_display(value window) {
 value ml_window_paint_board(value window, value position, value valid_squares,
                             value selected_square, value prev_move) {
   CAMLparam5(window, position, valid_squares, selected_square, prev_move);
-  CAMLlocal2(piece, sq_string);
+  CAMLlocal4(piece, sq_string, piece_at_square, string_of_square);
+
+  piece_at_square = named_value_or_fail("piece_at_square");
+  string_of_square = named_value_or_fail("string_of_square");
 
   auto sf_window = Sfml_window_val(window);
   auto size = sf_window->getSize();
@@ -228,8 +241,7 @@ value ml_window_paint_board(value window, value position, value valid_squares,
       sf_window->draw(tile);
 
       // Draw the piece at the current square (if any).
-      piece = caml_callback2(*caml_named_value("piece_at_square"), position,
-                             Val_int(sq));
+      piece = caml_callback2(piece_at_square, position, Val_int(sq));
       if (piece != Val_none) {
         auto unicode = piece_unicode(Piece_color(Some_val(piece)),
                                      Piece_kind(Some_val(piece)));
@@ -244,8 +256,7 @@ value ml_window_paint_board(value window, value position, value valid_squares,
       }
 
       // Draw the name of the square in algebraic notation.
-      sq_string =
-          caml_callback(*caml_named_value("string_of_square"), Val_int(sq));
+      sq_string = caml_callback(string_of_square, Val_int(sq));
       sf::Text tile_text(String_val(sq_string), _text_font, sz2);
       tile_text.setPosition(x * tw, y * th);
       tile_text.setFillColor(sf::Color(0x00, 0x00, 0x00, 0x5F));
