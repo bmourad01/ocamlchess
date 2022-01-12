@@ -16,6 +16,12 @@ let create ?(promote = None) src dst =
   let promote = Option.value_map promote ~default:(-1) ~f:Piece.Kind.to_int in
   (promote lsl (Square.bits * 2)) lor (dst lsl Square.bits) lor src
 
+let create_with_promote src dst promote =
+  let src = Square.to_int src in
+  let dst = Square.to_int dst in
+  let promote = Piece.Kind.to_int promote in
+  (promote lsl (Square.bits * 2)) lor (dst lsl Square.bits) lor src
+
 let square_mask = (1 lsl Square.bits) - 1
 
 let[@inline] src m = Square.of_int_unsafe @@ m land square_mask

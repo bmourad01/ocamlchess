@@ -12,6 +12,10 @@ include Base.Comparable.S with type t := t
     [dst], with an optional promotion [promote]. *)
 val create : ?promote:Piece.kind option -> Square.t -> Square.t -> t
 
+(** [create_with_promote src dst promote] creates a move from square [src] to
+    square [dst], with an explicit promotion [promote]. *)
+val create_with_promote : Square.t -> Square.t -> Piece.kind -> t
+
 (** [src m] returns the source square of move [m]. *)
 val src : t -> Square.t
 
