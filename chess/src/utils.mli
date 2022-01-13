@@ -1,3 +1,5 @@
+(** Miscellaneous utilities. *)
+
 (** Implements the xorshift64star pseudo-random number generator.
     This is a direct translation of the implementation used in Stockfish. *)
 module Prng : sig
