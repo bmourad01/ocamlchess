@@ -71,7 +71,7 @@ static wchar_t piece_unicode(int color, int kind) {
   }
 }
 
-#define Sfml_window_val(v)                                          \
+#define Sfml_window_val(v)                                                     \
   (*reinterpret_cast<sf::RenderWindow **>(Data_custom_val(window)))
 
 #define Make_square(x, y) (static_cast<unsigned>(((y) << 3) | (x)))
@@ -101,8 +101,9 @@ static struct custom_operations sfml_window_custom_ops = {
 #endif
 };
 
-extern "C" {
+/* Exposed minimal API (requires C linkage) */
 
+extern "C" {
 value ml_init_fonts(value dummy) {
   CAMLparam1(dummy);
   init_font_or_fail(_piece_font, _piece_font_filename);
@@ -273,5 +274,4 @@ value ml_window_paint_board(value window, value position, value valid_squares,
 
   CAMLreturn(Val_unit);
 }
-
 } // extern "C"
