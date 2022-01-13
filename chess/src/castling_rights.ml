@@ -22,6 +22,20 @@ module Side = struct
 
   let is_kingside = equal Kingside
   let is_queenside = equal Queenside
+
+  let nmask = lnot 0b1
+
+  let of_int_exn i =
+    if Int.(i land nmask <> 0)
+    then invalid_argf "Invalid side integer %d" i ()
+    else ((Obj.magic i) : t)
+
+  let of_int i =
+    if Int.(i land nmask <> 0) then None
+    else Some ((Obj.magic i) : t)
+
+  let of_int_unsafe i = ((Obj.magic i) : t)
+  let to_int s = ((Obj.magic (Obj.repr s)) : int)
 end
 
 (* Integer conversion. *)

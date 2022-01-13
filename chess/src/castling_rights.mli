@@ -19,6 +19,21 @@ module Side : sig
 
   (** Returns [true] if it is on the queen side. *)
   val is_queenside : t -> bool
+
+  (** [of_int_exn i] returns the corresponding side of integer [i].
+      Raises [Invalid_argument] if the value is not within range. *)
+  val of_int_exn : int -> t
+
+  (** [of_int_unsafe i] returns the corresponding side of integer [i].
+      No santity checks are performed. *)
+  val of_int_unsafe : int -> t
+
+  (** [of_int i] returns the corresponding side of integer [i].
+      Returns [None] if the value is not within range. *)
+  val of_int : int -> t option
+
+  (** [to_int side] returns the integer representation of [side]. *)
+  val to_int : t -> int
 end
 
 (** Convert from integer representation. Raises [Invalid_argument] if the
