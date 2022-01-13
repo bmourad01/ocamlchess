@@ -6,4 +6,6 @@
    test_precalculated
    test_perft)
  (libraries ounit2 chess)
- (ocamlopt_flags -O3))
+ (ocamlopt_flags -O3)
+ (link_flags ((-cclib -lstdc++))))
+  

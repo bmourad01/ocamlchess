@@ -3,9 +3,9 @@
  (public_name ocamlchess)
  (libraries core_kernel monads)
  (foreign_stubs
-  (language c)
+  (language cxx)
   (names int64_stubs)
-  (flags -march=native))
+  (flags -march=native -fPIC))
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_compare
                   ppx_fields_conv
