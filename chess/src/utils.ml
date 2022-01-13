@@ -12,6 +12,7 @@ module Prng = struct
         let s = Int64.(s lxor (s lsr 12)) in
         let s = Int64.(s lxor (s lsl 25)) in
         let s = Int64.(s lxor (s lsr 27)) in
-        state := s; s
+        state := s;
+        Int64.(s * 2685821657736338717L)
     end
 end
