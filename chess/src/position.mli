@@ -3,6 +3,12 @@ type t [@@deriving compare, equal, sexp]
 
 include Base.Comparable.S with type t := t
 
+(** A Zobrist key. *)
+type zkey = private int64 [@@deriving compare, equal, sexp]
+
+(** [hash pos] returns a Zobrist key representing a hash of the position. *)
+val hash : t -> zkey
+
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
 val white : t -> Bitboard.t

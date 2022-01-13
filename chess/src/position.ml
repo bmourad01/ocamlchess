@@ -5,6 +5,40 @@ module Pre = Precalculated
 module Bb = Bitboard
 module Cr = Castling_rights
 
+(* Setup for the various keys. *)
+module Zkey = struct
+  type t = int64 [@@deriving compare, equal, sexp]
+
+  let seed = 0xDEADBEEFL
+
+  let piece_keys = Array.init Piece.Color.count ~f:(fun _ ->
+      Array.make_matrix ~dimx:Piece.Kind.count ~dimy:Square.count 0L)
+
+  let en_passant_keys = Array.create ~len:Square.File.count 0L
+  let kingside_castle_keys = Array.create ~len:Piece.Color.count 0L
+  let queenside_castle_keys = Array.create ~len:Piece.Color.count 0L
+
+  let white_to_move_key =
+    let rng = Utils.Prng.create seed in
+    kingside_castle_keys.(Piece.Color.white) <- rng#rand;
+    queenside_castle_keys.(Piece.Color.white) <- rng#rand;
+    kingside_castle_keys.(Piece.Color.black) <- rng#rand;
+    queenside_castle_keys.(Piece.Color.black) <- rng#rand;
+    let white_to_move_key = rng#rand in
+    for file = 0 to Square.File.count - 1 do
+      en_passant_keys.(file) <- rng#rand
+    done;
+    for k = 0; to Piece.Kind.count - 1 do
+      for sq = 0 to Square.count - 1 do
+        piece_keys.(Piece.Color.white).(k).(sq) <- rng#rand;
+        piece_keys.(Piece.Color.black).(k).(sq) <- rng#rand;
+      done
+    done;
+    white_to_move_key
+end
+
+type zkey = Zkey.t [@@deriving compare, equal, sexp]
+
 module T = struct
   (* We'll use mutable fields since, when applying moves, this has a
      performance advantage over a typical state monad pattern (where
@@ -141,6 +175,47 @@ let collect_all pos =
   all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
       let c = which_color_exn pos sq and k = which_kind_exn pos sq in
       (sq, Piece.create c k) :: acc)
+
+(* Hashing *)
+
+let hash pos = Fn.flip Monad.State.exec 0L @@
+  let open Zkey in
+  let module H = Monad.State.Make(Zkey)(Monad.Ident) in
+  let open H.Syntax in
+  let flip h = Int64.((lxor) h) in
+  (* White to move. *)
+  begin match pos.active with
+    | White -> H.update @@ flip white_to_move_key
+    | Black -> H.return ()
+  end >>= fun () ->
+  (* Pieces. *)
+  collect_all pos |> H.List.iter ~f:(fun (sq, p) ->
+      let c = Piece.(Color.to_int @@ color p) in
+      let k = Piece.(Kind.to_int @@ kind p) in
+      let sq = Square.to_int sq in
+      H.update @@ flip piece_keys.(c).(k).(sq)) >>= fun () ->
+  (* En passant. *)
+  begin match pos.en_passant with
+    | Some ep -> H.update @@ flip en_passant_keys.(Square.file ep)
+    | None -> H.return ()
+  end >>= fun () ->
+  (* Castling rights. *)
+  begin if Cr.mem pos.castle White Kingside
+    then H.update @@ flip kingside_castle_keys.(Piece.Color.white)
+    else H.return ()
+  end >>= fun () ->
+  begin if Cr.mem pos.castle White Queenside
+    then H.update @@ flip queenside_castle_keys.(Piece.Color.white)
+    else H.return ()
+  end >>= fun () ->
+  begin if Cr.mem pos.castle Black Kingside
+    then H.update @@ flip kingside_castle_keys.(Piece.Color.black)
+    else H.return ()
+  end >>= fun () ->
+  begin if Cr.mem pos.castle Black Queenside
+    then H.update @@ flip queenside_castle_keys.(Piece.Color.black)
+    else H.return ()
+  end
 
 (* Attack patterns. *)
 
