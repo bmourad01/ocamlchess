@@ -43,7 +43,7 @@ static const value *named_value_or_fail(const char *name) {
 
 static void init_font_or_fail(sf::Font &font, const char *name) {
   if (!font.loadFromFile(name)) {
-    fprintf(stderr, "Couldn't load font %s\n", _piece_font_filename);
+    fprintf(stderr, "Couldn't load font %s\n", name);
     abort();
   }
 }
