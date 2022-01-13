@@ -53,6 +53,7 @@ module Gui = struct
     let white = choose_player white in
     let black = choose_player black in
     let delay = match white, black with
+      | Some _, Some _ when Float.(delay <= 0.0) -> Fun.id
       | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
       | _ -> Fun.id in
     Gui.go pos ~white ~black ~delay
