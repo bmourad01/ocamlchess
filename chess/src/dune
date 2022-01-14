@@ -1,7 +1,10 @@
 (library
  (name chess)
  (public_name ocamlchess)
- (libraries core_kernel monads)
+ (libraries
+   core_kernel
+   core_kernel.uopt
+   monads)
  (foreign_stubs
   (language c)
   (names int64_stubs)

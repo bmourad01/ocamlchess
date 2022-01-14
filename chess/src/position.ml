@@ -1,6 +1,24 @@
 open Core_kernel
 open Monads.Std
 
+module Uopt = struct
+  include Uopt
+
+  let compare cmp x y =
+    Option.compare cmp (to_option x) (to_option y)
+
+  let equal eq x y =
+    Option.equal eq (to_option x) (to_option y)
+
+  let sexp_of_t f x = Option.sexp_of_t f @@ to_option x
+  let t_of_sexp f x = of_option @@ Option.t_of_sexp f x
+
+  let map x ~f = if is_none x then x else some @@ f @@ unsafe_value x
+
+  let value_map x ~default ~f =
+    if is_none x then default else f @@ unsafe_value x
+end
+
 module Pre = Precalculated
 module Bb = Bitboard
 module Cr = Castling_rights
@@ -20,7 +38,7 @@ module T = struct
     mutable king : Bb.t;
     mutable active : Piece.color;
     mutable castle : Cr.t;
-    mutable en_passant : Square.t option;
+    mutable en_passant : Square.t Uopt.t;
     mutable halfmove : int;
     mutable fullmove : int;
     mutable hash : int64;
@@ -46,6 +64,7 @@ end
 
 include T
 
+let en_passant pos = Uopt.to_option pos.en_passant
 let enemy pos = Piece.Color.opposite pos.active
 
 (* Bitboard accessors *)
@@ -71,12 +90,12 @@ let[@inline] board_of_piece pos p =
   let c, k = Piece.decomp p in
   Bb.(board_of_color pos c & board_of_kind pos k)
 
-let[@inline] is_en_passant pos sq = match pos.en_passant with
-  | Some sq' -> Square.(sq = sq')
-  | None -> false
+let[@inline] is_en_passant pos sq =
+  Uopt.is_some pos.en_passant &&
+  Square.(sq = Uopt.unsafe_value pos.en_passant) 
 
 let[@inline] en_passant_pawn pos =
-  Option.map pos.en_passant ~f:(fun ep -> match pos.active with
+  Uopt.map pos.en_passant ~f:(fun ep -> match pos.active with
       | Piece.White -> Square.(with_rank_unsafe ep Rank.five)
       | Piece.Black -> Square.(with_rank_unsafe ep Rank.four))
 
@@ -206,9 +225,8 @@ module Hash = struct
       let sq = Square.to_int sq in
       flip @@ Keys.piece_key c k sq
 
-    let en_passant = function
-      | Some ep -> flip @@ Keys.en_passant_key @@ Square.file ep
-      | None -> ident
+    let en_passant = Uopt.value_map ~default:ident ~f:(fun ep ->
+        flip @@ Keys.en_passant_key @@ Square.file ep)
 
     let castle c s =
       let c = Piece.Color.to_int c in
@@ -327,7 +345,7 @@ module Analysis = struct
     type t = {
       pos : T.t;
       king_sq : Square.t;
-      en_passant_pawn : Square.t option;
+      en_passant_pawn : Square.t Uopt.t;
       occupied : Bb.t;
       active_board : Bb.t;
       enemy_board : Bb.t;
@@ -396,10 +414,13 @@ module Analysis = struct
       | Pawn -> begin
           (* Edge case for being able to get out of check via en passant
              capture. *)
-          match pos.en_passant, en_passant_pawn with
-          | Some ep, Some pw when Square.(sq = pw) -> checkers, !!ep
-          | Some _, Some _ | None, None -> checkers, Bb.empty
-          | _ -> failwith "En passant and pawn squares are not consistent"
+          let ep, pw = pos.en_passant, en_passant_pawn in
+          if Uopt.(is_none ep && is_none pw) then checkers, Bb.empty
+          else if Uopt.(is_some ep && is_some pw) then
+            let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
+            if Square.(sq = pw) then checkers, !!ep
+            else checkers, Bb.empty
+          else failwith "En passant and pawn squares are not consistent"
         end
       |  _ -> checkers, Bb.empty
 
@@ -595,9 +616,11 @@ module Valid = struct
       then E.fail @@ Pawns_in_back_rank Black
       else E.return ()
 
-    let check_en_passant pos = match pos.en_passant with
-      | None -> E.return ()
-      | Some ep ->
+    let check_en_passant pos =
+      let ep = pos.en_passant in
+      if Uopt.is_none ep then E.return ()
+      else
+        let ep = Uopt.unsafe_value ep in
         let rank, file = Square.decomp ep in
         if rank = Square.Rank.three then
           let sq = Square.create_exn ~rank:(succ rank) ~file in
@@ -664,9 +687,10 @@ module Valid = struct
   end
 
   module Half_and_fullmove = struct
-    let check_en_passant pos = match pos.en_passant with
-      | Some _ when pos.halfmove <> 0 -> E.fail En_passant_wrong_halfmove
-      | _ -> E.return ()
+    let check_en_passant pos =
+      if Uopt.is_some pos.en_passant && pos.halfmove <> 0
+      then E.fail En_passant_wrong_halfmove
+      else E.return ()
 
     let check_both pos =
       if pos.halfmove >
@@ -783,8 +807,9 @@ module Fen = struct
 
   let emit_castle buf cr = Buffer.add_string buf @@ Cr.to_string cr
 
-  let emit_en_passant buf ep = Buffer.add_string buf @@
-    Option.value_map ep ~default:"-" ~f:Square.to_string
+  let emit_en_passant buf ep =
+    Buffer.add_string buf @@
+    Uopt.value_map ep ~default:"-" ~f:Square.to_string
 
   let to_string pos =
     let buf = Buffer.create 100 in
@@ -792,7 +817,7 @@ module Fen = struct
     emit_placement buf pos; sep ();
     emit_active buf @@ active pos; sep ();
     emit_castle buf @@ castle pos; sep ();
-    emit_en_passant buf @@ en_passant pos; sep ();
+    emit_en_passant buf @@ pos.en_passant; sep ();
     Buffer.add_string buf @@ Int.to_string @@ halfmove pos; sep ();
     Buffer.add_string buf @@ Int.to_string @@ fullmove pos;
     Buffer.contents buf
@@ -849,8 +874,8 @@ module Fen = struct
     | _ -> E.fail @@ Invalid_castling_rights s
 
   let parse_en_passant = function
-    | "-" -> E.return None
-    | s -> try E.return @@ Some (Square.of_string_exn s) with
+    | "-" -> E.return Uopt.none
+    | s -> try E.return @@ Uopt.some @@ Square.of_string_exn s with
       | _ -> E.fail @@ Invalid_en_passant s
 
   let parse_halfmove s = try
@@ -909,7 +934,7 @@ module Makemove = struct
      square. This field is only valid if the move we are making is in fact an
      en passant move. *)
   type context = {
-    en_passant_pawn : Square.t option;
+    en_passant_pawn : Square.t Uopt.t;
     castle : Cr.side option;
     piece : Piece.t;
     direct_capture : Piece.t option;
@@ -955,7 +980,7 @@ module Makemove = struct
   let[@inline] update_halfmove ctx =
     P.read () >>| fun pos -> set_halfmove pos @@
     if Piece.is_pawn ctx.piece
-    || Option.is_some ctx.en_passant_pawn
+    || Uopt.is_some ctx.en_passant_pawn
     || Option.is_some ctx.direct_capture
     then 0 else succ pos.halfmove
 
@@ -1044,11 +1069,11 @@ module Makemove = struct
       let rank = Square.rank src and rank' = Square.rank dst in
       P.read () >>| fun {active; _} -> match active with
       | Piece.White when rank' - rank = 2 ->
-        Some Square.(with_rank_unsafe dst Rank.three)
+        Uopt.some Square.(with_rank_unsafe dst Rank.three)
       | Piece.Black when rank - rank' = 2 ->
-        Some Square.(with_rank_unsafe dst Rank.six)
-      | _ -> None
-    else P.return None end >>= fun ep ->
+        Uopt.some Square.(with_rank_unsafe dst Rank.six)
+      | _ -> Uopt.none
+    else P.return Uopt.none end >>= fun ep ->
     update_hash ~f:(Hash.Update.en_passant ep) >>
     P.read () >>| Fn.flip set_en_passant ep
 
@@ -1068,9 +1093,11 @@ module Makemove = struct
     | Some k -> P.read () >>| fun {active; _} -> Piece.create active k
     | None -> P.return p
 
-  let[@inline] move_with_en_passant = function
-    | None -> P.return None
-    | Some sq -> P.read () >>= fun {active; _} ->
+  let[@inline] move_with_en_passant en_passant_pawn =
+    if Uopt.is_none en_passant_pawn then P.return None
+    else
+      let sq = Uopt.unsafe_value en_passant_pawn in
+      P.read () >>= fun {active; _} ->
       let p = Piece.(create (Color.opposite active) Pawn) in
       clear_square p sq >> P.return @@ Some (Piece.Pawn, sq)
 
@@ -1167,10 +1194,13 @@ module Moves = struct
       A.read () >>= fun {pos; en_passant_pawn; enemy_board; _} ->
       let diag' = Pre.pawn_capture sq pos.active in
       let diag = Bb.(diag' & enemy_board) in
-      match pos.en_passant, en_passant_pawn with
-      | Some ep, Some pw when Bb.(ep @ diag') -> en_passant sq ep pw diag
-      | Some _, Some _ | None, None -> A.return diag
-      | _ -> failwith "En passant square and pawn are inconsistent"
+      let ep, pw = pos.en_passant, en_passant_pawn in
+      if Uopt.(is_none ep && is_none pw) then A.return diag
+      else if Uopt.(is_some ep && is_some pw) then
+        let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
+        if Bb.(ep @ diag') then en_passant sq ep pw diag
+        else A.return diag
+      else failwith "En passant and pawn squares are not consistent"
 
     let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
 
@@ -1294,7 +1324,8 @@ module Moves = struct
     let new_position = copy pos in
     let direct_capture = piece_at_square pos dst in
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
-    let en_passant_pawn = if is_en_passant then en_passant_pawn else None in
+    let en_passant_pawn =
+      if is_en_passant then en_passant_pawn else Uopt.none in
     let castle =
       if Piece.is_king piece then
         let file = Square.file src in
