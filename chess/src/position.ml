@@ -17,6 +17,11 @@ module Uopt = struct
 
   let value_map x ~default ~f =
     if is_none x then default else f @@ unsafe_value x
+
+  let merge x y ~f =
+    if is_none x then y
+    else if is_none y then x
+    else f (unsafe_value x) (unsafe_value y)
 end
 
 module Pre = Precalculated
@@ -44,6 +49,8 @@ module T = struct
     mutable hash : int64;
   } [@@deriving compare, equal, fields, sexp]
 
+  let en_passant pos = Uopt.to_option pos.en_passant
+
   let copy pos = {
     white      = pos.white;
     black      = pos.black;
@@ -64,7 +71,6 @@ end
 
 include T
 
-let en_passant pos = Uopt.to_option pos.en_passant
 let enemy pos = Piece.Color.opposite pos.active
 
 (* Bitboard accessors *)
@@ -103,9 +109,9 @@ let[@inline] en_passant_pawn pos =
 
 let which_color pos sq =
   let open Bb.Syntax in
-  if sq @ pos.white then Some Piece.White
-  else if sq @ pos.black then Some Piece.Black
-  else None
+  if sq @ pos.white then Uopt.some Piece.White
+  else if sq @ pos.black then Uopt.some Piece.Black
+  else Uopt.none
 
 let which_color_exn pos sq =
   let open Bb.Syntax in
@@ -115,13 +121,13 @@ let which_color_exn pos sq =
 
 let which_kind pos sq =
   let open Bb.Syntax in
-  if sq @ pos.pawn then Some Piece.Pawn
-  else if sq @ pos.knight then Some Piece.Knight
-  else if sq @ pos.bishop then Some Piece.Bishop
-  else if sq @ pos.rook then Some Piece.Rook
-  else if sq @ pos.queen then Some Piece.Queen
-  else if sq @ pos.king then Some Piece.King
-  else None
+  if sq @ pos.pawn then Uopt.some Piece.Pawn
+  else if sq @ pos.knight then Uopt.some Piece.Knight
+  else if sq @ pos.bishop then Uopt.some Piece.Bishop
+  else if sq @ pos.rook then Uopt.some Piece.Rook
+  else if sq @ pos.queen then Uopt.some Piece.Queen
+  else if sq @ pos.king then Uopt.some Piece.King
+  else Uopt.none
 
 let which_kind_exn pos sq =
   let open Bb.Syntax in
@@ -147,13 +153,20 @@ let collect_kind pos k =
 let collect_piece pos p =
   board_of_piece pos p |> Bb.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
 
-let piece_at_square pos sq = match which_color pos sq with
-  | None -> None
-  | Some c -> match which_kind pos sq with
-    | Some k -> Some (Piece.create c k)
-    | None ->
+let piece_at_square_uopt pos sq =
+  let c = which_color pos sq in
+  if Uopt.is_none c then Uopt.none
+  else
+    let c = Uopt.unsafe_value c in
+    let k = which_kind pos sq in
+    if Uopt.is_none k then
       failwithf "Square %s is set for color %s, but no piece kind is available"
         (Square.to_string sq) (Piece.Color.to_string_hum c) ()
+    else
+      let k = Uopt.unsafe_value k in
+      Uopt.some @@ Piece.create c k
+
+let piece_at_square pos sq = Uopt.to_option @@ piece_at_square_uopt pos sq
 
 let piece_at_square_exn pos sq =
   Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
@@ -624,14 +637,20 @@ module Valid = struct
         let rank, file = Square.decomp ep in
         if rank = Square.Rank.three then
           let sq = Square.create_exn ~rank:(succ rank) ~file in
-          match piece_at_square pos sq with
-          | Some p when Piece.is_white p && Piece.is_pawn p -> E.return ()
-          | _ -> E.fail @@ Missing_pawn_en_passant White
+          let p = piece_at_square_uopt pos sq in
+          if Uopt.is_none p then E.fail @@ Missing_pawn_en_passant White
+          else
+            let p = Uopt.unsafe_value p in
+            if Piece.(is_white p && is_pawn p) then E.return ()
+            else E.fail @@ Missing_pawn_en_passant White
         else if rank = Square.Rank.six then
           let sq = Square.create_exn ~rank:(pred rank) ~file in
-          match piece_at_square pos sq with
-          | Some p when Piece.is_black p && Piece.is_pawn p -> E.return ()
-          | _ -> E.fail @@ Missing_pawn_en_passant Black
+          let p = piece_at_square_uopt pos sq in
+          if Uopt.is_none p then E.fail @@ Missing_pawn_en_passant Black
+          else
+            let p = Uopt.unsafe_value p in
+            if Piece.(is_black p && is_pawn p) then E.return ()
+            else E.fail @@ Missing_pawn_en_passant Black
         else E.fail @@ Invalid_en_passant_square ep
 
     let check_promotions pos c b =
@@ -793,9 +812,11 @@ module Fen = struct
         if skip > 0 then adds @@ Int.to_string skip;
         if rank > 0 then addc '/';
         aux (rank - 1) 0 0
-      end else match piece_at_square pos @@ Square.create_exn ~rank ~file with
-        | None -> aux rank (file + 1) (skip + 1)
-        | Some p ->
+      end else
+        let p = piece_at_square_uopt pos @@ Square.create_exn ~rank ~file in
+        if Uopt.is_none p then aux rank (file + 1) (skip + 1)
+        else
+          let p = Uopt.unsafe_value p in
           if skip > 0 then adds @@ Int.to_string skip;
           addc @@ Piece.to_fen p;
           aux rank (file + 1) 0 in
@@ -935,9 +956,9 @@ module Makemove = struct
      en passant move. *)
   type context = {
     en_passant_pawn : Square.t Uopt.t;
-    castle : Cr.side option;
+    castle : Cr.side Uopt.t;
     piece : Piece.t;
-    direct_capture : Piece.t option;
+    direct_capture : Piece.t Uopt.t;
   } [@@deriving fields]
 
   let[@inline] (>>) m n = m >>= fun _ -> n
@@ -971,9 +992,11 @@ module Makemove = struct
   let[@inline] clear_square p sq = map_piece p sq ~f:(clr sq) >>| ignore
 
   (* Assume that if `p` exists, then it occupies square `sq`. *)
-  let[@inline] clear_square_capture sq = function
-    | Some p -> map_piece p sq ~f:(clr sq) >>| fun k -> Some (k, sq)
-    | None -> P.return None
+  let[@inline] clear_square_capture sq direct_capture =
+    if Uopt.is_none direct_capture then P.return Uopt.none
+    else
+      let p = Uopt.unsafe_value direct_capture in
+      map_piece p sq ~f:(clr sq) >>| fun k -> Uopt.some (k, sq)
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
@@ -981,7 +1004,7 @@ module Makemove = struct
     P.read () >>| fun pos -> set_halfmove pos @@
     if Piece.is_pawn ctx.piece
     || Uopt.is_some ctx.en_passant_pawn
-    || Option.is_some ctx.direct_capture
+    || Uopt.is_some ctx.direct_capture
     then 0 else succ pos.halfmove
 
   (* Castling rights change monotonically, so the only time we update the hash
@@ -1021,13 +1044,16 @@ module Makemove = struct
   (* If we're castling our king on this move, then we need to move the rook as
      well as clear our rights. *)
   let[@inline] king_moved_or_castled castle =
-    P.read () >>= fun {active; _} -> match active, castle with
-    | Piece.White, Some Cr.Kingside  -> white_kingside_castle
-    | Piece.White, Some Cr.Queenside -> white_queenside_castle
-    | Piece.Black, Some Cr.Kingside  -> black_kingside_castle
-    | Piece.Black, Some Cr.Queenside -> black_queenside_castle
-    | Piece.White, None -> clear_white_castling_rights
-    | Piece.Black, None -> clear_black_castling_rights
+    P.read () >>= fun {active; _} ->
+    if Uopt.is_some castle then
+      match active, Uopt.unsafe_value castle with
+      | Piece.White, Cr.Kingside  -> white_kingside_castle
+      | Piece.White, Cr.Queenside -> white_queenside_castle
+      | Piece.Black, Cr.Kingside  -> black_kingside_castle
+      | Piece.Black, Cr.Queenside -> black_queenside_castle
+    else match active with
+      | Piece.White -> clear_white_castling_rights
+      | Piece.Black -> clear_black_castling_rights
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
@@ -1051,9 +1077,12 @@ module Makemove = struct
     P.read () >>= Fn.compose (rook_moved_or_captured src) active
 
   (* Rook was captured at a square. Assume that it is the enemy's color. *)
-  let[@inline] rook_captured dst = function
-    | Some p when Piece.is_rook p -> rook_moved_or_captured dst @@ Piece.color p
-    | _ -> P.return ()
+  let[@inline] rook_captured dst direct_capture =
+    if Uopt.is_none direct_capture then P.return ()
+    else
+      let p = Uopt.unsafe_value direct_capture in
+      if Piece.is_rook p then rook_moved_or_captured dst @@ Piece.color p
+      else P.return ()
 
   (* Handle castling-related details. *)
   let[@inline] update_castle ctx src dst = match Piece.kind ctx.piece with
@@ -1094,12 +1123,12 @@ module Makemove = struct
     | None -> P.return p
 
   let[@inline] move_with_en_passant en_passant_pawn =
-    if Uopt.is_none en_passant_pawn then P.return None
+    if Uopt.is_none en_passant_pawn then P.return Uopt.none
     else
       let sq = Uopt.unsafe_value en_passant_pawn in
       P.read () >>= fun {active; _} ->
       let p = Piece.(create (Color.opposite active) Pawn) in
-      clear_square p sq >> P.return @@ Some (Piece.Pawn, sq)
+      clear_square p sq >> P.return @@ Uopt.some (Piece.Pawn, sq)
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. `direct_capture` is the (optional) piece at the destination
@@ -1118,7 +1147,7 @@ module Makemove = struct
     (* Prepare for the next move. *)
     update_fullmove >> flip_active >>
     (* Return the capture that was made, if any. *)
-    P.return @@ Option.merge capture ep_capture ~f:(fun _ _ ->
+    P.return @@ Uopt.merge capture ep_capture ~f:(fun _ _ ->
         invalid_arg "Encountered direct and en passant capture in the same \
                      move")
 end
@@ -1128,10 +1157,13 @@ module Legal = struct
     type t = {
       move : Move.t;
       new_position : T.t;
-      capture : (Piece.kind * Square.t) option;
+      capture : (Piece.kind * Square.t) Uopt.t;
       is_en_passant : bool;
-      castle : Cr.side option;
+      castle : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
+
+    let capture legal = Uopt.to_option legal.capture
+    let castle legal = Uopt.to_option legal.castle
   end
 
   let best moves ~eval =
@@ -1322,7 +1354,7 @@ module Moves = struct
   (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] make_move_aux pos src dst promote piece en_passant_pawn =
     let new_position = copy pos in
-    let direct_capture = piece_at_square pos dst in
+    let direct_capture = piece_at_square_uopt pos dst in
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
     let en_passant_pawn =
       if is_en_passant then en_passant_pawn else Uopt.none in
@@ -1331,11 +1363,11 @@ module Moves = struct
         let file = Square.file src in
         if Square.File.(file = e) then
           let file' = Square.file dst in
-          if Square.File.(file' = c) then Some Cr.Queenside
-          else if Square.File.(file' = g) then Some Cr.Kingside
-          else None
-        else None
-      else None in
+          if Square.File.(file' = c) then Uopt.some Cr.Queenside
+          else if Square.File.(file' = g) then Uopt.some Cr.Kingside
+          else Uopt.none
+        else Uopt.none
+      else Uopt.none in
     let capture =
       Fn.flip Monad.Reader.run new_position @@
       Makemove.go src dst promote @@
