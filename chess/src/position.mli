@@ -3,12 +3,6 @@ type t [@@deriving compare, equal, sexp]
 
 include Base.Comparable.S with type t := t
 
-(** Zobrist hashing. *)
-module Hash : sig
-  (** [of_position pos] returns the Zobrist hash of a position. *)
-  val of_position : t -> int64
-end
-
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
 val white : t -> Bitboard.t
