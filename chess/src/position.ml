@@ -958,14 +958,18 @@ module Makemove = struct
     || Option.is_some ctx.direct_capture
     then 0 else succ pos.halfmove
 
+  (* Castling rights change monotonically, so the only time we update the hash
+     is when we take away rights. *)
+  let castle_hash c s = P.read () >>= fun pos ->
+    if not @@ Cr.mem pos.castle c s then P.return ()
+    else update_hash ~f:(Hash.Update.castle c s)
+
   let clear_white_castling_rights = P.read () >>= fun pos ->
-    update_hash ~f:(Hash.Update.castle White Kingside) >>
-    update_hash ~f:(Hash.Update.castle White Queenside) >>| fun () ->
+    castle_hash White Kingside >> castle_hash White Queenside >>| fun () ->
     set_castle pos @@ Cr.(minus pos.castle white)
 
   let clear_black_castling_rights = P.read () >>= fun pos ->
-    update_hash ~f:(Hash.Update.castle Black Kingside) >>
-    update_hash ~f:(Hash.Update.castle Black Queenside) >>| fun () ->
+    castle_hash Black Kingside >> castle_hash Black Queenside >>| fun () ->
     set_castle pos @@ Cr.(minus pos.castle black)
 
   let white_kingside_castle =
@@ -1003,16 +1007,16 @@ module Makemove = struct
      that particular side. *)
   let[@inline] rook_moved_or_captured sq = function
     | Piece.White when Square.(sq = h1) -> P.read () >>= fun pos ->
-      update_hash ~f:(Hash.Update.castle White Kingside) >>| fun () ->
+      castle_hash White Kingside >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle white_kingside)
     | Piece.White when Square.(sq = a1) -> P.read () >>= fun pos ->
-      update_hash ~f:(Hash.Update.castle White Queenside) >>| fun () ->
+      castle_hash White Queenside >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle white_queenside)
     | Piece.Black when Square.(sq = h8) -> P.read () >>= fun pos ->
-      update_hash ~f:(Hash.Update.castle Black Kingside) >>| fun () ->
+      castle_hash Black Kingside >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle black_kingside)
     | Piece.Black when Square.(sq = a8) -> P.read () >>= fun pos ->
-      update_hash ~f:(Hash.Update.castle Black Queenside) >>| fun () ->
+      castle_hash Black Queenside >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle black_queenside)
     | _ -> P.return ()
 
