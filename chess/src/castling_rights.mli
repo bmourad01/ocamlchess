@@ -14,6 +14,9 @@ module Side : sig
 
   include Base.Comparable.S with type t := t
 
+  (** The number of sides to castle on. *)
+  val count : int
+
   (** Returns [true] if it is on the king side. *)
   val is_kingside : t -> bool
 
