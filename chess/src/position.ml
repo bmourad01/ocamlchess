@@ -149,7 +149,8 @@ let collect_all pos =
 module Hash = struct
   (* Setup Zobrist keys. *)
   module Keys = struct
-    let seed = 0xDEADBEEFL
+    (* This is the seed used in Stockfish. *)
+    let seed = 1070372L
 
     (* We will use flattened arrays where applicable, since this can have
        a better impact on caching. *)
