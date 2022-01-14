@@ -187,29 +187,34 @@ module Sliding = struct
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
-    let mask = Bb.to_int64 mask in
-    Int64.popcount mask |> Array.init ~f:ident |> Array.fold ~init:(0L, mask)
-      ~f:(fun (blockers, mask) i ->
-          let blockers =
-            if idx land (1 lsl i) = 0 then blockers
-            else Int64.(blockers lor (one lsl ctz mask)) in
-          blockers, Int64.(mask land pred mask)) |> fst
+    let n = Bb.count mask in
+    let blockers = ref 0L in
+    let mask = ref @@ Bb.to_int64 mask in
+    for i = 0 to n - 1 do
+      let m = !mask in
+      if idx land (1 lsl i) <> 0 then
+        blockers := Int64.(!blockers lor (one lsl ctz m));
+      mask := Int64.(m land pred m);
+    done;
+    !blockers
 
   (* Compute the index into the magic hash table. *)
   let[@inline] hash occupied magic shift =
     Int64.((occupied * magic) lsr Int.(64 - shift) |> to_int_trunc)
 
+  let tbl_idx sq h = sq + h * Square.count
+
   (* Generate the magic hash table for bishop and rook moves. *)
   let bishop, rook =
     let go len shift mask magic gen =
-      let tbl = Array.init Square.count
-          ~f:(fun _ -> Array.create ~len Bb.empty) in
+      let tbl = Array.create Bb.empty ~len:(Square.count * len) in
       for i = 0 to Square.count - 1 do
-        let shift = shift.(i) and mask = mask.(i)
-        and magic = magic.(i) and t = tbl.(i) in
+        let shift = shift.(i) in
+        let mask  = mask.(i)  in
+        let magic = magic.(i) in
         for j = 0 to 1 lsl shift do
           let occupied = blockers j mask in
-          t.(hash occupied magic shift) <- gen i occupied
+          tbl.(tbl_idx i @@ hash occupied magic shift) <- gen i occupied
         done
       done;
       tbl in
@@ -240,8 +245,7 @@ let[@inline] bishop sq occupied =
   let magic = Array.unsafe_get Magic.bishop i in
   let occupied = Bb.(to_int64 (occupied & mask)) in
   let hash = Sliding.hash occupied magic shift in
-  let arr = Array.unsafe_get Sliding.bishop i in
-  Array.unsafe_get arr hash
+  Array.unsafe_get Sliding.bishop @@ Sliding.tbl_idx i hash
 
 let[@inline] rook sq occupied =
   let i = Square.to_int sq in
@@ -250,8 +254,7 @@ let[@inline] rook sq occupied =
   let magic = Array.unsafe_get Magic.rook i in
   let occupied = Bb.(to_int64 (occupied & mask)) in
   let hash = Sliding.hash occupied magic shift in
-  let arr = Array.unsafe_get Sliding.rook i in
-  Array.unsafe_get arr hash
+  Array.unsafe_get Sliding.rook @@ Sliding.tbl_idx i hash
 
 let[@inline] queen sq occupied = Bb.(bishop sq occupied + rook sq occupied)
 let[@inline] king sq = Array.unsafe_get Simple.king @@ Square.to_int sq
