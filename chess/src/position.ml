@@ -17,11 +17,6 @@ module Uopt = struct
 
   let value_map x ~default ~f =
     if is_none x then default else f @@ unsafe_value x
-
-  let merge x y ~f =
-    if is_none x then y
-    else if is_none y then x
-    else f (unsafe_value x) (unsafe_value y)
 end
 
 module Pre = Precalculated
@@ -1142,14 +1137,14 @@ module Makemove = struct
     clear_square ctx.piece src >>
     clear_square_capture dst ctx.direct_capture >>= fun capture ->
     (* Set the new placement. *)
-    do_promote ctx.piece promote >>= Fn.flip set_square dst >>
-    move_with_en_passant ctx.en_passant_pawn >>= fun ep_capture ->
+    do_promote ctx.piece promote >>= Fn.flip set_square dst >> begin
+      if Uopt.is_some capture then P.return capture
+      else move_with_en_passant ctx.en_passant_pawn 
+    end >>= fun capture ->
     (* Prepare for the next move. *)
     update_fullmove >> flip_active >>
     (* Return the capture that was made, if any. *)
-    P.return @@ Uopt.merge capture ep_capture ~f:(fun _ _ ->
-        invalid_arg "Encountered direct and en passant capture in the same \
-                     move")
+    P.return capture 
 end
 
 module Legal = struct
