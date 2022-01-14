@@ -203,6 +203,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
         (Position.Fen.to_string pos');
+      printf "Hash: %016LX\n%!" @@ Position.hash pos';
       printf "%d legal moves\n%!" @@ List.length legal;
       printf "\n%!"
     end;
@@ -255,6 +256,7 @@ let go pos ~white ~black ~delay =
     | Some player -> printf "Black is AI: %s\n%!" player#name
   end;
   printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
+  printf "Hash: %016LX\n%!" @@ Position.hash pos;
   printf "%d legal moves\n%!" @@ List.length legal;
   printf "\n%!";
   Monad.State.eval (start_with_endgame_check delay) @@

@@ -5,7 +5,7 @@ module Prng = struct
 
   let create : int64 -> t = function
     | 0L -> invalid_arg "Seed must be nonzero"
-    | seed -> object(self)
+    | seed -> object
       val state = ref seed
       method rand =
         let s = !state in

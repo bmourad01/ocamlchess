@@ -23,6 +23,7 @@ module T = struct
     mutable en_passant : Square.t option;
     mutable halfmove : int;
     mutable fullmove : int;
+    mutable hash : int64;
   } [@@deriving compare, equal, fields, sexp]
 
   let copy pos = {
@@ -39,6 +40,7 @@ module T = struct
     en_passant = pos.en_passant;
     halfmove   = pos.halfmove;
     fullmove   = pos.fullmove;
+    hash       = pos.hash;
   }
 end
 
@@ -149,19 +151,32 @@ module Hash = struct
   module Keys = struct
     let seed = 0xDEADBEEFL
 
-    let castle_keys =
-      Array.make_matrix ~dimx:Piece.Color.count ~dimy:Cr.Side.count 0L
+    (* We will use flattened arrays where applicable, since this can have
+       a better impact on caching. *)
 
-    let piece_keys = Array.init Piece.Color.count ~f:(fun _ ->
-        Array.make_matrix ~dimx:Piece.Kind.count ~dimy:Square.count 0L)
+    let castle_keys =
+      Array.create ~len:(Piece.Color.count * Cr.Side.count) 0L
+
+    let castle_key_idx c s = c + s * Piece.Color.count
+    let castle_key c s = Array.unsafe_get castle_keys @@ castle_key_idx c s
+
+    let piece_keys =
+      Array.create 0L
+        ~len:(Piece.Color.count * Piece.Kind.count * Square.count)
+
+    let piece_key_idx c k sq = let open Piece in
+      c + (k * Color.count) + (sq * Color.count * Kind.count)
+
+    let piece_key c k sq = Array.unsafe_get piece_keys @@ piece_key_idx c k sq
 
     let en_passant_keys = Array.create ~len:Square.File.count 0L
+    let en_passant_key file = Array.unsafe_get en_passant_keys file
 
     let white_to_move_key =
       let rng = Utils.Prng.create seed in
       for c = 0 to Piece.Color.count - 1 do
         for s = 0 to Cr.Side.count - 1 do
-          castle_keys.(c).(s) <- rng#rand
+          castle_keys.(castle_key_idx c s) <- rng#rand
         done
       done;
       let white_to_move_key = rng#rand in
@@ -170,8 +185,8 @@ module Hash = struct
       done;
       for k = 0; to Piece.Kind.count - 1 do
         for sq = 0 to Square.count - 1 do
-          piece_keys.(Piece.Color.white).(k).(sq) <- rng#rand;
-          piece_keys.(Piece.Color.black).(k).(sq) <- rng#rand;
+          piece_keys.(piece_key_idx Piece.Color.white k sq) <- rng#rand;
+          piece_keys.(piece_key_idx Piece.Color.black k sq) <- rng#rand;
         done
       done;
       white_to_move_key
@@ -188,17 +203,19 @@ module Hash = struct
       let c = Piece.Color.to_int c in
       let k = Piece.Kind.to_int k in
       let sq = Square.to_int sq in
-      flip Keys.piece_keys.(c).(k).(sq)
+      flip @@ Keys.piece_key c k sq
 
     let en_passant = function
-      | Some ep -> flip Keys.en_passant_keys.(Square.to_int ep)
+      | Some ep -> flip @@ Keys.en_passant_key @@ Square.file ep
       | None -> ident
 
-    let castle cr c s = if Cr.mem cr c s then
-        let c = Piece.Color.to_int c in
-        let s = Cr.Side.to_int s in
-        flip Keys.castle_keys.(c).(s)
-      else ident
+    let castle c s =
+      let c = Piece.Color.to_int c in
+      let s = Cr.Side.to_int s in
+      flip @@ Keys.castle_key c s
+
+    let castle_test cr c s =
+      if Cr.mem cr c s then castle c s else ident
   end
 
   (* Get the hash of a position. *)
@@ -217,10 +234,10 @@ module Hash = struct
     (* En passant *)
     H.update @@ Update.en_passant pos.en_passant >>= fun () ->
     (* Castling rights *)
-    H.update @@ Update.castle pos.castle White Kingside >>= fun () ->
-    H.update @@ Update.castle pos.castle White Queenside >>= fun () ->
-    H.update @@ Update.castle pos.castle Black Kingside >>= fun () ->
-    H.update @@ Update.castle pos.castle Black Queenside 
+    H.update @@ Update.castle_test pos.castle White Kingside >>= fun () ->
+    H.update @@ Update.castle_test pos.castle White Queenside >>= fun () ->
+    H.update @@ Update.castle_test pos.castle Black Kingside >>= fun () ->
+    H.update @@ Update.castle_test pos.castle Black Queenside 
 end
 
 (* Attack patterns. *)
@@ -866,7 +883,8 @@ module Fen = struct
       parse_fullmove fullmove >>= fun fullmove ->
       let pos = Fields.create
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
-          ~active ~castle ~en_passant ~halfmove ~fullmove in
+          ~active ~castle ~en_passant ~halfmove ~fullmove ~hash:0L in
+      set_hash pos @@ Hash.of_position pos;      
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
 
@@ -898,6 +916,9 @@ module Makemove = struct
 
   let[@inline] (>>) m n = m >>= fun _ -> n
 
+  let[@inline] update_hash ~f =
+    P.read () >>| fun pos -> set_hash pos @@ f pos.hash
+
   let[@inline] map_color c ~f = P.read () >>| fun pos -> match c with
     | Piece.White -> set_white pos @@ f @@ white pos
     | Piece.Black -> set_black pos @@ f @@ black pos
@@ -911,19 +932,21 @@ module Makemove = struct
     | Piece.King   -> set_king pos   @@ f @@ king pos
 
   (* Helper for setting both the color and the kind fields of the board. *)
-  let[@inline] map_piece p ~f = 
+  let[@inline] map_piece p sq ~f = 
     let c, k = Piece.decomp p in
-    map_color c ~f >> map_kind k ~f
+    map_color c ~f >> map_kind k ~f >>
+    update_hash ~f:(Hash.Update.piece c k sq) >>
+    P.return k
 
   let set sq = Bb.(fun b -> b ++ sq)
   let clr sq = Bb.(fun b -> b -- sq)
 
-  let[@inline] set_square p sq = map_piece p ~f:(set sq)
-  let[@inline] clear_square p sq = map_piece p ~f:(clr sq)
+  let[@inline] set_square p sq = map_piece p sq ~f:(set sq) >>| ignore
+  let[@inline] clear_square p sq = map_piece p sq ~f:(clr sq) >>| ignore
 
   (* Assume that if `p` exists, then it occupies square `sq`. *)
   let[@inline] clear_square_capture sq = function
-    | Some p -> map_piece p ~f:(clr sq) >> P.return @@ Some (Piece.kind p, sq)
+    | Some p -> map_piece p sq ~f:(clr sq) >>| fun k -> Some (k, sq)
     | None -> P.return None
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
@@ -935,10 +958,14 @@ module Makemove = struct
     || Option.is_some ctx.direct_capture
     then 0 else succ pos.halfmove
 
-  let clear_white_castling_rights = P.read () >>| fun pos ->
+  let clear_white_castling_rights = P.read () >>= fun pos ->
+    update_hash ~f:(Hash.Update.castle White Kingside) >>
+    update_hash ~f:(Hash.Update.castle White Queenside) >>| fun () ->
     set_castle pos @@ Cr.(minus pos.castle white)
 
-  let clear_black_castling_rights = P.read () >>| fun pos ->
+  let clear_black_castling_rights = P.read () >>= fun pos ->
+    update_hash ~f:(Hash.Update.castle Black Kingside) >>
+    update_hash ~f:(Hash.Update.castle Black Queenside) >>| fun () ->
     set_castle pos @@ Cr.(minus pos.castle black)
 
   let white_kingside_castle =
@@ -975,13 +1002,17 @@ module Makemove = struct
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
   let[@inline] rook_moved_or_captured sq = function
-    | Piece.White when Square.(sq = h1) -> P.read () >>| fun pos ->
+    | Piece.White when Square.(sq = h1) -> P.read () >>= fun pos ->
+      update_hash ~f:(Hash.Update.castle White Kingside) >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle white_kingside)
-    | Piece.White when Square.(sq = a1) -> P.read () >>| fun pos ->
+    | Piece.White when Square.(sq = a1) -> P.read () >>= fun pos ->
+      update_hash ~f:(Hash.Update.castle White Queenside) >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle white_queenside)
-    | Piece.Black when Square.(sq = h8) -> P.read () >>| fun pos ->
+    | Piece.Black when Square.(sq = h8) -> P.read () >>= fun pos ->
+      update_hash ~f:(Hash.Update.castle Black Kingside) >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle black_kingside)
-    | Piece.Black when Square.(sq = a8) -> P.read () >>| fun pos ->
+    | Piece.Black when Square.(sq = a8) -> P.read () >>= fun pos ->
+      update_hash ~f:(Hash.Update.castle Black Queenside) >>| fun () ->
       set_castle pos @@ Cr.(minus pos.castle black_queenside)
     | _ -> P.return ()
 
@@ -1013,10 +1044,12 @@ module Makemove = struct
         Some Square.(with_rank_unsafe dst Rank.six)
       | _ -> None
     else P.return None end >>= fun ep ->
-    P.read () >>| fun pos -> set_en_passant pos ep
+    update_hash ~f:(Hash.Update.en_passant ep) >>
+    P.read () >>| Fn.flip set_en_passant ep
 
   (* After each halfmove, give the turn to the other player. *)
-  let flip_active = P.read () >>| fun pos ->
+  let flip_active = P.read () >>= fun pos ->
+    update_hash ~f:Hash.Update.active_player >>| fun () ->
     set_active pos @@ Piece.Color.opposite pos.active
 
   (* Since white moves first, increment the fullmove clock after black

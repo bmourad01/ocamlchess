@@ -60,6 +60,9 @@ val halfmove : t -> int
 (** [fullmove pos] returns then number of full moves that have been made. *)
 val fullmove : t -> int
 
+(** [hash pos] returns the Zobrist hash of the position. *)
+val hash : t -> int64
+
 (** [enemy pos] returns the opposite of the active color for position [pos]. *)
 val enemy : t -> Piece.color
 
