@@ -15,7 +15,7 @@ module Shift = struct
     6; 5; 5; 5; 5; 5; 5; 6;
   |]
 
-  let straight = [|
+  let orthogonal = [|
     12; 11; 11; 11; 11; 11; 11; 12;
     11; 10; 10; 10; 10; 10; 10; 11;
     11; 10; 10; 10; 10; 10; 10; 11;
@@ -154,8 +154,8 @@ module Mask = struct
   let diagonal = Array.init Square.count ~f:(fun i -> Bb.(
       neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges))
 
-  (* Combine all straight directions, minus the edges. *)
-  let straight = Array.init Square.count ~f:(fun i -> Bb.(
+  (* Combine all orthogonal directions, minus the edges. *)
+  let orthogonal = Array.init Square.count ~f:(fun i -> Bb.(
       (east.(i)  - file_h) +
       (west.(i)  - file_a) +
       (north.(i) - rank_8) +
@@ -164,9 +164,9 @@ end
 
 (* Generation of sliding attack patterns. *)
 module Sliding = struct
-  (* Computes the bitboards for diagonal and straight attacks, given a
+  (* Computes the bitboards for diagonal and orthogonal attacks, given a
      starting square and the set of occupied squares. *)
-  let diagonal, straight =
+  let diagonal, orthogonal =
     let gen arr i occupied =
       let open Bb in
       let occupied = of_int64 occupied in
@@ -219,7 +219,7 @@ module Sliding = struct
       done;
       tbl in
     go 1024 Shift.diagonal Mask.diagonal Magic.bishop diagonal,
-    go 4096 Shift.straight Mask.straight Magic.rook straight
+    go 4096 Shift.orthogonal Mask.orthogonal Magic.rook orthogonal
 end
 
 (* The actual API for accessing precalculated move patterns. *)
@@ -249,8 +249,8 @@ let[@inline] bishop sq occupied =
 
 let[@inline] rook sq occupied =
   let i = Square.to_int sq in
-  let mask = Array.unsafe_get Mask.straight i in
-  let shift = Array.unsafe_get Shift.straight i in
+  let mask = Array.unsafe_get Mask.orthogonal i in
+  let shift = Array.unsafe_get Shift.orthogonal i in
   let magic = Array.unsafe_get Magic.rook i in
   let occupied = Bb.(to_int64 (occupied & mask)) in
   let hash = Sliding.hash occupied magic shift in
@@ -280,32 +280,39 @@ let castle_tbl =
 let[@inline] castle cr c s = Array.unsafe_get castle_tbl @@
   Castling_rights.(to_int @@ inter cr @@ singleton c s)
 
-let between_tbl = Array.init Square.count ~f:(fun i ->
+let between_tbl =
+  let tbl = Array.create Bb.empty ~len:Square.(count * count) in
+  for i = 0 to Square.count - 1 do
     let sq = Square.of_int_unsafe i in
-    Array.init Square.count ~f:(fun i' ->
-        let open Bb in
-        (* Use the singleton bitboard of the target square as the
-           blocker mask. *)
-        let s = !!Square.(of_int_unsafe i') in
-        let straight m =
-          let b = rook sq s & m in
-          if (b & s) <> empty then b - s else empty in
-        let diagonal m =
-          let b = bishop sq s & m in
-          if (b & s) <> empty then b - s else empty in
-        (* Use the pre-generated directional masks. *)
-        let east  = straight Mask.east.(i)  in
-        let west  = straight Mask.west.(i)  in
-        let north = straight Mask.north.(i) in
-        let south = straight Mask.south.(i) in
-        let neast = diagonal Mask.neast.(i) in
-        let nwest = diagonal Mask.nwest.(i) in
-        let seast = diagonal Mask.seast.(i) in
-        let swest = diagonal Mask.swest.(i) in
-        (* We're getting the union of all directions, even though only
-           one of them will be valid. *)
-        east + west + north + south + neast + nwest + seast + swest))
+    for j = 0 to Square.count - 1 do
+      let open Bb in
+      (* Use the singleton bitboard of the target square as the
+         blocker mask. *)
+      let s = !!Square.(of_int_unsafe j) in
+      let orthogonal m =
+        let b = rook sq s & m in
+        if (b & s) <> empty then b - s else empty in
+      let diagonal m =
+        let b = bishop sq s & m in
+        if (b & s) <> empty then b - s else empty in
+      (* Use the pre-generated directional masks. *)
+      let east  = orthogonal Mask.east.(i)  in
+      let west  = orthogonal Mask.west.(i)  in
+      let north = orthogonal Mask.north.(i) in
+      let south = orthogonal Mask.south.(i) in
+      let neast = diagonal Mask.neast.(i) in
+      let nwest = diagonal Mask.nwest.(i) in
+      let seast = diagonal Mask.seast.(i) in
+      let swest = diagonal Mask.swest.(i) in
+      (* We're getting the union of all directions, even though only
+         one of them will be valid. *)
+      tbl.(Int.(i + j * Square.count)) <-
+        east + west + north + south + neast + nwest + seast + swest
+    done
+  done;
+  tbl
 
-let[@inline] between sq sq' =
-  let arr = Array.unsafe_get between_tbl @@ Square.to_int sq in
-  Array.unsafe_get arr @@ Square.to_int sq'
+let[@inline] between sq1 sq2 =
+  let i = Square.to_int sq1 in
+  let j = Square.to_int sq2 in
+  Array.unsafe_get between_tbl (i + j * Square.count)
