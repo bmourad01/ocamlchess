@@ -36,6 +36,6 @@ val castle :
   Castling_rights.side ->
   Bitboard.t * Bitboard.t
 
-(** [between sq sq'] returns a bitboard of all squares between [sq] and [sq']
+(** [between sq1 sq2] returns a bitboard of all squares between [sq1] and [sq2]
     w.r.t. a sliding move. *)
 val between : Square.t -> Square.t -> Bitboard.t
