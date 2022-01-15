@@ -1,17 +1,18 @@
 open Core_kernel
 open Monads.Std
 
+(* For performance, use the unboxed options. *)
 module Uopt = struct
   include Uopt
 
-  let compare cmp x y =
-    Option.compare cmp (to_option x) (to_option y)
+  (* Required for `@@deriving compare, equal, sexp` *)
 
-  let equal eq x y =
-    Option.equal eq (to_option x) (to_option y)
-
+  let compare cmp x y = Option.compare cmp (to_option x) (to_option y)
+  let equal eq x y = Option.equal eq (to_option x) (to_option y)
   let sexp_of_t f x = Option.sexp_of_t f @@ to_option x
   let t_of_sexp f x = of_option @@ Option.t_of_sexp f x
+
+  (* Convenience functions. *)
 
   let map x ~f = if is_none x then x else some @@ f @@ unsafe_value x
 
@@ -261,9 +262,9 @@ module Hash = struct
     (* En passant *)
     H.update @@ Update.en_passant pos.en_passant >>= fun () ->
     (* Castling rights *)
-    H.update @@ Update.castle_test pos.castle White Kingside >>= fun () ->
+    H.update @@ Update.castle_test pos.castle White Kingside  >>= fun () ->
     H.update @@ Update.castle_test pos.castle White Queenside >>= fun () ->
-    H.update @@ Update.castle_test pos.castle Black Kingside >>= fun () ->
+    H.update @@ Update.castle_test pos.castle Black Kingside  >>= fun () ->
     H.update @@ Update.castle_test pos.castle Black Queenside 
 end
 
@@ -393,16 +394,16 @@ module Analysis = struct
           | Some b -> b ++ sq
           | None -> !!sq) in
     let bishop = lazy (Pre.bishop king_sq occupied) in
-    let rook = lazy (Pre.rook king_sq occupied) in
-    let queen = lazy (Pre.queen king_sq occupied) in
+    let rook   = lazy (Pre.rook   king_sq occupied) in
+    let queen  = lazy (Pre.queen  king_sq occupied) in
     let mask = active_board -- king_sq in
     let init = Map.empty (module Square) in
     List.fold enemy_sliders ~init ~f:(fun pinners (sq, k) ->
         let mask = mask & Pre.between king_sq sq in
         let checker, king = match k with
           | Piece.Bishop -> Pre.bishop sq occupied, Lazy.force bishop
-          | Piece.Rook -> Pre.rook sq occupied, Lazy.force rook
-          | Piece.Queen -> Pre.queen sq occupied, Lazy.force queen
+          | Piece.Rook   -> Pre.rook   sq occupied, Lazy.force rook
+          | Piece.Queen  -> Pre.queen  sq occupied, Lazy.force queen
           | _ -> Bb.(empty, empty) in
         update pinners sq checker king mask)
 
@@ -419,17 +420,16 @@ module Analysis = struct
       match which_kind_exn pos sq with
       | Bishop | Rook | Queen ->
         checkers + Pre.between king_sq sq, Bb.empty
-      | Pawn -> begin
-          (* Edge case for being able to get out of check via en passant
-             capture. *)
-          let ep, pw = pos.en_passant, en_passant_pawn in
-          if Uopt.(is_none ep && is_none pw) then checkers, Bb.empty
-          else if Uopt.(is_some ep && is_some pw) then
-            let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
-            if Square.(sq = pw) then checkers, !!ep
-            else checkers, Bb.empty
-          else failwith "En passant and pawn squares are not consistent"
-        end
+      | Pawn ->
+        (* Edge case for being able to get out of check via en passant
+           capture. *)
+        let ep, pw = pos.en_passant, en_passant_pawn in
+        if Uopt.(is_none ep && is_none pw) then checkers, Bb.empty
+        else if Uopt.(is_some ep && is_some pw) then
+          let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
+          if Square.(sq = pw) then checkers, !!ep
+          else checkers, Bb.empty
+        else failwith "En passant and pawn squares are not consistent"
       |  _ -> checkers, Bb.empty
 
   (* Populate info needed for generating legal moves. *)
@@ -649,11 +649,11 @@ module Valid = struct
         else E.fail @@ Invalid_en_passant_square ep
 
     let check_promotions pos c b =
-      let num_pawn = Bb.(count (pos.pawn & b)) in
+      let num_pawn   = Bb.(count (pos.pawn & b)) in
       let num_knight = Bb.(count (pos.knight & b)) in
       let num_bishop = Bb.(count (pos.bishop & b)) in
-      let num_rook = Bb.(count (pos.rook & b)) in
-      let num_queen = Bb.(count (pos.queen & b)) in
+      let num_rook   = Bb.(count (pos.rook & b)) in
+      let num_queen  = Bb.(count (pos.queen & b)) in
       let extra =
         max 0 (num_knight - 2) +
         max 0 (num_bishop - 2) +
@@ -694,9 +694,9 @@ module Valid = struct
     let go pos =
       check_king_moved pos White pos.white >>
       check_king_moved pos Black pos.black >>
-      check_rook_moved pos White pos.white Kingside Square.h1 >>
+      check_rook_moved pos White pos.white Kingside  Square.h1 >>
       check_rook_moved pos White pos.white Queenside Square.a1 >>
-      check_rook_moved pos Black pos.black Kingside Square.h8 >>
+      check_rook_moved pos Black pos.black Kingside  Square.h8 >>
       check_rook_moved pos Black pos.black Queenside Square.a8
   end
 
@@ -1209,12 +1209,12 @@ module Moves = struct
       (* Check if an appropriate diagonal attack from the king would reach
          that corresponding piece. *)
       let bishop = lazy (Pre.bishop king_sq occupied) in
-      let rook = lazy (Pre.rook king_sq occupied) in
-      let queen = lazy (Pre.queen king_sq occupied) in
+      let rook   = lazy (Pre.rook   king_sq occupied) in
+      let queen  = lazy (Pre.queen  king_sq occupied) in
       List.fold_until enemy_sliders ~init ~finish ~f:(fun acc -> function
           | sq, Piece.Bishop when sq @ (Lazy.force bishop) -> Stop diag
-          | sq, Piece.Rook when sq @ (Lazy.force rook) -> Stop diag
-          | sq, Piece.Queen when sq @ (Lazy.force queen) -> Stop diag
+          | sq, Piece.Rook   when sq @ (Lazy.force rook)   -> Stop diag
+          | sq, Piece.Queen  when sq @ (Lazy.force queen)  -> Stop diag
           | _ -> Continue acc)
 
     let[@inline] capture sq =
