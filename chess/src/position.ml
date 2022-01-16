@@ -96,10 +96,12 @@ let[@inline] is_en_passant pos sq =
   Uopt.is_some pos.en_passant &&
   Square.(sq = Uopt.unsafe_value pos.en_passant) 
 
-let[@inline] en_passant_pawn pos =
+let[@inline] en_passant_pawn_uopt pos =
   Uopt.map pos.en_passant ~f:(fun ep -> match pos.active with
       | Piece.White -> Square.(with_rank_unsafe ep Rank.five)
       | Piece.Black -> Square.(with_rank_unsafe ep Rank.four))
+
+let en_passant_pawn pos = Uopt.to_option @@ en_passant_pawn_uopt pos
 
 (* Piece lookup *)
 
@@ -437,7 +439,7 @@ module Analysis = struct
     (* First, find our king. *)
     let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
     (* Square of the en passant pawn. *)
-    let en_passant_pawn = en_passant_pawn pos in
+    let en_passant_pawn = en_passant_pawn_uopt pos in
     (* Most general info. *)
     let enemy = Piece.Color.opposite pos.active in
     let occupied = all_board pos in
@@ -991,7 +993,7 @@ module Makemove = struct
     if Uopt.is_none direct_capture then P.return Uopt.none
     else
       let p = Uopt.unsafe_value direct_capture in
-      map_piece p sq ~f:(clr sq) >>| fun k -> Uopt.some (k, sq)
+      map_piece p sq ~f:(clr sq) >>| fun k -> Uopt.some k
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
@@ -1123,7 +1125,7 @@ module Makemove = struct
       let sq = Uopt.unsafe_value en_passant_pawn in
       P.read () >>= fun {active; _} ->
       let p = Piece.(create (Color.opposite active) Pawn) in
-      clear_square p sq >> P.return @@ Uopt.some (Piece.Pawn, sq)
+      clear_square p sq >> P.return @@ Uopt.some Piece.Pawn
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
      for legality. `direct_capture` is the (optional) piece at the destination
@@ -1152,7 +1154,7 @@ module Legal = struct
     type t = {
       move : Move.t;
       new_position : T.t;
-      capture : (Piece.kind * Square.t) Uopt.t;
+      capture : Piece.kind Uopt.t;
       is_en_passant : bool;
       castle : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
@@ -1416,7 +1418,7 @@ end
 let make_move ?(validate = false) pos move =
   let src, dst, promote = Move.decomp move in
   let p = piece_at_square_exn pos src in
-  let en_passant_pawn = en_passant_pawn pos in
+  let en_passant_pawn = en_passant_pawn_uopt pos in
   let new_position, _, _, _ =
     Moves.make_move_aux pos src dst promote p en_passant_pawn in
   if validate then match Valid.check new_position with

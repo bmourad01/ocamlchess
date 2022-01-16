@@ -88,6 +88,10 @@ val board_of_piece : t -> Piece.t -> Bitboard.t
     in [pos] and it is equal to [sq]. *)
 val is_en_passant : t -> Square.t -> bool
 
+(** [en_passant_pawn pos] returns the square of the pawn that just made a
+    double push, if any. *)
+val en_passant_pawn : t -> Square.t option
+
 (** [collect_color pos c] returns a list of square-kind pairs where pieces of
     color [c] occupy squares on position [pos]. *)
 val collect_color : t -> Piece.color -> (Square.t * Piece.kind) list
@@ -293,9 +297,8 @@ module Legal : sig
   (** The resulting position. *)
   val new_position : legal -> t
 
-  (** The kind of piece that was captured, as well as the square it previously
-      occupied, if any. *)
-  val capture : legal -> (Piece.kind * Square.t) option
+  (** The kind of piece that was captured, if any. *)
+  val capture : legal -> Piece.kind option
 
   (** Returns [true] if the move was an en passant capture. *)
   val is_en_passant : legal -> bool

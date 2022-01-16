@@ -59,7 +59,7 @@ module Cccp = struct
 
   (* Try to capture an enemy piece of the highest value. *)
   let capture moves = Legal.best moves ~eval:(fun m ->
-      Legal.capture m |> Option.map ~f:(fun (k, _) -> piece_value k))
+      Legal.capture m |> Option.map ~f:piece_value)
 
   (* Push a piece that results in the the largest number of controlled
      squares. *)
