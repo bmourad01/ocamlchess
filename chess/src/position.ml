@@ -96,10 +96,12 @@ let[@inline] is_en_passant pos sq =
   Uopt.is_some pos.en_passant &&
   Square.(sq = Uopt.unsafe_value pos.en_passant) 
 
+let[@inline] en_passant_pawn_aux active ep = match active with
+  | Piece.White -> Square.(with_rank_unsafe ep Rank.five)
+  | Piece.Black -> Square.(with_rank_unsafe ep Rank.four)
+
 let[@inline] en_passant_pawn_uopt pos =
-  Uopt.map pos.en_passant ~f:(fun ep -> match pos.active with
-      | Piece.White -> Square.(with_rank_unsafe ep Rank.five)
-      | Piece.Black -> Square.(with_rank_unsafe ep Rank.four))
+  Uopt.map pos.en_passant ~f:(en_passant_pawn_aux pos.active)
 
 let en_passant_pawn pos = Uopt.to_option @@ en_passant_pawn_uopt pos
 
@@ -1161,6 +1163,15 @@ module Legal = struct
 
     let capture legal = Uopt.to_option legal.capture
     let castle legal = Uopt.to_option legal.castle
+
+    let capture_square legal =
+      if Uopt.is_none legal.capture then None
+      else Option.some @@
+        let dst = Move.dst legal.move in
+        if legal.is_en_passant then
+          Fn.flip en_passant_pawn_aux dst @@
+          Piece.Color.opposite legal.new_position.active
+        else dst
   end
 
   let best moves ~eval =

@@ -300,6 +300,11 @@ module Legal : sig
   (** The kind of piece that was captured, if any. *)
   val capture : legal -> Piece.kind option
 
+  (** The square of the piece that was captured, if any. Covers the case of
+      en passant captures, where the destination square is not the square
+      of the captured piece. *)
+  val capture_square : legal -> Square.t option
+
   (** Returns [true] if the move was an en passant capture. *)
   val is_en_passant : legal -> bool
 
