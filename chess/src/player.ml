@@ -149,10 +149,7 @@ end
 
 module Opposite_color = struct
   let opposite_color active sq =
-    let rank, file = Square.decomp sq in
-    match active with
-    | Piece.White -> (rank land 1) = (file land 1)
-    | Piece.Black -> (rank land 1) <> (file land 1)
+    not @@ Piece.Color.equal active @@ Square.color sq
 
   let () = register @@ object
       method choose pos = function
@@ -217,10 +214,7 @@ end
 
 module Same_color = struct
   let same_color active sq =
-    let rank, file = Square.decomp sq in
-    match active with
-    | Piece.White -> (rank land 1) <> (file land 1)
-    | Piece.Black -> (rank land 1) = (file land 1)
+    Piece.Color.equal active @@ Square.color sq
 
   let () = register @@ object
       method choose pos = function

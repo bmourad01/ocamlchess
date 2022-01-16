@@ -88,6 +88,9 @@ val file_char : t -> char
     in that order. *)
 val decomp : t -> (int * int)
 
+(** [color sq] returns the color of square [sq]. *)
+val color : t -> Piece.color
+
 (** [of_string_exn s] parses [s] to the underlying representation of a
     square. [s] must obey the regular language [\[a-h\]\[1-8\]], otherwise
     [Invalid_argument] is raised. *)

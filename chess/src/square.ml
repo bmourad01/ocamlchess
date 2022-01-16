@@ -161,6 +161,13 @@ let with_file sq file =
 let[@inline] with_file_unsafe sq file =
   (Bits.rank sq lsl (bits lsr 1)) lor file
 
+let color sq = let open Int in
+  let rank, file = Bits.decomp sq in
+  let rm, fm = rank land 1, file land 1 in
+  if rm <> 0
+  then if fm <> 0 then Piece.Black else Piece.White
+  else if fm <> 0 then Piece.White else Piece.Black
+
 let rank_char =
   let ranks = "12345678" in
   fun sq -> ranks.[Bits.rank sq]

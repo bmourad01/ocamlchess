@@ -144,7 +144,10 @@ let is_insufficient_material pos = let open Bb in
   ((kb & active) = active &&
    (kb & inactive) = inactive &&
    Int.equal 2 @@ count (kb & active) &&
-   Int.equal 2 @@ count (kb & inactive))
+   Int.equal 2 @@ count (kb & inactive) &&
+   Piece.Color.equal
+     (Square.color @@ Bb.first_set_exn (bishop & active))
+     (Square.color @@ Bb.first_set_exn (bishop & inactive)))
 
 let is_fifty_move pos = Position.halfmove pos >= 100
 
