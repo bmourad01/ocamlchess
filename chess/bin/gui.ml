@@ -2,6 +2,7 @@ open Core_kernel
 open Chess
 open Monads.Std
 
+module Bb = Bitboard
 module Legal = Position.Legal
 
 module Window = struct
@@ -125,11 +126,25 @@ let poll = State.(gets window) >>= fun window ->
   | Some (`Mouse_button_pressed (mx, my)) -> click mx my
   | None -> State.return ()
 
-let is_insufficient_material pos =
+let is_insufficient_material pos = let open Bb in
   let king = Position.king pos in
+  let knight = Position.knight pos in
+  let bishop = Position.bishop pos in
   let active = Position.active_board pos in
+  let inactive = Position.inactive_board pos in
   let occupied = Position.all_board pos in
-  Bitboard.((king = occupied) || ((king & active) = king))
+  let kb = king + bishop in
+  let kn = king + knight in
+  (* Only kings are left. *)
+  king = occupied ||
+  (* King + knight/bishop vs king *)
+  (kb = occupied && Int.equal 3 @@ count kb) ||
+  (kn = occupied && Int.equal 3 @@ count kn) ||
+  (* King + bishop vs king + bishop of the same color square. *)
+  ((kb & active) = active &&
+   (kb & inactive) = inactive &&
+   Int.equal 2 @@ count (kb & active) &&
+   Int.equal 2 @@ count (kb & inactive))
 
 let is_fifty_move pos = Position.halfmove pos >= 100
 
@@ -144,7 +159,7 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   let endgame =
     let in_check = Position.in_check pos in
     if is_insufficient_material pos then Some Insufficient_material
-    else if not in_check && is_fifty_move pos then Some Fifty_move
+    (* else if not in_check && is_fifty_move pos then Some Fifty_move *)
     else if List.is_empty legal then
       if in_check
       then Some (Checkmate (Position.inactive pos))
@@ -199,7 +214,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
-    if Position.(pos' <> pos) then begin
+    if Int64.(Position.hash pos' <> Position.hash pos) then begin
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
         (Position.Fen.to_string pos');
@@ -209,13 +224,13 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     end;
     (* Get the valid squares for our selected piece to move to. *)
     State.(gets sel) >>= begin function
-      | None -> State.return (Bitboard.(to_int64 empty), None)
+      | None -> State.return (Bb.(to_int64 empty), None)
       | Some (sq, moves) ->
         let bb =
-          List.fold moves ~init:Bitboard.empty ~f:(fun acc mv ->
+          List.fold moves ~init:Bb.empty ~f:(fun acc mv ->
               let m = Legal.move mv in
-              Bitboard.(acc ++ Move.dst m)) in
-        State.return (Bitboard.to_int64 bb, Some sq)
+              Bb.(acc ++ Move.dst m)) in
+        State.return (Bb.to_int64 bb, Some sq)
     end >>= fun (bb, sq) ->
     display_board pos' window ~bb ~sq ~prev;
     (* Nothing more to do if the game is over. *)
