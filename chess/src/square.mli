@@ -105,6 +105,9 @@ val of_string : string -> t option
     regular language [\[a-h\]\[1-8\]]. *)
 val to_string : t -> string
 
+(** [pp ppf sq] pretty-prints [sq] to formatter [ppf]. *)
+val pp : Format.formatter -> t -> unit
+
 (** The a1 square. *)
 val a1 : t
 

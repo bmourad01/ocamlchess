@@ -57,6 +57,10 @@ val fullmove : t -> int
 (** [hash pos] returns the Zobrist hash of the position. *)
 val hash : t -> int64
 
+(** [same_hash pos1 pos2] returns [true] if [pos1] and [pos2] have the same
+    Zobrist hash. *)
+val same_hash : t -> t -> bool
+
 (** [inactive pos] returns the opposite of the active color for position [pos]. *)
 val inactive : t -> Piece.color
 
@@ -206,6 +210,9 @@ module Fen : sig
   (** [to_string fen] returns a string representation of [fen]. *)
   val to_string : t -> string
 end
+
+(** [pp ppf pos] pretty-prints [pos] to formatter [ppf]. *)
+val pp : Format.formatter -> t -> unit
 
 (** The starting position. *)
 val start : t

@@ -272,6 +272,8 @@ module Hash = struct
     H.update @@ Update.castle_test pos.castle Black Queenside 
 end
 
+let same_hash pos1 pos2 = Int64.(pos1.hash = pos2.hash)
+
 (* Attack patterns. *)
 
 module Attacks = struct
@@ -526,8 +528,7 @@ module Valid = struct
         sprintf "Missing %s pawn in front of en passant square" @@
         Piece.Color.to_string_hum c
       | Invalid_en_passant_square sq ->
-        sprintf "Invalid en passant square %s" @@
-        Square.to_string sq
+        Format.asprintf "Invalid en passant square %a" Square.pp sq
       | Invalid_extra_pieces (c, n) ->
         sprintf "Invalid number of extra %s pieces (%d)"
           (Piece.Color.to_string_hum c) n
@@ -939,6 +940,8 @@ module Fen = struct
     | Error e -> invalid_argf "Failed to parse FEN string '%s': %s" s e ()
     | Ok pos -> pos
 end
+
+let pp ppf pos = Format.fprintf ppf "%s" @@ Fen.to_string pos
 
 let start = Fen.(of_string_exn start)
 

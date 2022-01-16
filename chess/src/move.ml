@@ -32,12 +32,12 @@ let[@inline] dst m =
 let[@inline] promote m = Piece.Kind.of_int @@ m lsr (Square.bits * 2)
 let[@inline] decomp m = src m, dst m, promote m
 
-let to_string m =
-  sprintf "%s%s%s"
-    (src m |> Square.to_string)
-    (dst m |> Square.to_string)
-    (promote m |> Option.value_map ~default:"" ~f:(fun kind ->
-         Piece.create Black kind |> Piece.to_fen |> Char.to_string))
+let pp ppf m =
+  Format.fprintf ppf "%a%a" Square.pp (src m) Square.pp (dst m);
+  promote m |> Option.iter ~f:(fun k ->
+      Format.fprintf ppf "%a" Piece.pp @@ Piece.create Black k)
+
+let to_string m = Format.asprintf "%a" pp m
 
 let of_string_exn s = try
     let src = String.subo s ~len:2 |> Square.of_string_exn in

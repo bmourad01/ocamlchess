@@ -199,7 +199,8 @@ let of_string_exn s = match of_string s with
   | None -> invalid_argf "Invalid square string '%s'" s ()
   | Some sq -> sq
 
-let to_string sq = sprintf "%c%c" (file_char sq) (rank_char sq)
+let pp ppf sq = Format.fprintf ppf "%c%c" (file_char sq) (rank_char sq)
+let to_string sq = Format.asprintf "%a" pp sq
 
 include Bits
 

@@ -223,3 +223,6 @@ val of_fen : char -> t option
 
 (** [to_fen p] returns the corresponding FEN notation of piece [p]. *)
 val to_fen : t -> char
+
+(** [pp ppf p] pretty-prints [p] to formatter [ppf]. *)
+val pp : Format.formatter -> t -> unit

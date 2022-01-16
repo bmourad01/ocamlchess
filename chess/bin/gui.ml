@@ -213,15 +213,15 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
       | Black -> State.(gets black)
     end >>= human_or_ai_move pos >>= fun endgame ->
     (* New position? *)
-    State.(gets pos) >>= fun pos' ->
+    State.(gets pos) >>= fun new_pos ->
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
-    if Int64.(Position.hash pos' <> Position.hash pos) then begin
+    if not @@ Position.same_hash pos new_pos then begin
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
-        (Position.Fen.to_string pos');
-      printf "Hash: %016LX\n%!" @@ Position.hash pos';
+        (Position.Fen.to_string new_pos);
+      printf "Hash: %016LX\n%!" @@ Position.hash new_pos;
       printf "%d legal moves\n%!" @@ List.length legal;
       printf "\n%!"
     end;
@@ -235,7 +235,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
               Bb.(acc ++ Move.dst m)) in
         State.return (Bb.to_int64 bb, Some sq)
     end >>= fun (bb, sq) ->
-    display_board pos' window ~bb ~sq ~prev;
+    display_board new_pos window ~bb ~sq ~prev;
     (* Nothing more to do if the game is over. *)
     match endgame with
     | Some _ -> State.return @@ prompt_end window

@@ -96,6 +96,8 @@ let to_string = function
   | x -> List.fold string_pairs ~init:"" ~f:(fun acc (y, s) ->
       if inter x y <> none then acc ^ s else acc)
 
+let pp ppf cr = Format.fprintf ppf "%s" @@ to_string cr
+
 let of_string_exn = function
   | "-" -> none
   | "" -> invalid_arg "Empty string is invalid for castling rights"

@@ -32,6 +32,9 @@ val decomp : t -> Square.t * Square.t * Piece.kind option
 (** [to_string m] returns the UCI-compatible string notation of move [m]. *)
 val to_string : t -> string
 
+(** [pp ppf m] pretty-prints [m] to formatter [ppf]. *)
+val pp : Format.formatter -> t -> unit
+
 (** [of_string_exn s] parses [s] as a UCI-compatible string notation of a
     move, and raises [Invalid_argument] upon failure. *)
 val of_string_exn : string -> t

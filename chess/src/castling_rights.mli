@@ -93,7 +93,7 @@ val inter : t -> t -> t
 (** [union x y] returns the union of castling rights for [x] and [y]. *)
 val union : t -> t -> t
 
-(** [compl x] returns the complement of castling rights for [x]. *)
+(** [compl cr] returns the complement of castling rights for [cr]. *)
 val compl : t -> t
 
 (** [minus x y] is equivalent to [inter x (compl y)]. *)
@@ -103,8 +103,11 @@ val minus : t -> t -> t
     [x]. *)
 val mem : t -> Piece.color -> side -> bool
 
-(** [to_string x] returns the FEN string representation of [x]. *)
+(** [to_string cr] returns the FEN string representation of [cr]. *)
 val to_string : t -> string
+
+(** [pp ppf cr] pretty-prints [cr] to formatter [ppf]. *)
+val pp : Format.formatter -> t -> unit
 
 (** [of_string_exn s] parses [s] for a FEN string representaion of castling
     rights. Raises [Invalid_argument] if the string is invalid. Duplicate
