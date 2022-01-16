@@ -192,4 +192,3 @@ let fen_black = "pnbrqk"
 let to_fen p = match color p with
   | White -> fen_white.[Bits.kind p]
   | Black -> fen_black.[Bits.kind p]
-
