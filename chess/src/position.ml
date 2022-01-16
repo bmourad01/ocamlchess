@@ -67,7 +67,7 @@ end
 
 include T
 
-let enemy pos = Piece.Color.opposite pos.active
+let inactive pos = Piece.Color.opposite pos.active
 
 (* Bitboard accessors *)
 
@@ -78,7 +78,7 @@ let[@inline] board_of_color pos = function
   | Piece.Black -> pos.black
 
 let[@inline] active_board pos = board_of_color pos pos.active
-let[@inline] enemy_board pos = board_of_color pos @@ enemy pos
+let[@inline] inactive_board pos = board_of_color pos @@ inactive pos
 
 let[@inline] board_of_kind pos = function
   | Piece.Pawn -> pos.pawn
@@ -144,7 +144,7 @@ let collect_color pos c =
       (sq, which_kind_exn pos sq) :: acc)
 
 let collect_active pos = collect_color pos pos.active
-let collect_enemy pos = collect_color pos @@ enemy pos
+let collect_inactive pos = collect_color pos @@ inactive pos
 
 let collect_kind pos k =
   board_of_kind pos k |> Bb.fold ~init:[] ~f:(fun acc sq ->
@@ -293,7 +293,7 @@ module Attacks = struct
 
   (* Get the occupied squares for the board. Kingside_danger` indicates that the
      king of the opposite color should be ignored, so that sliding attacks
-     can "see through" the enemy king. This is useful when the king is blocking
+     can "see through" the inactive king. This is useful when the king is blocking
      the attack of a sliding piece. *)
   let[@inline] occupied pos c king_danger =
     let open Bb.Syntax in
@@ -348,7 +348,7 @@ end
 
 let in_check pos =
   let active_board = active_board pos in
-  let attacks = Attacks.all pos (enemy pos) ~ignore_same:true in
+  let attacks = Attacks.all pos (inactive pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
 (* Relevant info about the position for generating moves. *)
@@ -361,19 +361,19 @@ module Analysis = struct
       en_passant_pawn : Square.t Uopt.t;
       occupied : Bb.t;
       active_board : Bb.t;
-      enemy_board : Bb.t;
-      enemy_attacks : Bb.t;
+      inactive_board : Bb.t;
+      inactive_attacks : Bb.t;
       pinners : Bb.t Map.M(Square).t;
       num_checkers : int;
       check_mask : Bb.t;
       en_passant_check_mask : Bb.t;
-      enemy_sliders : (Square.t * Piece.kind) list;
+      inactive_sliders : (Square.t * Piece.kind) list;
     } [@@deriving fields]
   end
 
   (* Attacks of all piece kinds, starting from the king, intersected with
-     the squares occupied by enemy pieces. *)
-  let[@inline] checkers pos ~king_sq ~enemy_board ~occupied =
+     the squares occupied by inactive pieces. *)
+  let[@inline] checkers pos ~king_sq ~inactive_board ~occupied =
     let open Bb.Syntax in
     let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
     let n = Pre.knight king_sq & pos.knight in
@@ -382,14 +382,14 @@ module Analysis = struct
     let bq = bishop & (pos.bishop + pos.queen) in
     let rq = rook & (pos.rook + pos.queen) in
     let k = Pre.king king_sq & pos.king in
-    (p + n + bq + rq + k) & enemy_board
+    (p + n + bq + rq + k) & inactive_board
 
-  (* For each enemy sliding piece, calculate its attack set. Then,
+  (* For each inactive sliding piece, calculate its attack set. Then,
      intersect it with the same attack set from our king's square.
      Then, intersect with the squares between the sliding piece and our
      king. Any of our pieces that are in this intersection are thus
      pinned. *)
-  let[@inline] pinners ~active_board ~king_sq ~enemy_sliders ~occupied =
+  let[@inline] pinners ~active_board ~king_sq ~inactive_sliders ~occupied =
     let open Bb.Syntax in
     let update pinners sq checker king mask =
       match Bb.first_set (checker & king & mask) with
@@ -402,7 +402,7 @@ module Analysis = struct
     let queen  = lazy (Pre.queen  king_sq occupied) in
     let mask = active_board -- king_sq in
     let init = Map.empty (module Square) in
-    List.fold enemy_sliders ~init ~f:(fun pinners (sq, k) ->
+    List.fold inactive_sliders ~init ~f:(fun pinners (sq, k) ->
         let mask = mask & Pre.between king_sq sq in
         let checker, king = match k with
           | Piece.Bishop -> Pre.bishop sq occupied, Lazy.force bishop
@@ -443,26 +443,26 @@ module Analysis = struct
     (* Square of the en passant pawn. *)
     let en_passant_pawn = en_passant_pawn_uopt pos in
     (* Most general info. *)
-    let enemy = Piece.Color.opposite pos.active in
+    let inactive = inactive pos in
     let occupied = all_board pos in
     let active_board = active_board pos in
-    let enemy_board = enemy_board pos in
-    let enemy_pieces = collect_color pos enemy in
+    let inactive_board = inactive_board pos in
+    let inactive_pieces = collect_color pos inactive in
     (* We're considering attacked squares only for king moves. These squares
-       should include enemy pieces which may block an enemy attack, since it
+       should include inactive pieces which may block an inactive attack, since it
        would be illegal for the king to attack those squares. *)
-    let enemy_attacks =
+    let inactive_attacks =
       let open Bb in 
       let occupied = occupied -- king_sq in
-      List.fold enemy_pieces ~init:empty ~f:(fun acc (sq, k) ->
-          acc + Attacks.pre_of_kind sq occupied enemy k) in
+      List.fold inactive_pieces ~init:empty ~f:(fun acc (sq, k) ->
+          acc + Attacks.pre_of_kind sq occupied inactive k) in
     (* Sliding pieces will be used to calculate pins. *)
-    let enemy_sliders =
-      List.filter enemy_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
+    let inactive_sliders =
+      List.filter inactive_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
     (* Pinned pieces. *)
-    let pinners = pinners ~active_board ~king_sq ~enemy_sliders ~occupied in
+    let pinners = pinners ~active_board ~king_sq ~inactive_sliders ~occupied in
     (* Pieces checking our king. *)
-    let checkers = checkers pos ~king_sq ~enemy_board ~occupied in
+    let checkers = checkers pos ~king_sq ~inactive_board ~occupied in
     (* Number of checkers is important for how we can decide to get out of
        check. *)
     let num_checkers = Bb.count checkers in
@@ -472,8 +472,8 @@ module Analysis = struct
     (* Construct the analyzed position. *)
     T.Fields.create
       ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board
-      ~enemy_board ~enemy_attacks ~pinners ~num_checkers
-      ~check_mask ~en_passant_check_mask ~enemy_sliders
+      ~inactive_board ~inactive_attacks ~pinners ~num_checkers
+      ~check_mask ~en_passant_check_mask ~inactive_sliders
 
   include T
 end
@@ -575,18 +575,18 @@ module Valid = struct
 
   module Checks = struct
     let check_inactive_in_check pos =
-      let b = enemy_board pos in
+      let b = inactive_board pos in
       let attacks = Attacks.all pos pos.active ~ignore_same:true in
       if Bb.((b & pos.king & attacks) <> empty)
-      then E.fail @@ Inactive_in_check (enemy pos)
+      then E.fail @@ Inactive_in_check (inactive pos)
       else E.return ()
 
     let check_checkers pos =
       let active_board = active_board pos in
       let king_sq = Bb.(first_set_exn (active_board & pos.king)) in
-      let enemy_board = enemy_board pos in
-      let occupied = Bb.(active_board + enemy_board) in
-      let checkers = Analysis.checkers pos ~king_sq ~enemy_board ~occupied in
+      let inactive_board = inactive_board pos in
+      let occupied = Bb.(active_board + inactive_board) in
+      let checkers = Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
       let num_checkers = Bb.count checkers in
       if num_checkers >= 3
       then E.fail @@ Invalid_number_of_checkers (pos.active, num_checkers)
@@ -1075,7 +1075,7 @@ module Makemove = struct
   let[@inline] rook_moved src =
     P.read () >>= Fn.compose (rook_moved_or_captured src) active
 
-  (* Rook was captured at a square. Assume that it is the enemy's color. *)
+  (* Rook was captured at a square. Assume that it is the inactive's color. *)
   let[@inline] rook_captured dst direct_capture =
     if Uopt.is_none direct_capture then P.return ()
     else
@@ -1108,7 +1108,7 @@ module Makemove = struct
   (* After each halfmove, give the turn to the other player. *)
   let flip_active = P.read () >>= fun pos ->
     update_hash ~f:Hash.Update.active_player >>| fun () ->
-    set_active pos @@ Piece.Color.opposite pos.active
+    set_active pos @@ inactive pos
 
   (* Since white moves first, increment the fullmove clock after black
      has moved. *)
@@ -1125,8 +1125,8 @@ module Makemove = struct
     if Uopt.is_none en_passant_pawn then P.return Uopt.none
     else
       let sq = Uopt.unsafe_value en_passant_pawn in
-      P.read () >>= fun {active; _} ->
-      let p = Piece.(create (Color.opposite active) Pawn) in
+      P.read () >>= fun pos ->
+      let p = Piece.create (inactive pos) Pawn in
       clear_square p sq >> P.return @@ Uopt.some Piece.Pawn
 
   (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
@@ -1168,10 +1168,8 @@ module Legal = struct
       if Uopt.is_none legal.capture then None
       else Option.some @@
         let dst = Move.dst legal.move in
-        if legal.is_en_passant then
-          Fn.flip en_passant_pawn_aux dst @@
-          Piece.Color.opposite legal.new_position.active
-        else dst
+        if not legal.is_en_passant then dst
+        else Fn.flip en_passant_pawn_aux dst @@ inactive legal.new_position
   end
 
   let best moves ~eval =
@@ -1213,7 +1211,7 @@ module Moves = struct
        on the king. En passant moves arise rarely across all chess positions,
        so we can do a bit of heavy calculation here. *)
     let[@inline] en_passant sq ep pw diag = let open Bb in
-      A.read () >>| fun {king_sq; occupied; enemy_sliders; _} ->
+      A.read () >>| fun {king_sq; occupied; inactive_sliders; _} ->
       (* Remove our pawn and the captured pawn from the board, but pretend that
          the en passant square is occupied. This covers the case where we can
          capture the pawn, but it may leave our pawn pinned. *)
@@ -1224,16 +1222,16 @@ module Moves = struct
       let bishop = lazy (Pre.bishop king_sq occupied) in
       let rook   = lazy (Pre.rook   king_sq occupied) in
       let queen  = lazy (Pre.queen  king_sq occupied) in
-      List.fold_until enemy_sliders ~init ~finish ~f:(fun acc -> function
+      List.fold_until inactive_sliders ~init ~finish ~f:(fun acc -> function
           | sq, Piece.Bishop when sq @ (Lazy.force bishop) -> Stop diag
           | sq, Piece.Rook   when sq @ (Lazy.force rook)   -> Stop diag
           | sq, Piece.Queen  when sq @ (Lazy.force queen)  -> Stop diag
           | _ -> Continue acc)
 
     let[@inline] capture sq =
-      A.read () >>= fun {pos; en_passant_pawn; enemy_board; _} ->
+      A.read () >>= fun {pos; en_passant_pawn; inactive_board; _} ->
       let diag' = Pre.pawn_capture sq pos.active in
-      let diag = Bb.(diag' & enemy_board) in
+      let diag = Bb.(diag' & inactive_board) in
       let ep, pw = pos.en_passant, en_passant_pawn in
       if Uopt.(is_none ep && is_none pw) then A.return diag
       else if Uopt.(is_some ep && is_some pw) then
@@ -1271,14 +1269,14 @@ module Moves = struct
   end
 
   module King = struct
-    (* Note that `enemy_attacks` includes squares occupied by enemy pieces.
+    (* Note that `inactive_attacks` includes squares occupied by inactive pieces.
        Therefore, the king may not attack those squares. *)
     let[@inline] move sq =
-      A.read () >>| fun {active_board; enemy_attacks; _} ->
-      Bb.(Pre.king sq - active_board - enemy_attacks)
+      A.read () >>| fun {active_board; inactive_attacks; _} ->
+      Bb.(Pre.king sq - active_board - inactive_attacks)
 
     let castle =
-      A.read () >>| fun {pos; occupied; enemy_attacks; num_checkers; _} ->
+      A.read () >>| fun {pos; occupied; inactive_attacks; num_checkers; _} ->
       (* Cannot castle out of check. *)
       if num_checkers > 0 then Bb.empty
       else
@@ -1286,7 +1284,7 @@ module Moves = struct
         let castle sq s =
           let m, b = Pre.castle pos.castle pos.active s in
           (* Check the actual squares to move our pieces to. *)
-          let ok = Int.equal 2 @@ count (b - occupied - enemy_attacks) in
+          let ok = Int.equal 2 @@ count (b - occupied - inactive_attacks) in
           (* For queenside, the extra b-file square needs to be unoccupied, so
              check the mask. *)
           let ok = match s with

@@ -147,7 +147,7 @@ let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
     else if not in_check && is_fifty_move pos then Some Fifty_move
     else if List.is_empty legal then
       if in_check
-      then Some (Checkmate (Position.enemy pos))
+      then Some (Checkmate (Position.inactive pos))
       else Some Stalemate
     else None in
   {st with endgame}

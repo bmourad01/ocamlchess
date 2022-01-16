@@ -46,18 +46,18 @@ let piece_value = function
   | Piece.King -> 0
 
 module Cccp = struct
-  (* Try to checkmate the enemy king. *)
+  (* Try to checkmate the inactive king. *)
   let checkmate = List.filter ~f:(fun mv ->
       let pos = Legal.new_position mv in
       match Position.legal_moves pos with
       | [] -> Position.in_check pos
       | _ -> false)
 
-  (* Try to check the enemy king. *)
+  (* Try to check the inactive king. *)
   let check = List.filter ~f:(fun m ->
       Legal.new_position m |> Position.in_check)
 
-  (* Try to capture an enemy piece of the highest value. *)
+  (* Try to capture an inactive piece of the highest value. *)
   let capture moves = Legal.best moves ~eval:(fun m ->
       Legal.capture m |> Option.map ~f:piece_value)
 
@@ -251,9 +251,9 @@ module Suicide_king = struct
               let pos = Legal.new_position m in
               let king = Position.king pos in
               let active_board = Position.board_of_color pos active in
-              let enemy_board = Position.active_board pos in
+              let inactive_board = Position.active_board pos in
               let k1 = Bb.(first_set_exn (king & active_board)) in
-              let k2 = Bb.(first_set_exn (king & enemy_board)) in
+              let k2 = Bb.(first_set_exn (king & inactive_board)) in
               Some (-(Square.chebyshev k1 k2))) |>
           List.random_element_exn
 
@@ -270,10 +270,10 @@ module Swarm = struct
         | [] -> raise No_moves
         | moves ->
           let active = Position.active pos in
-          let enemy = Position.enemy pos in
-          let enemy_board = Position.board_of_color pos enemy in
+          let inactive = Position.inactive pos in
+          let inactive_board = Position.board_of_color pos inactive in
           let king = Position.king pos in
-          let king_sq = Bb.(first_set_exn (king & enemy_board)) in
+          let king_sq = Bb.(first_set_exn (king & inactive_board)) in
           Legal.best moves ~eval:(fun m ->
               let pos = Legal.new_position m in
               Position.collect_color pos active |>
@@ -285,6 +285,6 @@ module Swarm = struct
       method limits = None
       method name = "swarm"
       method desc = "The player that tries to minimize the distance between its \
-                     pieces and the enemy king."
+                     pieces and the inactive king."
     end
 end

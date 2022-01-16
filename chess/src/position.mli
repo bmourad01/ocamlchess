@@ -57,8 +57,8 @@ val fullmove : t -> int
 (** [hash pos] returns the Zobrist hash of the position. *)
 val hash : t -> int64
 
-(** [enemy pos] returns the opposite of the active color for position [pos]. *)
-val enemy : t -> Piece.color
+(** [inactive pos] returns the opposite of the active color for position [pos]. *)
+val inactive : t -> Piece.color
 
 (** [all_board pos] returns the bitboard of all occupied squares for position
     [pos]. *)
@@ -72,9 +72,9 @@ val board_of_color : t -> Piece.color -> Bitboard.t
     color. *)
 val active_board : t -> Bitboard.t
 
-(** [enemy_board pos] returns the bitboard for all the pieces of the enemy
+(** [inactive_board pos] returns the bitboard for all the pieces of the inactive
     color. *)
-val enemy_board : t -> Bitboard.t
+val inactive_board : t -> Bitboard.t
 
 (** [board_of_color pos k] returns the bitboard of kind [k] from position
     [pos]. *)
@@ -100,9 +100,9 @@ val collect_color : t -> Piece.color -> (Square.t * Piece.kind) list
     the active color occupy squares on position [pos]. *)
 val collect_active : t -> (Square.t * Piece.kind) list
 
-(** [collect_enemy pos] returns a list of square-kind pairs where pieces of
+(** [collect_inactive pos] returns a list of square-kind pairs where pieces of
     the opponent's color occupy squares on position [pos]. *)
-val collect_enemy : t -> (Square.t * Piece.kind) list
+val collect_inactive : t -> (Square.t * Piece.kind) list
 
 (** [collect_kind pos k] returns a list of square-color pairs where pieces of
     kind [k] occupy squares on position [pos]. *)
@@ -228,7 +228,7 @@ module Attacks : sig
   (** [bishop pos c ~ignore_same ~king_danger] returns the bitboard of attacked
       squares by bishops of color [c], according to position [pos].
       [king_danger] indicates whether the sliding bishop attack should ignore
-      the enemy king. By default, it is [false]. If [ignore_same] is
+      the inactive king. By default, it is [false]. If [ignore_same] is
       [false], then pieces of color [c] are not excluded from the set of
       attacked squares. By default, it is [true]. *)
   val bishop :
@@ -236,7 +236,7 @@ module Attacks : sig
 
   (** [rook pos c ~ignore_same ~king_danger] returns the bitboard of attacked
       squares by rooks of color [c], according to position [pos]. [king_danger]
-      indicates whether the sliding rook attack should ignore the enemy king.
+      indicates whether the sliding rook attack should ignore the inactive king.
       By default, it is [false]. If [ignore_same] is [false], then pieces of
       color [c] are not excluded from the set of attacked squares. By default,
       it is [true]. *)
@@ -246,7 +246,7 @@ module Attacks : sig
   (** [queen pos c ~ignore_same ~king_danger] returns the bitboard of attacked
       squares by queens of color [c], according to position [pos].
       [king_danger] indicates whether the sliding queen attack should ignore
-      the enemy king. By default, it is [false]. If [ignore_same] is
+      the inactive king. By default, it is [false]. If [ignore_same] is
       [false], then pieces of color [c] are not excluded from the set of
       attacked squares. By default, it is [true].*)
   val queen :
@@ -261,7 +261,7 @@ module Attacks : sig
   (** [all pos c ~ignore_same ~king_danger] returns the bitboard of attacked
       squares by all pieces of color [c], according to position [pos].
       [king_danger] indicates whether the sliding attacks should ignore the
-      enemy king. By default, it is [false]. If [ignore_same] is
+      inactive king. By default, it is [false]. If [ignore_same] is
       [false], then pieces of color [c] are not excluded from the set of
       attacked squares. By default, it is [true]. *)
   val all :
@@ -270,7 +270,7 @@ module Attacks : sig
   (** [sliding pos c ~ignore_same ~king_danger] returns the bitboard of
       attacked squares by all sliding pieces of color [c], according to
       position [pos]. [king_danger] indicates whether these attacks should
-      ignore the enemy king. By default, it is [false]. If [ignore_same] is
+      ignore the inactive king. By default, it is [false]. If [ignore_same] is
       [false], then pieces of color [c] are not excluded from the set of
       attacked squares. By default, it is [true]. *)
   val sliding :
