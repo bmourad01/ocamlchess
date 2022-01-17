@@ -953,7 +953,15 @@ module Makemove = struct
 
   (* `en_passant_pawn` is the pawn that is "in front" of the en passant
      square. This field is only valid if the move we are making is in fact an
-     en passant move. *)
+     en passant move.
+
+     `castle` is the side on which castling occurred, if any.
+
+     `piece` is the piece being moved (which belongs to the active color).
+
+     `direct_capture` is the inactive piece, if any, that will be captured
+     by the "direct" move (e.g. it is not an en passant capture).
+  *)
   type context = {
     en_passant_pawn : Square.t Uopt.t;
     castle : Cr.side Uopt.t;
@@ -985,8 +993,8 @@ module Makemove = struct
     update_hash ~f:(Hash.Update.piece c k sq) >>
     P.return k
 
-  let set sq = Bb.(fun b -> b ++ sq)
-  let clr sq = Bb.(fun b -> b -- sq)
+  let[@inline] set sq = Bb.(fun b -> b ++ sq)
+  let[@inline] clr sq = Bb.(fun b -> b -- sq)
 
   let[@inline] set_square p sq = map_piece p sq ~f:(set sq) >>| ignore
   let[@inline] clear_square p sq = map_piece p sq ~f:(clr sq) >>| ignore
@@ -1009,7 +1017,7 @@ module Makemove = struct
 
   (* Castling rights change monotonically, so the only time we update the hash
      is when we take away rights. *)
-  let castle_hash c s = P.read () >>= fun pos ->
+  let[@inline] castle_hash c s = P.read () >>= fun pos ->
     if not @@ Cr.mem pos.castle c s then P.return ()
     else update_hash ~f:(Hash.Update.castle c s)
 
@@ -1088,10 +1096,7 @@ module Makemove = struct
     | Rook -> rook_moved src >> rook_captured dst ctx.direct_capture
     | _ -> rook_captured dst ctx.direct_capture
 
-  (* Update the en passant square if a pawn double push occurred. We're
-     skipping the check on whether the file changed, since our assumption is
-     that the move is legal. For the check if `p` is a pawn or not, we assume
-     that it belongs to the active color. *) 
+  (* Update the en passant square if a pawn double push occurred. *) 
   let[@inline] update_en_passant p src dst = begin if Piece.is_pawn p then
       let rank = Square.rank src and rank' = Square.rank dst in
       P.read () >>| fun {active; _} -> match active with
