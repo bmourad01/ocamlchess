@@ -187,12 +187,6 @@ module Hash = struct
     (* We will use flattened arrays where applicable, since this can have
        a better impact on caching. *)
 
-    let castle_keys =
-      Array.create ~len:(Piece.Color.count * Cr.Side.count) 0L
-
-    let castle_key_idx c s = c + s * Piece.Color.count
-    let castle_key c s = Array.unsafe_get castle_keys @@ castle_key_idx c s
-
     let piece_keys =
       Array.create 0L
         ~len:(Piece.Color.count * Piece.Kind.count * Square.count)
@@ -205,24 +199,33 @@ module Hash = struct
     let en_passant_keys = Array.create ~len:Square.File.count 0L
     let en_passant_key file = Array.unsafe_get en_passant_keys file
 
+    let castle_keys =
+      Array.create ~len:(Piece.Color.count * Cr.Side.count) 0L
+
+    let castle_key_idx c s = c + s * Piece.Color.count
+    let castle_key c s = Array.unsafe_get castle_keys @@ castle_key_idx c s
+
     let white_to_move_key =
       let rng = Utils.Prng.create seed in
-      for c = 0 to Piece.Color.count - 1 do
-        for s = 0 to Cr.Side.count - 1 do
-          castle_keys.(castle_key_idx c s) <- rng#rand
-        done
-      done;
-      let white_to_move_key = rng#rand in
-      for file = 0 to Square.File.count - 1 do
-        en_passant_keys.(file) <- rng#rand
-      done;
+      (* Pieces *)
       for k = 0; to Piece.Kind.count - 1 do
         for sq = 0 to Square.count - 1 do
           piece_keys.(piece_key_idx Piece.Color.white k sq) <- rng#rand;
           piece_keys.(piece_key_idx Piece.Color.black k sq) <- rng#rand;
         done
       done;
-      white_to_move_key
+      (* En passant file *)
+      for file = 0 to Square.File.count - 1 do
+        en_passant_keys.(file) <- rng#rand
+      done;
+      (* Castling rights *)
+      for c = 0 to Piece.Color.count - 1 do
+        for s = 0 to Cr.Side.count - 1 do
+          castle_keys.(castle_key_idx c s) <- rng#rand
+        done
+      done;
+      (* White to move *)
+      rng#rand
   end
 
   (* Update individual fields. *)
