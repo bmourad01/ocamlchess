@@ -1216,7 +1216,7 @@ module Moves = struct
        then this capture would be illegal, since it would lead to a discovery
        on the king. En passant moves arise rarely across all chess positions,
        so we can do a bit of heavy calculation here. *)
-    let[@inline] en_passant sq ep pw diag = let open Bb in
+    let[@inline] en_passant sq ep pw diag = let open Bb.Syntax in
       A.read () >>| fun {king_sq; occupied; inactive_sliders; _} ->
       (* Remove our pawn and the captured pawn from the board, but pretend that
          the en passant square is occupied. This covers the case where we can
@@ -1234,15 +1234,15 @@ module Moves = struct
           | sq, Piece.Queen  when sq @ (Lazy.force queen)  -> Stop diag
           | _ -> Continue acc)
 
-    let[@inline] capture sq =
+    let[@inline] capture sq = let open Bb.Syntax in
       A.read () >>= fun {pos; en_passant_pawn; inactive_board; _} ->
-      let diag' = Pre.pawn_capture sq pos.active in
-      let diag = Bb.(diag' & inactive_board) in
+      let capture = Pre.pawn_capture sq pos.active in
+      let diag = capture & inactive_board in
       let ep, pw = pos.en_passant, en_passant_pawn in
       if Uopt.(is_none ep && is_none pw) then A.return diag
       else if Uopt.(is_some ep && is_some pw) then
         let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
-        if Bb.(ep @ diag') then en_passant sq ep pw diag
+        if ep @ capture then en_passant sq ep pw diag
         else A.return diag
       else failwith "En passant and pawn squares are not consistent"
 
@@ -1279,32 +1279,26 @@ module Moves = struct
        Therefore, the king may not attack those squares. *)
     let[@inline] move sq =
       A.read () >>| fun {active_board; inactive_attacks; _} ->
-      Bb.(Pre.king sq - active_board - inactive_attacks)
+      Bb.(Pre.king sq - (active_board + inactive_attacks))
 
-    let castle =
+    let castle = let open Bb in
       A.read () >>| fun {pos; occupied; inactive_attacks; num_checkers; _} ->
       (* Cannot castle out of check. *)
-      if num_checkers > 0 then Bb.empty
+      if Int.(num_checkers > 0) then empty
       else
-        let open Bb in
-        let castle sq s =
-          let m, b = Pre.castle pos.castle pos.active s in
-          (* Check the actual squares to move our pieces to. *)
-          let ok = Int.equal 2 @@ count (b - occupied - inactive_attacks) in
-          (* For queenside, the extra b-file square needs to be unoccupied, so
-             check the mask. *)
-          let ok = match s with
-            | Queenside -> ok && Int.equal 3 @@ count (m - occupied)
-            | Kingside -> ok in
-          (* If both checks succeeded, then we can castle. *)
-          if ok then !!sq else empty in
-        (* Skip if we don't have any rights at all. *)
-        match pos.active with
-        | Piece.White when Cr.(inter pos.castle white <> none) ->
-          castle Square.g1 Kingside + castle Square.c1 Queenside
-        | Piece.Black when Cr.(inter pos.castle black <> none) ->
-          castle Square.g8 Kingside + castle Square.c8 Queenside
-        | _ -> empty
+        let active = pos.active in
+        let[@inline] ks_castle sq =
+          let b = Pre.castle pos.castle active Kingside in
+          if Int.equal 2 @@ count (b - occupied - inactive_attacks)
+          then !!sq else empty in
+        let[@inline] qs_castle sq bsq =      
+          let b = Pre.castle pos.castle active Queenside in
+          if Int.equal 2 @@ count (b - occupied - inactive_attacks)
+          && not (bsq @ occupied) then !!sq else empty in
+        let ks, qs, bsq = match active with
+          | Piece.White -> Square.(g1, c1, b1)
+          | Piece.Black -> Square.(g8, c8, b8) in
+        ks_castle ks + qs_castle qs bsq
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)

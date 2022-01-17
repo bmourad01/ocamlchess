@@ -262,19 +262,19 @@ let castle_tbl =
   let open Bb in
   let open Castling_rights in
   let wk = Square.(!!f1 + !!g1) in
-  let wq = Square.(!!b1 + !!c1 + !!d1) in
+  let wq = Square.(!!c1 + !!d1) in
   let bk = Square.(!!f8 + !!g8) in
-  let bq = Square.(!!b8 + !!c8 + !!d8) in
+  let bq = Square.(!!c8 + !!d8) in
   let valid = [
-    Piece.White, Kingside,  (wk, wk);
-    Piece.White, Queenside, (wq, wq -- Square.b1);
-    Piece.Black, Kingside,  (bk, bk);
-    Piece.Black, Queenside, (bq, bq -- Square.b8);
+    Piece.White, Kingside,  wk;
+    Piece.White, Queenside, wq;
+    Piece.Black, Kingside,  bk;
+    Piece.Black, Queenside, bq;
   ] in
   Array.init (1 lsl bits) ~f:(fun i ->
       let x = of_int_unsafe i in
-      List.fold valid ~init:(empty, empty) ~f:(fun (m, b) (c, s, (m', b')) ->
-          if mem x c s then (m + m', b + b') else (m, b)))
+      List.fold valid ~init:empty ~f:(fun b (c, s, b') ->
+          if mem x c s then b + b' else b))
 
 let[@inline] castle cr c s = Array.unsafe_get castle_tbl @@
   Castling_rights.(to_int @@ inter cr @@ singleton c s)
