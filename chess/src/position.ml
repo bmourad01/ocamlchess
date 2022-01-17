@@ -1287,14 +1287,15 @@ module Moves = struct
       if Int.(num_checkers > 0) then empty
       else
         let active = pos.active in
+        let m = occupied + inactive_attacks in
         let[@inline] ks_castle sq =
           let b = Pre.castle pos.castle active Kingside in
-          if Int.equal 2 @@ count (b - occupied - inactive_attacks)
-          then !!sq else empty in
-        let[@inline] qs_castle sq bsq =      
-          let b = Pre.castle pos.castle active Queenside in
-          if Int.equal 2 @@ count (b - occupied - inactive_attacks)
-          && not (bsq @ occupied) then !!sq else empty in
+          if Int.equal 2 @@ count (b - m) then !!sq else empty in
+        let[@inline] qs_castle sq bsq =
+          if not (bsq @ occupied) then
+            let b = Pre.castle pos.castle active Queenside in
+            if Int.equal 2 @@ count (b - m) then !!sq else empty
+          else empty in
         let ks, qs, bsq = match active with
           | Piece.White -> Square.(g1, c1, b1)
           | Piece.Black -> Square.(g8, c8, b8) in
