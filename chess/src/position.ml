@@ -323,12 +323,12 @@ module Attacks = struct
     gen pos c King Pre.king ~ignore_same
 
   let[@inline] pre_of_kind sq occupied c = function
-    | Piece.Pawn -> Pre.pawn_capture sq c
+    | Piece.Pawn   -> Pre.pawn_capture sq c
     | Piece.Knight -> Pre.knight sq
     | Piece.Bishop -> Pre.bishop sq occupied
-    | Piece.Rook -> Pre.rook sq occupied
-    | Piece.Queen -> Pre.queen sq occupied
-    | Piece.King -> Pre.king sq
+    | Piece.Rook   -> Pre.rook sq occupied
+    | Piece.Queen  -> Pre.queen sq occupied
+    | Piece.King   -> Pre.king sq
 
   let[@inline] aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
     let open Bb.Syntax in
