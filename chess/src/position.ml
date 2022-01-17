@@ -451,8 +451,8 @@ module Analysis = struct
     let inactive_board = inactive_board pos in
     let inactive_pieces = collect_color pos inactive in
     (* We're considering attacked squares only for king moves. These squares
-       should include inactive pieces which may block an inactive attack, since it
-       would be illegal for the king to attack those squares. *)
+       should include inactive pieces which may block an inactive attack, since
+       it would be illegal for the king to attack those squares. *)
     let inactive_attacks =
       let open Bb in 
       let occupied = occupied -- king_sq in
