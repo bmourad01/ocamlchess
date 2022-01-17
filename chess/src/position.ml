@@ -368,7 +368,7 @@ module Analysis = struct
       active_board : Bb.t;
       inactive_board : Bb.t;
       inactive_attacks : Bb.t;
-      pinners : Bb.t Map.M(Square).t;
+      pinners : Bb.t array;
       num_checkers : int;
       check_mask : Bb.t;
       en_passant_check_mask : Bb.t;
@@ -396,39 +396,35 @@ module Analysis = struct
      pinned. *)
   let[@inline] pinners ~active_board ~king_sq ~inactive_sliders ~occupied =
     let open Bb.Syntax in
-    let update pinners sq checker king mask =
-      match Bb.first_set (checker & king & mask) with
-      | None -> pinners
-      | Some sq' -> Map.update pinners sq' ~f:(function
-          | Some b -> b ++ sq
-          | None -> !!sq) in
-    let bishop = lazy (Pre.bishop king_sq occupied) in
-    let rook   = lazy (Pre.rook   king_sq occupied) in
-    let queen  = lazy (Pre.queen  king_sq occupied) in
-    let mask = active_board -- king_sq in
-    let init = Map.empty (module Square) in
-    List.fold inactive_sliders ~init ~f:(fun pinners (sq, k) ->
+    let bishop  = lazy (Pre.bishop king_sq occupied) in
+    let rook    = lazy (Pre.rook   king_sq occupied) in
+    let queen   = lazy (Pre.queen  king_sq occupied) in
+    let mask    = active_board -- king_sq in
+    let pinners = Array.create ~len:Square.count Bb.empty in
+    List.iter inactive_sliders ~f:(fun (sq, k) ->
         let mask = mask & Pre.between king_sq sq in
         let checker, king = match k with
           | Piece.Bishop -> Pre.bishop sq occupied, Lazy.force bishop
           | Piece.Rook   -> Pre.rook   sq occupied, Lazy.force rook
           | Piece.Queen  -> Pre.queen  sq occupied, Lazy.force queen
           | _ -> Bb.(empty, empty) in
-        update pinners sq checker king mask)
+        Bb.first_set (checker & king & mask) |>
+        Option.iter ~f:(fun pinner ->
+            let i = Square.to_int pinner in
+            let b = Array.unsafe_get pinners i ++ sq in
+            Array.unsafe_set pinners i b));
+    pinners
 
   (* Generate the masks which may restrict movement in the event of a check. *)
   let[@inline] check_masks pos
       ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
-    if num_checkers <> 1
-    then Bb.full, Bb.empty
-    else
+    if num_checkers = 1 then
       (* Test if the checker is a sliding piece. If so, then we can try to
          block the attack. Otherwise, they may only be captured. *)
       let open Bb.Syntax in
       let sq = Bb.first_set_exn checkers in
       match which_kind_exn pos sq with
-      | Bishop | Rook | Queen ->
-        checkers + Pre.between king_sq sq, Bb.empty
+      | Bishop | Rook | Queen -> checkers + Pre.between king_sq sq, Bb.empty
       | Pawn ->
         (* Edge case for being able to get out of check via en passant
            capture. *)
@@ -440,6 +436,7 @@ module Analysis = struct
           else checkers, Bb.empty
         else failwith "En passant and pawn squares are not consistent"
       |  _ -> checkers, Bb.empty
+    else Bb.full, Bb.empty
 
   (* Populate info needed for generating legal moves. *)
   let[@inline] create pos =
@@ -1303,13 +1300,15 @@ module Moves = struct
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
-  let[@inline] pin_mask sq =
-    A.read () >>| fun {king_sq; pinners; _} -> match Map.find pinners sq with
-    | None -> Bb.full
-    | Some p when Bb.count p > 1 -> Bb.empty
-    | Some p ->
-      let sq' = Bb.first_set_exn p in
-      Bb.(Pre.between king_sq sq' ++ sq')
+  let[@inline] pin_mask sq = let open Bb in
+    A.read () >>| fun {king_sq; pinners; _} ->
+    let p = Array.unsafe_get pinners @@ Square.to_int sq in
+    match count p with
+    | 1 ->
+      let pinner = first_set_exn p in
+      Pre.between king_sq pinner ++ pinner
+    | 0 -> full
+    | _ -> empty
 
   (* Use this mask to restrict the movement of pieces when we are in check. *)
   let check_mask = A.read () >>| Analysis.check_mask
