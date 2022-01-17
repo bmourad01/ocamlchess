@@ -1358,6 +1358,17 @@ module Moves = struct
     castle >>| fun castle ->
     move + castle
 
+  let[@inline] castle_side piece src dst =
+    if Piece.is_king piece then
+      let file = Square.file src in
+      if Square.File.(file = e) then
+        let file' = Square.file dst in
+        if Square.File.(file' = c) then Uopt.some Cr.Queenside
+        else if Square.File.(file' = g) then Uopt.some Cr.Kingside
+        else Uopt.none
+      else Uopt.none
+    else Uopt.none
+
   (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] make_move_aux pos src dst promote piece en_passant_pawn =
     let new_position = copy pos in
@@ -1365,16 +1376,7 @@ module Moves = struct
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
     let en_passant_pawn =
       if is_en_passant then en_passant_pawn else Uopt.none in
-    let castle =
-      if Piece.is_king piece then
-        let file = Square.file src in
-        if Square.File.(file = e) then
-          let file' = Square.file dst in
-          if Square.File.(file' = c) then Uopt.some Cr.Queenside
-          else if Square.File.(file' = g) then Uopt.some Cr.Kingside
-          else Uopt.none
-        else Uopt.none
-      else Uopt.none in
+    let castle = castle_side piece src dst in
     let capture =
       Fn.flip Monad.Reader.run new_position @@
       Makemove.go src dst promote @@
@@ -1390,23 +1392,22 @@ module Moves = struct
     Legal.Fields.create
       ~move ~new_position ~capture ~is_en_passant ~castle :: acc
 
+  (* If we're promoting, then the back rank should be the only
+     available squares. *)
+  let[@inline] is_promote_rank b = function
+    | Piece.White -> Bb.((b & rank_8) = b)
+    | Piece.Black -> Bb.((b & rank_1) = b)
+
   (* Get the new positions from the bitboard of squares we can move to. *)
   let[@inline] exec src k init b =
     A.read () >>| fun {pos; en_passant_pawn; _} ->
-    let is_promote = match k with
-      | Piece.Pawn -> begin
-          (* If we're promoting, then the back rank should be the only
-             available squares. *)
-          match pos.active with
-          | Piece.White -> Bb.((b & rank_8) = b)
-          | Piece.Black -> Bb.((b & rank_1) = b)
-        end
-      | _ -> false in
-    let f = accum_move pos en_passant_pawn @@ Piece.create pos.active k in
-    if not is_promote
-    then Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
-    else Bb.fold b ~init ~f:(fun acc dst ->
-        Pawn.promote src dst |> List.fold ~init:acc ~f)
+    let active = pos.active in
+    let f = accum_move pos en_passant_pawn @@ Piece.create active k in
+    match k with
+    | Piece.Pawn when is_promote_rank b active ->
+      Bb.fold b ~init ~f:(fun init dst ->
+          Pawn.promote src dst |> List.fold ~init ~f)
+    | _ -> Bb.fold b ~init ~f:(fun acc dst -> Move.create src dst |> f acc)
 
   let[@inline] any sq = function
     | Piece.Pawn   -> pawn sq
