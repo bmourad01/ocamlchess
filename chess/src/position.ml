@@ -1043,10 +1043,8 @@ module Makemove = struct
 
   (* If we're castling our king on this move, then we need to move the rook as
      well as clear our rights. *)
-  let[@inline] king_moved_or_castled castle =
-    P.read () >>= fun {active; _} ->
-    if Uopt.is_some castle then
-      match active, Uopt.unsafe_value castle with
+  let[@inline] king_moved_or_castled castle = P.read () >>= fun {active; _} ->
+    if Uopt.is_some castle then match active, Uopt.unsafe_value castle with
       | Piece.White, Cr.Kingside  -> white_kingside_castle
       | Piece.White, Cr.Queenside -> white_queenside_castle
       | Piece.Black, Cr.Kingside  -> black_kingside_castle
