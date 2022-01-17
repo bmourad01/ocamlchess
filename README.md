@@ -4,7 +4,7 @@ This project aims to create an efficient, UCI-compatible chess engine in OCaml t
 
 # Requirements
 
-For best performance, please ensure that a Flambda-enabled OCaml compiler is installed (minimum 4.09).
+For best performance, please ensure that a Flambda-enabled OCaml compiler is installed.
 
 The following OCaml packages are required, available via `opam install <pkg>`:
 
