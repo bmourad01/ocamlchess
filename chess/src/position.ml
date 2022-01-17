@@ -453,8 +453,7 @@ module Analysis = struct
     (* We're considering attacked squares only for king moves. These squares
        should include inactive pieces which may block an inactive attack, since
        it would be illegal for the king to attack those squares. *)
-    let inactive_attacks =
-      let open Bb in 
+    let inactive_attacks = let open Bb in 
       let occupied = occupied -- king_sq in
       List.fold inactive_pieces ~init:empty ~f:(fun acc (sq, k) ->
           acc + Attacks.pre_of_kind sq occupied inactive k) in
