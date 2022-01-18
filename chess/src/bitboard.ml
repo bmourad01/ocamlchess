@@ -79,7 +79,7 @@ external count : (int64[@unboxed]) -> (int[@untagged]) =
 let[@inline] next_square b = Square.of_int_unsafe @@ Int64.ctz b
 
 let[@inline] next_square_rev b =
-  Square.of_int_unsafe (Square.last - Int64.clz b)
+  Square.of_int_unsafe (Square.last lxor Int64.clz b)
 
 (* Higher-order functions. *)
 
