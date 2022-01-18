@@ -1133,13 +1133,14 @@ module Makemove = struct
     | Some k -> P.read () >>| fun[@inline] {active; _} -> Piece.create active k
     | None -> P.return p
 
-  let[@inline] move_with_en_passant en_passant_pawn =
-    if Uopt.is_none en_passant_pawn then P.return Uopt.none
-    else
-      let sq = Uopt.unsafe_value en_passant_pawn in
+  (* Clear the square of the pawn captured by en passant. *)
+  let[@inline] en_passant_capture pw =
+    if Uopt.is_some pw then
+      let sq = Uopt.unsafe_value pw in
       P.read () >>= fun[@inline] pos ->
       let p = Piece.create (inactive pos) Pawn in
       clear_square p sq >> P.return @@ Uopt.some Piece.Pawn
+    else P.return Uopt.none
 
   let[@inline] go src dst promote ctx =
     (* Do the stuff that relies on the initial state. *)
@@ -1152,7 +1153,7 @@ module Makemove = struct
     (* Set the new placement. *)
     do_promote ctx.piece promote >>= Fn.flip set_square dst >> begin
       if Uopt.is_some capture then P.return capture
-      else move_with_en_passant ctx.en_passant_pawn 
+      else en_passant_capture ctx.en_passant_pawn 
     end >>= fun[@inline] capture ->
     (* Prepare for the next move. *)
     update_fullmove >> flip_active >>
