@@ -1015,9 +1015,9 @@ module Makemove = struct
      otherwise. *)
   let[@inline] update_halfmove ctx =
     P.read () >>| fun[@inline] pos -> set_halfmove pos @@
-    if  Uopt.is_some ctx.en_passant_pawn
-     ||  Uopt.is_some ctx.direct_capture
-     || Piece.is_pawn ctx.piece
+    if Uopt.is_some ctx.en_passant_pawn
+    || Uopt.is_some ctx.direct_capture
+    || Piece.is_pawn ctx.piece
     then 0 else succ pos.halfmove
 
   (* Castling rights change monotonically, so the only time we update the hash
