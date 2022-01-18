@@ -1141,9 +1141,6 @@ module Makemove = struct
       let p = Piece.create (inactive pos) Pawn in
       clear_square p sq >> P.return @@ Uopt.some Piece.Pawn
 
-  (* Perform a halfmove `m` for piece `p`. Assume it has already been checked
-     for legality. `direct_capture` is the (optional) piece at the destination
-     square. *)
   let[@inline] go src dst promote ctx =
     (* Do the stuff that relies on the initial state. *)
     update_halfmove ctx >>
