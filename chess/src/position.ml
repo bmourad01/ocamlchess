@@ -418,7 +418,7 @@ module Analysis = struct
     pinners
 
   (* Generate the masks which may restrict movement in the event of a check. *)
-  let[@inline] checks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
+  let[@inline] checks pos ~en_passant_pawn:pw ~num_checkers ~checkers ~king_sq =
     if num_checkers <> 1 then Bb.(full, empty)
     else
       (* Test if the checker is a sliding piece. If so, then we can try to
@@ -430,7 +430,6 @@ module Analysis = struct
       | Pawn ->
         (* Edge case for being able to get out of check via en passant
            capture. *)
-        let pw = en_passant_pawn in
         if Uopt.is_none pw then checkers, Bb.empty
         else
           let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
