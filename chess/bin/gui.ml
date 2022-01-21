@@ -273,6 +273,7 @@ let go pos ~white ~black ~delay =
     | None -> printf "Black is human\n%!"
     | Some player -> printf "Black is AI: %s\n%!" player#name
   end;
+  printf "\n%!";
   printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
   printf "Hash: %016LX\n%!" @@ Position.hash pos;
   printf "%d legal moves\n%!" @@ List.length legal;

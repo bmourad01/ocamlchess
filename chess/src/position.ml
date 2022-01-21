@@ -67,7 +67,7 @@ end
 
 include T
 
-let inactive pos = Piece.Color.opposite pos.active
+let[@inline] inactive pos = Piece.Color.opposite pos.active
 
 (* Bitboard accessors *)
 
@@ -183,9 +183,6 @@ module Hash = struct
   module Keys = struct
     (* This is the seed used in Stockfish. *)
     let seed = 1070372L
-
-    (* We will use flattened arrays where applicable, since this can have
-       a better impact on caching. *)
 
     let piece_keys =
       Array.create 0L

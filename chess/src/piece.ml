@@ -60,10 +60,12 @@ module Color = struct
   let count = 2
   let nmask = lnot 0b1
 
-  let of_int_exn i =
+  let[@inline] of_int_exn i =
     if Int.(i land nmask <> 0)
     then invalid_argf "Integer %d is not a valid color" i ()
     else ((Obj.magic i) : t)
+
+  let[@inline] of_int_unsafe i = ((Obj.magic i) : t)
 
   let[@inline] of_int i =
     Option.some_if Int.(i land nmask = 0) ((Obj.magic i) : t)
@@ -91,10 +93,12 @@ module Kind = struct
 
   let count = 6
 
-  let of_int_exn i =
+  let[@inline] of_int_exn i =
     if Int.(i < 0 || i >= count)
     then invalid_argf "Integer %d is not a valid kind" i ()
     else ((Obj.magic i) : t)
+
+  let[@inline] of_int_unsafe i = ((Obj.magic i) : t)
 
   let[@inline] of_int i =
     Option.some_if Int.(i >= 0 && i < count) ((Obj.magic i) : t)
@@ -124,8 +128,8 @@ include Bits.Pieces
 
 (* Converting to/from the ADTs *)
 
-let[@inline] color p = Color.of_int_exn @@ Bits.color p
-let[@inline] kind p = Kind.of_int_exn @@ Bits.kind p
+let[@inline] color p = Color.of_int_unsafe @@ Bits.color p
+let[@inline] kind p = Kind.of_int_unsafe @@ Bits.kind p
 let[@inline] decomp p = color p, kind p
 
 let[@inline] create color kind =
