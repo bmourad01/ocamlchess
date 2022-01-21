@@ -419,7 +419,8 @@ module Analysis = struct
 
   (* Generate the masks which may restrict movement in the event of a check. *)
   let[@inline] checks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
-    if num_checkers = 1 then
+    if num_checkers <> 1 then Bb.(full, empty)
+    else
       (* Test if the checker is a sliding piece. If so, then we can try to
          block the attack. Otherwise, they may only be captured. *)
       let open Bb.Syntax in
@@ -429,15 +430,13 @@ module Analysis = struct
       | Pawn ->
         (* Edge case for being able to get out of check via en passant
            capture. *)
-        let ep, pw = pos.en_passant, en_passant_pawn in
-        if Uopt.(is_none ep && is_none pw) then checkers, Bb.empty
-        else if Uopt.(is_some ep && is_some pw) then
-          let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
+        let pw = en_passant_pawn in
+        if Uopt.is_none pw then checkers, Bb.empty
+        else
+          let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
           if Square.(sq = pw) then checkers, !!ep
           else checkers, Bb.empty
-        else failwith "En passant and pawn squares are not consistent"
       |  _ -> checkers, Bb.empty
-    else Bb.full, Bb.empty
 
   (* Populate info needed for generating legal moves. *)
   let[@inline] create pos =
@@ -1237,16 +1236,15 @@ module Moves = struct
             | _ -> Continue acc)
 
     let[@inline] capture sq = let open Bb.Syntax in
-      A.read () >>= fun[@inline] {pos; en_passant_pawn; inactive_board; _} ->
+      A.read () >>= fun[@inline]
+        {pos; en_passant_pawn = pw; inactive_board; _} ->
       let capture = Pre.pawn_capture sq pos.active in
       let diag = capture & inactive_board in
-      let ep, pw = pos.en_passant, en_passant_pawn in
-      if Uopt.(is_none ep && is_none pw) then A.return diag
-      else if Uopt.(is_some ep && is_some pw) then
-        let ep, pw = Uopt.(unsafe_value ep, unsafe_value pw) in
+      if Uopt.is_none pw then A.return diag
+      else
+        let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
         if ep @ capture then en_passant sq ep pw diag
         else A.return diag
-      else failwith "En passant and pawn squares are not consistent"
 
     let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
 
