@@ -1,7 +1,7 @@
 open Core_kernel
 open Monads.Std
 
-(* For performance, use the unboxed options. *)
+(* To avoid allocation, we use the unboxed options. *)
 module Uopt = struct
   include Uopt
 
@@ -14,9 +14,9 @@ module Uopt = struct
 
   (* Convenience functions. *)
 
-  let map x ~f = if is_none x then x else some @@ f @@ unsafe_value x
+  let[@inline] map x ~f = if is_none x then x else some @@ f @@ unsafe_value x
 
-  let value_map x ~default ~f =
+  let[@inline] value_map x ~default ~f =
     if is_none x then default else f @@ unsafe_value x
 end
 
@@ -45,9 +45,11 @@ module T = struct
     mutable hash : int64;
   } [@@deriving compare, equal, fields, sexp]
 
-  let en_passant pos = Uopt.to_option pos.en_passant
+  let[@inline] en_passant pos = Uopt.to_option pos.en_passant
 
-  let copy pos = {
+  (* We make an explicit copy because our move generator will return
+     a new position (thus adhering to a functional style). *)
+  let[@inline] copy pos = {
     white      = pos.white;
     black      = pos.black;
     pawn       = pos.pawn;
@@ -103,7 +105,7 @@ let[@inline] en_passant_pawn_aux active ep = match active with
 let[@inline] en_passant_pawn_uopt pos =
   Uopt.map pos.en_passant ~f:(en_passant_pawn_aux pos.active)
 
-let en_passant_pawn pos = Uopt.to_option @@ en_passant_pawn_uopt pos
+let[@inline] en_passant_pawn pos = Uopt.to_option @@ en_passant_pawn_uopt pos
 
 (* Piece lookup *)
 
@@ -358,7 +360,8 @@ let in_check pos =
   let attacks = Attacks.all pos (inactive pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
-(* Relevant info about the position for generating moves. *)
+(* Relevant info about the position for generating moves, as well as performing
+   sanity checks. *)
 
 module Analysis = struct
   module T = struct
