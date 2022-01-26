@@ -12,6 +12,7 @@ The following OCaml packages are required, available via `opam install <pkg>`:
 - core_kernel
 - dune
 - monads
+- odoc
 - ounit2
 - ppx_compare
 - ppx_fields_conv
@@ -21,7 +22,7 @@ The following OCaml packages are required, available via `opam install <pkg>`:
 The custom testing GUI requires the following:
 
 - A C++11 compiler such as GCC or Clang.
-- `libstdc++`
+- libstdc++
 - SFML 2.5
 
 Finally, a version of Make (such as GNU Make) is needed for building the project.
@@ -32,3 +33,6 @@ Finally, a version of Make (such as GNU Make) is needed for building the project
 - To uninstall the project, run `make uninstall`.
 - To clean the build artifacts, run `make clean`.
 - To run the unit tests, run `make test`.
+- For generating documentation, run `make doc`.
+
+The generated documentation (in HTML format) should be located in `./chess/_build/default/_doc/_html/index.html`, which can be opened in your browser of choice.
