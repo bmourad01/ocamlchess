@@ -77,15 +77,12 @@ let screen_to_sq window mx my =
 let promote_prompt () =
   eprintf "Choose promotion piece (n|b|r|q): %!"
 
-let rec promote () = try match In_channel.(input_line stdin) with
+let rec promote () = match In_channel.(input_line stdin) with
   | Some "n" -> Piece.Knight
   | Some "b" -> Piece.Bishop
   | Some "r" -> Piece.Rook
   | Some "q" -> Piece.Queen
-  | _ -> assert false
-  with _ ->
-    eprintf "Invalid promotion, try again: %!";
-    promote ()
+  | _ -> eprintf "Invalid promotion, try again: %!"; promote ()
 
 let find_move sq mv =
   let m = Legal.move mv in
