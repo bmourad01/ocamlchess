@@ -158,7 +158,8 @@ let print_endgame = function
 let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   let endgame =
     let in_check = Position.in_check pos in
-    if is_insufficient_material pos then Some Insufficient_material
+    if not in_check && is_insufficient_material pos
+    then Some Insufficient_material
     (* else if not in_check && is_fifty_move pos then Some Fifty_move *)
     else if List.is_empty legal then
       if in_check
