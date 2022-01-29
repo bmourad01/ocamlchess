@@ -1,6 +1,7 @@
 (library
  (name chess)
  (public_name ocamlchess)
+ (flags -w -58)
  (libraries
    core_kernel
    core_kernel.uopt
