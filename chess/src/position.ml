@@ -1007,10 +1007,10 @@ module Makemove = struct
 
   (* Assume that if `p` exists, then it occupies square `sq`. *)
   let[@inline] clear_square_capture sq direct_capture pos =
-    if Uopt.is_none direct_capture then Uopt.none
-    else
+    if Uopt.is_some direct_capture then
       let p = Uopt.unsafe_value direct_capture in
       map_piece p sq pos ~f:(clr sq) |> Uopt.some
+    else Uopt.none
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
