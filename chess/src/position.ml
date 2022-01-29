@@ -1479,8 +1479,12 @@ module Algebraic = struct
         (* Checkmate or check *)
         if checkmate then addc '#'
         else if check then
-          let a = Analysis.create pos in
-          if a.Analysis.num_checkers = 1 then addc '+' else adds "++";
+          let king_sq =
+            List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
+          let occupied = all_board pos in
+          let inactive_board = inactive_board pos in
+          let b = Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
+          if Bb.count b = 1 then addc '+' else adds "++";
     end;
     Buffer.contents buf
 end
