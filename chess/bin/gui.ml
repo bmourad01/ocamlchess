@@ -202,6 +202,18 @@ let prompt_end window =
   ignore @@ In_channel.(input_line stdin);
   Window.close window
 
+(* For debugging, make sure that Zobrist hashing works. *)
+let assert_hash new_pos =
+  let h =
+    Position.Fen.to_string new_pos |>
+    Position.Fen.of_string_exn |>
+    Position.hash in
+  let h' = Position.hash new_pos in
+  if Int64.(h <> h') then
+    failwithf "\nNew position has hash %016LX, but %016LX was expected. \
+               Position:\n%s\n%!" h h' (Position.Fen.to_string new_pos) ();
+  h'
+
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
@@ -219,7 +231,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
       printf "%s: %s\n%!"
         (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
         (Position.Fen.to_string new_pos);
-      printf "Hash: %016LX\n%!" @@ Position.hash new_pos;
+      printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
       printf "%d legal moves\n%!" @@ List.length legal;
       printf "\n%!"
     end;

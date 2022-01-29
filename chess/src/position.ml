@@ -245,8 +245,10 @@ module Hash = struct
       let sq = Square.to_int sq in
       flip @@ Keys.piece_key c k sq
 
-    let en_passant = Uopt.value_map ~default:ident ~f:(fun ep ->
-        flip @@ Keys.en_passant_key @@ Square.file ep)
+    let[@inline] en_passant_file file = flip @@ Keys.en_passant_key file
+
+    let[@inline] en_passant ep = Uopt.value_map ep ~default:ident
+        ~f:(fun ep -> en_passant_file @@ Square.file ep)
 
     let[@inline] castle c s =
       let c = Piece.Color.to_int c in
@@ -1102,18 +1104,18 @@ module Makemove = struct
 
   (* Update the en passant square if a pawn double push occurred. *) 
   let[@inline] update_en_passant p src dst pos =
-    let ep =  if Piece.is_pawn p then
-        let rank = Square.rank src in
-        let rank' = Square.rank dst in
-        match pos.active with
-        | Piece.White when rank' - rank = 2 ->
-          Uopt.some Square.(with_rank_unsafe dst Rank.three)
-        | Piece.Black when rank - rank' = 2 ->
-          Uopt.some Square.(with_rank_unsafe dst Rank.six)
-        | _ -> Uopt.none
-      else Uopt.none in
-    update_hash pos ~f:(Hash.Update.en_passant ep);
-    set_en_passant pos ep
+    set_en_passant pos @@ if Piece.is_pawn p then
+      let rank, file = Square.decomp src in
+      let rank' = Square.rank dst in
+      match pos.active with
+      | Piece.White when rank' - rank = 2 ->
+        update_hash pos ~f:(Hash.Update.en_passant_file file);
+        Uopt.some Square.(with_rank_unsafe dst Rank.three)
+      | Piece.Black when rank - rank' = 2 ->
+        update_hash pos ~f:(Hash.Update.en_passant_file file);
+        Uopt.some Square.(with_rank_unsafe dst Rank.six)
+      | _ -> Uopt.none
+    else Uopt.none
 
   (* After each halfmove, give the turn to the other player. *)
   let[@inline] flip_active pos =
@@ -1142,6 +1144,7 @@ module Makemove = struct
 
   let[@inline] go src dst promote ctx pos =
     (* Do the stuff that relies on the initial state. *)
+    update_hash pos ~f:(Hash.Update.en_passant pos.en_passant);
     update_halfmove ctx pos;
     update_en_passant ctx.piece src dst pos;
     update_castle ctx src dst pos;

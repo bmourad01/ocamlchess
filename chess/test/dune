@@ -4,7 +4,8 @@
    test_bitboard
    test_move
    test_precalculated
-   test_perft)
+   test_perft
+   test_zobrist)
  (libraries ounit2 chess)
  (flags -w -58)
  (ocamlopt_flags -O3))
