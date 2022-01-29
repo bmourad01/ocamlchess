@@ -1462,9 +1462,9 @@ module Algebraic = struct
         let p = piece_at_square_exn pos dst in
         (* Piece being moved *)
         begin match Piece.kind p with
-          | Piece.Pawn -> if Legal.is_en_passant legal
-            then addc @@ Square.file_char src
-            else adds @@ Square.to_string dst
+          | Piece.Pawn -> if Uopt.is_none legal.capture
+            then adds @@ Square.to_string dst
+            else addc @@ Square.file_char src
           | Piece.Knight -> addc 'N'
           | Piece.Bishop -> addc 'B'
           | Piece.Rook -> addc 'R'
@@ -1474,10 +1474,8 @@ module Algebraic = struct
         (* Capture *)
         Uopt.to_option legal.capture |> Option.iter ~f:(fun _ -> addc 'x');
         (* Destination *)
-        begin match Piece.kind p with
-          | Piece.Pawn when not @@ Legal.is_en_passant legal -> ()
-          | _ -> adds @@ Square.to_string dst
-        end;
+        if not (Piece.is_pawn p && Uopt.is_none legal.capture)
+        then adds @@ Square.to_string dst;
         (* Promotion *)
         Option.iter promote ~f:(function
             | Piece.Knight -> addc 'N'
