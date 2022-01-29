@@ -1463,7 +1463,7 @@ module Algebraic = struct
         (* Piece being moved *)
         begin match Piece.kind p with
           | Piece.Pawn -> if Legal.is_en_passant legal
-            then addc @@ Square.(file_char src)
+            then addc @@ Square.file_char src
             else adds @@ Square.to_string dst
           | Piece.Knight -> addc 'N'
           | Piece.Bishop -> addc 'B'
