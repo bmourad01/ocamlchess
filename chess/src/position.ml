@@ -1437,6 +1437,10 @@ let legal_moves pos = Analysis.create pos |> Moves.go
 (* Algebraic notation of moves. *)
 
 module Algebraic = struct
+  (* TODO: add disambiguation of moves
+
+     https://en.wikipedia.org/wiki/Algebraic_notation_(chess)#Disambiguating_moves
+  *)
   let of_legal legal =
     let buf = Buffer.create 8 in
     let adds = Buffer.add_string buf in
