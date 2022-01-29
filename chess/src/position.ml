@@ -1469,12 +1469,14 @@ module Algebraic = struct
           | Piece.Pawn when not @@ Legal.is_en_passant legal -> ()
           | _ -> adds @@ Square.to_string dst
         end;
+        (* Promotion *)
         Option.iter promote ~f:(function
             | Piece.Knight -> addc 'N'
             | Piece.Bishop -> addc 'B'
             | Piece.Rook -> addc 'R'
             | Piece.Queen -> addc 'Q'
             | _ -> assert false);
+        (* Checkmate or check *)
         if checkmate then addc '#'
         else if check then
           let a = Analysis.create pos in
