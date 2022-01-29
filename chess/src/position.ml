@@ -1448,8 +1448,13 @@ module Algebraic = struct
       | None ->
         let src, dst, promote = Move.decomp @@ Legal.move legal in
         let pos = Legal.new_position legal in
-        let check = in_check pos in
-        let checkmate = check && List.is_empty @@ legal_moves pos in
+        let checkers =
+          let king_sq =
+            List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
+          let occupied = all_board pos in
+          let inactive_board = inactive_board pos in
+          Bb.count @@ Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
+        let checkmate = checkers <> 0 && List.is_empty @@ legal_moves pos in
         let p = piece_at_square_exn pos dst in
         (* Piece being moved *)
         begin match Piece.kind p with
@@ -1478,13 +1483,8 @@ module Algebraic = struct
             | _ -> assert false);
         (* Checkmate or check *)
         if checkmate then addc '#'
-        else if check then
-          let king_sq =
-            List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
-          let occupied = all_board pos in
-          let inactive_board = inactive_board pos in
-          let b = Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
-          if Bb.count b = 1 then addc '+' else adds "++";
+        else if checkers = 1 then addc '+'
+        else if checkers = 2 then adds "++"
     end;
     Buffer.contents buf
 end
