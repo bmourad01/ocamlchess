@@ -235,28 +235,28 @@ module Hash = struct
   (* Update individual fields. *)
   module Update = struct
     (* Fields are updated by exclusive-OR. *)
-    let[@inline] flip x = Int64.((lxor) x)
+    let[@inline] flip h x = Int64.(h lxor x)
 
-    let active_player = flip Keys.white_to_move_key
+    let[@inline] active_player h = flip h Keys.white_to_move_key
 
-    let[@inline] piece c k sq =
+    let[@inline] piece c k sq h =
       let c = Piece.Color.to_int c in
       let k = Piece.Kind.to_int k in
       let sq = Square.to_int sq in
-      flip @@ Keys.piece_key c k sq
+      flip h @@ Keys.piece_key c k sq
 
-    let[@inline] en_passant_file file = flip @@ Keys.en_passant_key file
+    let[@inline] en_passant_file file h = flip h @@ Keys.en_passant_key file
 
-    let[@inline] en_passant ep = Uopt.value_map ep ~default:ident
-        ~f:(fun ep -> en_passant_file @@ Square.file ep)
+    let[@inline] en_passant ep h = Uopt.value_map ep ~default:h
+        ~f:(fun ep -> en_passant_file (Square.file ep) h)
 
-    let[@inline] castle c s =
+    let[@inline] castle c s h =
       let c = Piece.Color.to_int c in
       let s = Cr.Side.to_int s in
-      flip @@ Keys.castle_key c s
+      flip h @@ Keys.castle_key c s
 
-    let[@inline] castle_test cr c s =
-      if Cr.mem cr c s then castle c s else ident
+    let[@inline] castle_test cr c s h =
+      if Cr.mem cr c s then castle c s h else h
   end
 
   (* Get the hash of a position. *)
