@@ -1434,4 +1434,53 @@ let make_move ?(validate = false) pos move =
 
 let legal_moves pos = Analysis.create pos |> Moves.go
 
+(* Algebraic notation of moves. *)
+
+module Algebraic = struct
+  let of_legal legal =
+    let buf = Buffer.create 8 in
+    let adds = Buffer.add_string buf in
+    let addc = Buffer.add_char buf in
+    begin match Legal.castle_side legal with
+      (* Castling *)
+      | Some Cr.Kingside -> adds "O-O"
+      | Some Cr.Queenside -> adds "O-O-O"
+      | None ->
+        let src, dst, promote = Move.decomp @@ Legal.move legal in
+        let pos = Legal.new_position legal in
+        let check = in_check pos in
+        let checkmate = check && List.is_empty @@ legal_moves pos in
+        let p = piece_at_square_exn pos dst in
+        (* Piece being moved *)
+        begin match Piece.kind p with
+          | Piece.Pawn -> if Legal.is_en_passant legal
+            then addc @@ Square.(file_char src)
+            else adds @@ Square.to_string dst
+          | Piece.Knight -> addc 'N'
+          | Piece.Bishop -> addc 'B'
+          | Piece.Rook -> addc 'R'
+          | Piece.Queen -> addc 'Q'
+          | Piece.King -> addc 'K'
+        end;
+        (* Capture *)
+        Uopt.to_option legal.capture |> Option.iter ~f:(fun _ -> addc 'x');
+        (* Destination *)
+        begin match Piece.kind p with
+          | Piece.Pawn when not @@ Legal.is_en_passant legal -> ()
+          | _ -> adds @@ Square.to_string dst
+        end;
+        Option.iter promote ~f:(function
+            | Piece.Knight -> addc 'N'
+            | Piece.Bishop -> addc 'B'
+            | Piece.Rook -> addc 'R'
+            | Piece.Queen -> addc 'Q'
+            | _ -> assert false);
+        if checkmate then addc '#'
+        else if check then
+          let a = Analysis.create pos in
+          if a.Analysis.num_checkers = 1 then addc '+' else adds "++";
+    end;
+    Buffer.contents buf
+end
+
 include Comparable.Make(T)

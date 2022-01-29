@@ -344,3 +344,8 @@ val make_move : ?validate:bool -> t -> Move.t -> t
     position. May raise if this assumption is violated. No particular order
     is guaranteed for the resulting list. *)
 val legal_moves : t -> legal list
+
+module Algebraic : sig
+  (** Returns a string representing the legal move in algebraic notation. *)
+  val of_legal : legal -> string
+end

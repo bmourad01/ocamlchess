@@ -38,7 +38,7 @@ module State = struct
       pos : Position.t;
       legal : Position.legal list;
       sel : (Square.t * Position.legal list) option;
-      prev : Move.t option;
+      prev : Position.legal option;
       endgame : endgame option;
       white : Player.t option;
       black : Player.t option;
@@ -107,14 +107,14 @@ let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
     | Some (_, moves) -> match List.find moves ~f:(find_move sq) with
       | None -> st
       | Some m ->
-        let m = Legal.move m and pos = Legal.new_position m in
-        let m, pos = match Move.promote m with
+        let pos = Legal.new_position m in
+        let m, pos = match Move.promote @@ Legal.move m with
           | None -> m, pos
           | Some _ ->
             promote_prompt ();
             let k = promote () in
             let m = List.find_exn moves ~f:(find_promote sq k) in
-            Legal.(move m, new_position m) in
+            m, Legal.new_position m in
         let legal = Position.legal_moves pos in
         {st with pos; legal; sel = None; prev = Some m}
 
@@ -179,7 +179,7 @@ let human_move = State.(gets endgame) >>= function
 
 let ai_move pos player = State.(gets legal) >>= fun legal ->
   let m = player#choose pos legal in
-  let m = Legal.move m and pos = Legal.new_position m in
+  let pos = Legal.new_position m in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
@@ -227,14 +227,17 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
-    if not @@ Position.same_hash pos new_pos then begin
-      printf "%s: %s\n%!"
-        (Option.value_map prev ~default:"(none)" ~f:Move.to_string)
-        (Position.Fen.to_string new_pos);
-      printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
-      printf "%d legal moves\n%!" @@ List.length legal;
-      printf "\n%!"
-    end;
+    let prev = if not @@ Position.same_hash pos new_pos then begin
+        let mv = Option.value_exn prev in
+        let m = Legal.move mv in
+        printf "%s (%s): %s\n%!"
+          (Move.to_string m) (Position.Algebraic.of_legal mv)
+          (Position.Fen.to_string new_pos);
+        printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
+        printf "%d legal moves\n%!" @@ List.length legal;
+        printf "\n%!";
+        Some m
+      end else None in
     (* Get the valid squares for our selected piece to move to. *)
     State.(gets sel) >>= begin function
       | None -> State.return (Bb.(to_int64 empty), None)
