@@ -317,7 +317,7 @@ module Legal : sig
 
   (** If the move was a castle, then returns the side that the castling was
       performed on. Otherwise, returns [None]. *)
-  val castle : legal -> Castling_rights.side option
+  val castle_side : legal -> Castling_rights.side option
 
   (** [best moves ~eval] will take a list of moves [moves], evaluate them with
       [eval], and then return a list of the highest scoring moves (with the

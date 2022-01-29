@@ -946,14 +946,19 @@ let pp ppf pos = Format.fprintf ppf "%s" @@ Fen.to_string pos
 
 let start = Fen.(of_string_exn start)
 
-(* Handling moves *)
+(* Handling moves
+
+   NOTE: We originally used a state monad for the Makemove module, and a reader
+   monad for the Moves module. For performance reasons, we then switched to a
+   reader monad for Makemove, with mutable fields in the position datatype.
+   This pattern acted as a "pseudo" state monad. However, we've gotten rid of
+   the monadic code entirely since the compiler had trouble with inlining and
+   specialization, as there were a lot of anonymous functions left in the
+   compiled code. While the monadic style was much more concise and elegant,
+   our priority for this code weighs far more in favor of performance.
+*)
 
 module Makemove = struct
-  (* P for Position. Since all the fields are mutable, this will act like a
-     pseudo-state monad. *)
-  module P = Monad.Reader.Make(T)(Monad.Ident)
-  open P.Syntax
-
   (* `en_passant_pawn` is the pawn that is "in front" of the en passant
      square. This field is only valid if the move we are making is in fact an
      en passant move.
@@ -967,21 +972,18 @@ module Makemove = struct
   *)
   type context = {
     en_passant_pawn : Square.t Uopt.t;
-    castle : Cr.side Uopt.t;
+    castle_side : Cr.side Uopt.t;
     piece : Piece.t;
     direct_capture : Piece.t Uopt.t;
   } [@@deriving fields]
 
-  let[@inline] (>>) m n = m >>= fun[@inline] (_ : 'a) -> n
+  let[@inline] update_hash pos ~f = set_hash pos @@ f pos.hash
 
-  let[@inline] update_hash ~f =
-    P.read () >>| fun[@inline] pos -> set_hash pos @@ f pos.hash
-
-  let[@inline] map_color c ~f = P.read () >>| fun[@inline] pos -> match c with
+  let[@inline] map_color c pos ~f = match c with
     | Piece.White -> set_white pos @@ f @@ white pos
     | Piece.Black -> set_black pos @@ f @@ black pos
 
-  let[@inline] map_kind k ~f = P.read () >>| fun[@inline] pos -> match k with
+  let[@inline] map_kind k pos ~f = match k with
     | Piece.Pawn   -> set_pawn pos   @@ f @@ pawn pos
     | Piece.Knight -> set_knight pos @@ f @@ knight pos
     | Piece.Bishop -> set_bishop pos @@ f @@ bishop pos
@@ -990,29 +992,29 @@ module Makemove = struct
     | Piece.King   -> set_king pos   @@ f @@ king pos
 
   (* Helper for setting both the color and the kind fields of the board. *)
-  let[@inline] map_piece p sq ~f = 
+  let[@inline] map_piece p sq pos ~f = 
     let c, k = Piece.decomp p in
-    map_color c ~f >> map_kind k ~f >>
-    update_hash ~f:(Hash.Update.piece c k sq) >>
-    P.return k
+    map_color c pos ~f;
+    map_kind k pos ~f;
+    update_hash pos ~f:(Hash.Update.piece c k sq);
+    k
 
   let[@inline] set sq = Bb.(fun b -> b ++ sq)
   let[@inline] clr sq = Bb.(fun b -> b -- sq)
 
-  let[@inline] set_square p sq = map_piece p sq ~f:(set sq) >>| ignore
-  let[@inline] clear_square p sq = map_piece p sq ~f:(clr sq) >>| ignore
+  let[@inline] set_square p sq pos = map_piece p sq pos ~f:(set sq) |> ignore
+  let[@inline] clear_square p sq pos = map_piece p sq pos ~f:(clr sq) |> ignore
 
   (* Assume that if `p` exists, then it occupies square `sq`. *)
-  let[@inline] clear_square_capture sq direct_capture =
-    if Uopt.is_none direct_capture then P.return Uopt.none
+  let[@inline] clear_square_capture sq direct_capture pos =
+    if Uopt.is_none direct_capture then Uopt.none
     else
       let p = Uopt.unsafe_value direct_capture in
-      map_piece p sq ~f:(clr sq) >>| fun[@inline] k -> Uopt.some k
+      map_piece p sq pos ~f:(clr sq) |> Uopt.some
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
-  let[@inline] update_halfmove ctx =
-    P.read () >>| fun[@inline] pos -> set_halfmove pos @@
+  let[@inline] update_halfmove ctx pos = set_halfmove pos @@
     if Uopt.is_some ctx.en_passant_pawn
     || Uopt.is_some ctx.direct_capture
     || Piece.is_pawn ctx.piece
@@ -1020,143 +1022,142 @@ module Makemove = struct
 
   (* Castling rights change monotonically, so the only time we update the hash
      is when we take away rights. *)
-  let[@inline] castle_hash c s = P.read () >>= fun[@inline] pos ->
-    if not @@ Cr.mem pos.castle c s then P.return ()
-    else update_hash ~f:(Hash.Update.castle c s)
+  let[@inline] castle_hash c s pos =
+    if Cr.mem pos.castle c s then update_hash pos ~f:(Hash.Update.castle c s)
 
-  let clear_white_castling_rights = P.read () >>= fun[@inline] pos ->
-    castle_hash White Kingside >>
-    castle_hash White Queenside >>| fun[@inline] () ->
+  let[@inline] clear_white_castling_rights pos =
+    castle_hash White Kingside pos;
+    castle_hash White Queenside pos;
     set_castle pos @@ Cr.(minus pos.castle white)
 
-  let clear_black_castling_rights = P.read () >>= fun[@inline] pos ->
-    castle_hash Black Kingside >>
-    castle_hash Black Queenside >>| fun[@inline] () ->
+  let[@inline] clear_black_castling_rights pos =
+    castle_hash Black Kingside pos;
+    castle_hash Black Queenside pos;
     set_castle pos @@ Cr.(minus pos.castle black)
 
-  let white_kingside_castle =
-    clear_square Piece.white_rook Square.h1 >>
-    set_square Piece.white_rook Square.f1 >>
-    clear_white_castling_rights
+  let[@inline] white_kingside_castle pos =
+    clear_square Piece.white_rook Square.h1 pos;
+    set_square Piece.white_rook Square.f1 pos;
+    clear_white_castling_rights pos
 
-  let white_queenside_castle =
-    clear_square Piece.white_rook Square.a1 >>
-    set_square Piece.white_rook Square.d1 >>
-    clear_white_castling_rights
+  let[@inline] white_queenside_castle pos =
+    clear_square Piece.white_rook Square.a1 pos;
+    set_square Piece.white_rook Square.d1 pos;
+    clear_white_castling_rights pos
 
-  let black_kingside_castle =
-    clear_square Piece.black_rook Square.h8 >>
-    set_square Piece.black_rook Square.f8 >>
-    clear_black_castling_rights
+  let[@inline] black_kingside_castle pos =
+    clear_square Piece.black_rook Square.h8 pos;
+    set_square Piece.black_rook Square.f8 pos;
+    clear_black_castling_rights pos
 
-  let black_queenside_castle =
-    clear_square Piece.black_rook Square.a8 >>
-    set_square Piece.black_rook Square.d8 >>
-    clear_black_castling_rights
+  let[@inline] black_queenside_castle pos =
+    clear_square Piece.black_rook Square.a8 pos;
+    set_square Piece.black_rook Square.d8 pos;
+    clear_black_castling_rights pos
 
   (* If we're castling our king on this move, then we need to move the rook as
      well as clear our rights. *)
-  let[@inline] king_moved_or_castled castle =
-    P.read () >>= fun[@inline] {active; _} ->
-    if Uopt.is_some castle then match active, Uopt.unsafe_value castle with
-      | Piece.White, Cr.Kingside  -> white_kingside_castle
-      | Piece.White, Cr.Queenside -> white_queenside_castle
-      | Piece.Black, Cr.Kingside  -> black_kingside_castle
-      | Piece.Black, Cr.Queenside -> black_queenside_castle
-    else match active with
-      | Piece.White -> clear_white_castling_rights
-      | Piece.Black -> clear_black_castling_rights
+  let[@inline] king_moved_or_castled castle pos =
+    if Uopt.is_some castle then match pos.active, Uopt.unsafe_value castle with
+      | Piece.White, Cr.Kingside  -> white_kingside_castle pos
+      | Piece.White, Cr.Queenside -> white_queenside_castle pos
+      | Piece.Black, Cr.Kingside  -> black_kingside_castle pos
+      | Piece.Black, Cr.Queenside -> black_queenside_castle pos
+    else match pos.active with
+      | Piece.White -> clear_white_castling_rights pos
+      | Piece.Black -> clear_black_castling_rights pos
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
-  let[@inline] rook_moved_or_captured sq = function
-    | Piece.White when Square.(sq = h1) -> P.read () >>= fun[@inline] pos ->
-      castle_hash White Kingside >>| fun[@inline] () ->
+  let[@inline] rook_moved_or_captured sq c pos = match c with
+    | Piece.White when Square.(sq = h1) ->
+      castle_hash White Kingside pos;
       set_castle pos @@ Cr.(minus pos.castle white_kingside)
-    | Piece.White when Square.(sq = a1) -> P.read () >>= fun[@inline] pos ->
-      castle_hash White Queenside >>| fun[@inline] () ->
+    | Piece.White when Square.(sq = a1) ->
+      castle_hash White Queenside pos;
       set_castle pos @@ Cr.(minus pos.castle white_queenside)
-    | Piece.Black when Square.(sq = h8) -> P.read () >>= fun[@inline] pos ->
-      castle_hash Black Kingside >>| fun[@inline] () ->
+    | Piece.Black when Square.(sq = h8) ->
+      castle_hash Black Kingside pos;
       set_castle pos @@ Cr.(minus pos.castle black_kingside)
-    | Piece.Black when Square.(sq = a8) -> P.read () >>= fun[@inline] pos ->
-      castle_hash Black Queenside >>| fun[@inline] () ->
+    | Piece.Black when Square.(sq = a8) ->
+      castle_hash Black Queenside pos;
       set_castle pos @@ Cr.(minus pos.castle black_queenside)
-    | _ -> P.return ()
+    | _ -> ()
 
   (* Rook moved from a square. *)
-  let[@inline] rook_moved src =
-    P.read () >>= Fn.compose (rook_moved_or_captured src) active
+  let[@inline] rook_moved src pos =
+    rook_moved_or_captured src pos.active pos
 
   (* Rook was captured at a square. Assume that it is the inactive's color. *)
-  let[@inline] rook_captured dst direct_capture =
-    if Uopt.is_none direct_capture then P.return ()
-    else
+  let[@inline] rook_captured dst direct_capture pos =
+    if Uopt.is_some direct_capture then
       let p = Uopt.unsafe_value direct_capture in
-      if Piece.is_rook p then rook_moved_or_captured dst @@ Piece.color p
-      else P.return ()
+      if Piece.is_rook p then rook_moved_or_captured dst (Piece.color p) pos
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle ctx src dst = match Piece.kind ctx.piece with
-    | King -> king_moved_or_castled ctx.castle
-    | Rook -> rook_moved src >> rook_captured dst ctx.direct_capture
-    | _ -> rook_captured dst ctx.direct_capture
+  let[@inline] update_castle ctx src dst pos = match Piece.kind ctx.piece with
+    | Rook -> rook_moved src pos; rook_captured dst ctx.direct_capture pos
+    | King -> king_moved_or_castled ctx.castle_side pos
+    | _ -> rook_captured dst ctx.direct_capture pos
 
   (* Update the en passant square if a pawn double push occurred. *) 
-  let[@inline] update_en_passant p src dst = begin if Piece.is_pawn p then
-      let rank = Square.rank src and rank' = Square.rank dst in
-      P.read () >>| fun[@inline] {active; _} -> match active with
-      | Piece.White when rank' - rank = 2 ->
-        Uopt.some Square.(with_rank_unsafe dst Rank.three)
-      | Piece.Black when rank - rank' = 2 ->
-        Uopt.some Square.(with_rank_unsafe dst Rank.six)
-      | _ -> Uopt.none
-    else P.return Uopt.none end >>= fun[@inline] ep ->
-    update_hash ~f:(Hash.Update.en_passant ep) >>
-    P.read () >>| Fn.flip set_en_passant ep
+  let[@inline] update_en_passant p src dst pos =
+    let ep =  if Piece.is_pawn p then
+        let rank = Square.rank src in
+        let rank' = Square.rank dst in
+        match pos.active with
+        | Piece.White when rank' - rank = 2 ->
+          Uopt.some Square.(with_rank_unsafe dst Rank.three)
+        | Piece.Black when rank - rank' = 2 ->
+          Uopt.some Square.(with_rank_unsafe dst Rank.six)
+        | _ -> Uopt.none
+      else Uopt.none in
+    update_hash pos ~f:(Hash.Update.en_passant ep);
+    set_en_passant pos ep
 
   (* After each halfmove, give the turn to the other player. *)
-  let flip_active = P.read () >>= fun[@inline] pos ->
-    update_hash ~f:Hash.Update.active_player >>| fun[@inline] () ->
+  let[@inline] flip_active pos =
+    update_hash pos ~f:Hash.Update.active_player;
     set_active pos @@ inactive pos
 
   (* Since white moves first, increment the fullmove clock after black
      has moved. *)
-  let update_fullmove = P.read () >>| fun[@inline] pos -> match pos.active with
+  let[@inline] update_fullmove pos = match pos.active with
     | Black -> set_fullmove pos @@ succ pos.fullmove
     | White -> ()
 
   (* Update the piece for the destination square if we're promoting. *)
-  let[@inline] do_promote p = function
-    | Some k -> P.read () >>| fun[@inline] {active; _} -> Piece.create active k
-    | None -> P.return p
+  let[@inline] do_promote p k pos = match k with
+    | Some k -> Piece.create pos.active k
+    | None -> p
 
   (* Clear the square of the pawn captured by en passant. *)
-  let[@inline] en_passant_capture pw =
+  let[@inline] en_passant_capture pw pos =
     if Uopt.is_some pw then
       let sq = Uopt.unsafe_value pw in
-      P.read () >>= fun[@inline] pos ->
       let p = Piece.create (inactive pos) Pawn in
-      clear_square p sq >> P.return @@ Uopt.some Piece.Pawn
-    else P.return Uopt.none
+      clear_square p sq pos;
+      Uopt.some Piece.Pawn
+    else Uopt.none
 
-  let[@inline] go src dst promote ctx =
+  let[@inline] go src dst promote ctx pos =
     (* Do the stuff that relies on the initial state. *)
-    update_halfmove ctx >>
-    update_en_passant ctx.piece src dst >>
-    update_castle ctx src dst >>
+    update_halfmove ctx pos;
+    update_en_passant ctx.piece src dst pos;
+    update_castle ctx src dst pos;
     (* Clear the old placement. *)
-    clear_square ctx.piece src >>
-    clear_square_capture dst ctx.direct_capture >>= fun[@inline] capture ->
+    clear_square ctx.piece src pos;
+    let capture = clear_square_capture dst ctx.direct_capture pos in
     (* Set the new placement. *)
-    do_promote ctx.piece promote >>= Fn.flip set_square dst >> begin
-      if Uopt.is_some capture then P.return capture
-      else en_passant_capture ctx.en_passant_pawn 
-    end >>= fun[@inline] capture ->
+    let p = do_promote ctx.piece promote pos in
+    set_square p dst pos;
+    let capture = if Uopt.is_some capture then capture
+      else en_passant_capture ctx.en_passant_pawn pos in
     (* Prepare for the next move. *)
-    update_fullmove >> flip_active >>
+    update_fullmove pos;
+    flip_active pos;
     (* Return the capture that was made, if any. *)
-    P.return capture 
+    capture 
 end
 
 module Legal = struct
@@ -1166,11 +1167,11 @@ module Legal = struct
       new_position : T.t;
       capture : Piece.kind Uopt.t;
       is_en_passant : bool;
-      castle : Cr.side Uopt.t;
+      castle_side : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
 
     let capture legal = Uopt.to_option legal.capture
-    let castle legal = Uopt.to_option legal.castle
+    let castle_side legal = Uopt.to_option legal.castle_side
 
     let capture_square legal =
       if Uopt.is_none legal.capture then None
@@ -1197,17 +1198,15 @@ end
 type legal = Legal.t [@@deriving compare, equal, sexp]
 
 module Moves = struct
-  (* A for Analysis *)
-  module A = Monad.Reader.Make(Analysis.T)(Monad.Ident)
-  open A.Syntax
+  open Analysis
 
   module Pawn = struct
-    let[@inline] push sq =
-      A.read () >>| fun[@inline] {pos; occupied; _} ->
+    let[@inline] push sq {pos; occupied; _} =
       Bb.(Pre.pawn_advance sq pos.active - occupied)
 
-    let[@inline] push2 rank file = let open Bb.Syntax in
-      A.read () >>| fun[@inline] {pos; occupied; _} -> match pos.active with
+    let[@inline] push2 rank file {pos; occupied; _} =
+      let open Bb.Syntax in
+      match pos.active with
       | Piece.White when Square.Rank.(rank = two) ->
         !!(Square.create_unsafe ~rank:Square.Rank.four ~file) - occupied
       | Piece.Black when Square.Rank.(rank = seven) ->
@@ -1218,8 +1217,8 @@ module Moves = struct
        then this capture would be illegal, since it would lead to a discovery
        on the king. En passant moves arise rarely across all chess positions,
        so we can do a bit of heavy calculation here. *)
-    let[@inline] en_passant sq ep pw diag = let open Bb.Syntax in
-      A.read () >>| fun[@inline] {king_sq; occupied; inactive_sliders; _} ->
+    let[@inline] en_passant sq ep pw diag
+        {king_sq; occupied; inactive_sliders; _} = let open Bb.Syntax in
       (* Remove our pawn and the captured pawn from the board, but pretend that
          the en passant square is occupied. This covers the case where we can
          capture the pawn, but it may leave our pawn pinned. *)
@@ -1237,16 +1236,16 @@ module Moves = struct
             | sq, Piece.Queen  when sq @ (Lazy.force queen)  -> Stop diag
             | _ -> Continue acc)
 
-    let[@inline] capture sq = let open Bb.Syntax in
-      A.read () >>= fun[@inline]
-        {pos; en_passant_pawn = pw; inactive_board; _} ->
+    let[@inline] capture sq
+        ({pos; en_passant_pawn = pw; inactive_board; _} as a) =
+      let open Bb.Syntax in
       let capture = Pre.pawn_capture sq pos.active in
       let diag = capture & inactive_board in
-      if Uopt.is_none pw then A.return diag
-      else
+      if Uopt.is_some pw then
         let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
-        if ep @ capture then en_passant sq ep pw diag
-        else A.return diag
+        if ep @ capture then en_passant sq ep pw diag a
+        else diag
+      else diag
 
     let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
 
@@ -1257,42 +1256,34 @@ module Moves = struct
   end
 
   module Knight = struct
-    let[@inline] jump sq =
-      A.read () >>| fun[@inline] {active_board; _} ->
-      Bb.(Pre.knight sq - active_board)
+    let[@inline] jump sq {active_board; _} = Bb.(Pre.knight sq - active_board)
   end
 
   module Bishop = struct
-    let[@inline] slide sq =
-      A.read () >>| fun[@inline] {occupied; active_board; _} ->
+    let[@inline] slide sq {occupied; active_board; _} =
       Bb.(Pre.bishop sq occupied - active_board)
   end
 
   module Rook = struct
-    let[@inline] slide sq =
-      A.read () >>| fun[@inline] {occupied; active_board; _} ->
+    let[@inline] slide sq {occupied; active_board; _} =
       Bb.(Pre.rook sq occupied - active_board)
   end
 
   module Queen = struct
-    let[@inline] slide sq =
-      A.read () >>| fun[@inline] {occupied; active_board; _} ->
+    let[@inline] slide sq {occupied; active_board; _} =
       Bb.(Pre.queen sq occupied - active_board)
   end
 
   module King = struct
     (* Note that `inactive_attacks` includes squares occupied by inactive pieces.
        Therefore, the king may not attack those squares. *)
-    let[@inline] move sq =
-      A.read () >>| fun[@inline] {active_board; inactive_attacks; _} ->
+    let[@inline] move sq {active_board; inactive_attacks; _} =
       Bb.(Pre.king sq - (active_board + inactive_attacks))
 
-    let castle = let open Bb in
-      A.read () >>| fun[@inline]
-        {pos; occupied; inactive_attacks; num_checkers; _} ->
+    let castle {pos; occupied; inactive_attacks; num_checkers; _} =
+      let open Bb in
       (* Cannot castle out of check. *)
-      if Int.(num_checkers > 0) then empty
-      else
+      if Int.(num_checkers = 0) then
         let active = pos.active in
         let m = occupied + inactive_attacks in
         let[@inline] ks_castle sq =
@@ -1307,11 +1298,11 @@ module Moves = struct
           | Piece.White -> Square.(g1, c1, b1)
           | Piece.Black -> Square.(g8, c8, b8) in
         ks_castle ks + qs_castle qs bsq
+      else empty
   end
 
   (* Use this mask to restrict the movement of pinned pieces. *)
-  let[@inline] pin_mask sq = let open Bb in
-    A.read () >>| fun[@inline] {king_sq; pinners; _} ->
+  let[@inline] pin_mask sq {king_sq; pinners; _} = let open Bb in
     let p = Array.unsafe_get pinners @@ Square.to_int sq in
     match count p with
     | 1 ->
@@ -1320,53 +1311,41 @@ module Moves = struct
     | 0 -> full
     | _ -> empty
 
-  (* Use this mask to restrict the movement of pieces when we are in check. *)
-  let check_mask = A.read () >>| Analysis.check_mask
-
   (* Special case for pawns, with en passant capture being an option to escape
      check. *)
-  let[@inline] check_mask_pawn capture =
-    A.read () >>| fun[@inline]
-      {num_checkers; check_mask; en_passant_check_mask; _} ->
+  let[@inline] check_mask_pawn capture
+      {num_checkers; check_mask; en_passant_check_mask; _} =
     if num_checkers <> 1 then check_mask
     else Bb.(check_mask + (capture & en_passant_check_mask))
 
   (* Pawn has special case for check mask. *)
-  let[@inline] make_pawn sq b capture =
-    pin_mask sq >>= fun[@inline] pin ->
-    check_mask_pawn capture >>| fun[@inline] chk ->
-    Bb.(b & pin & chk)
+  let[@inline] make_pawn sq b capture a =
+    Bb.(b & pin_mask sq a & check_mask_pawn capture a)
 
   (* All other pieces (except the king). *)
-  let[@inline] make sq b =
-    pin_mask sq >>= fun[@inline] pin ->
-    check_mask >>| fun[@inline] chk ->
-    Bb.(b & pin & chk)
+  let[@inline] make sq a b = Bb.(b & pin_mask sq a & a.check_mask)
 
-  let[@inline] pawn sq =
+  let[@inline] pawn sq a =
     let open Pawn in
     let open Bb.Syntax in
-    push sq >>= fun push -> begin
-      (* Only allow double push if a single push is available. *)
-      if Bb.(push = empty) then A.return push
-      else
+    let push = push sq a in
+    (* Only allow double push if a single push is available. *)
+    let push = if Bb.(push <> empty) then
         let rank, file = Square.decomp sq in
-        push2 rank file >>| (+) push
-    end >>= fun[@inline] push ->
-    capture sq >>= fun[@inline] capture ->
-    make_pawn sq (push + capture) capture
+        push + push2 rank file a
+      else push in
+    let capture = capture sq a in
+    make_pawn sq (push + capture) capture a
 
-  let[@inline] knight sq = Knight.jump sq >>= make sq 
-  let[@inline] bishop sq = Bishop.slide sq >>= make sq
-  let[@inline] rook sq = Rook.slide sq >>= make sq 
-  let[@inline] queen sq = Queen.slide sq >>= make sq
+  let[@inline] knight sq a = make sq a @@ Knight.jump  sq a
+  let[@inline] bishop sq a = make sq a @@ Bishop.slide sq a
+  let[@inline] rook   sq a = make sq a @@ Rook.slide   sq a
+  let[@inline] queen  sq a = make sq a @@ Queen.slide  sq a
 
-  let[@inline] king sq =
+  let[@inline] king sq a =
     let open King in
     let open Bb.Syntax in
-    move sq >>= fun[@inline] move ->
-    castle >>| fun[@inline] castle ->
-    move + castle
+    move sq a + castle a
 
   let[@inline] castle_side piece src dst =
     if Piece.is_king piece then
@@ -1386,21 +1365,19 @@ module Moves = struct
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
     let en_passant_pawn =
       if is_en_passant then en_passant_pawn else Uopt.none in
-    let castle = castle_side piece src dst in
-    let capture =
-      Fn.flip Monad.Reader.run new_position @@
-      Makemove.go src dst promote @@
-      Makemove.Fields_of_context.create
-        ~en_passant_pawn ~piece ~castle ~direct_capture in
-    new_position, capture, is_en_passant, castle
+    let castle_side = castle_side piece src dst in
+    let ctx = Makemove.Fields_of_context.create
+        ~en_passant_pawn ~piece ~castle_side ~direct_capture in
+    let capture = Makemove.go src dst promote ctx new_position in
+    new_position, capture, is_en_passant, castle_side
 
   (* Accumulator for making more than one move. *)
   let[@inline] accum_move pos en_passant_pawn p acc move =
     let src, dst, promote = Move.decomp move in
-    let new_position, capture, is_en_passant, castle =
+    let new_position, capture, is_en_passant, castle_side =
       make_move_aux pos src dst promote p en_passant_pawn in
     Legal.Fields.create
-      ~move ~new_position ~capture ~is_en_passant ~castle :: acc
+      ~move ~new_position ~capture ~is_en_passant ~castle_side :: acc
 
   (* If we're promoting, then the back rank should be the only
      available squares. *)
@@ -1417,8 +1394,7 @@ module Moves = struct
       ~f:(fun acc dst -> Move.create src dst |> f acc)
 
   (* Get the new positions from the bitboard of squares we can move to. *)
-  let[@inline] exec src k init b =
-    A.read () >>| fun[@inline] {pos; en_passant_pawn; _} ->
+  let[@inline] exec src k init {pos; en_passant_pawn; _} b =
     let active = pos.active in
     let f = accum_move pos en_passant_pawn @@ Piece.create active k in
     match k with
@@ -1433,13 +1409,13 @@ module Moves = struct
     | Piece.Queen  -> queen sq
     | Piece.King   -> king sq
 
-  let go = A.read () >>= fun[@inline] {pos; king_sq; num_checkers; _} ->
+  let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
-    if num_checkers > 1 then king king_sq >>= exec king_sq King []
+    if num_checkers > 1 then king king_sq a |> exec king_sq King [] a
     else collect_active pos |>
-         (A.List.fold [@specialised]) ~init:[] ~f:(fun acc (sq, k) ->
-             any sq k >>= exec sq k acc)
+         (List.fold [@specialised]) ~init:[] ~f:(fun acc (sq, k) ->
+             any sq k a |> exec sq k acc a)
 end
 
 let make_move ?(validate = false) pos move =
@@ -1453,6 +1429,6 @@ let make_move ?(validate = false) pos move =
     | Ok () -> new_position
   else new_position    
 
-let legal_moves pos = Analysis.create pos |> Monad.Reader.run Moves.go
+let legal_moves pos = Analysis.create pos |> Moves.go
 
 include Comparable.Make(T)
