@@ -362,6 +362,26 @@ let in_check pos =
   let attacks = Attacks.all pos (inactive pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
+let is_insufficient_material pos = let open Bb in
+  let active = active_board pos in
+  let inactive = inactive_board pos in
+  let occupied = all_board pos in
+  let kb = pos.king + pos.bishop in
+  let kn = pos.king + pos.knight in
+  (* Only kings are left. *)
+  pos.king = occupied ||
+  (* King + knight/bishop vs king *)
+  (kb = occupied && Int.equal 3 @@ count kb) ||
+  (kn = occupied && Int.equal 3 @@ count kn) ||
+  (* King + bishop vs king + bishop of the same color square. *)
+  ((kb & active) = active &&
+   (kb & inactive) = inactive &&
+   Int.equal 2 @@ count (kb & active) &&
+   Int.equal 2 @@ count (kb & inactive) &&
+   Piece.Color.equal
+     (Square.color @@ Bb.first_set_exn (pos.bishop & active))
+     (Square.color @@ Bb.first_set_exn (pos.bishop & inactive)))
+
 (* Relevant info about the position for generating moves, as well as performing
    sanity checks. *)
 

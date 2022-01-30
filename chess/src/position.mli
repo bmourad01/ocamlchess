@@ -294,6 +294,12 @@ end
     currently in check. *)
 val in_check : t -> bool
 
+(** [is_insufficient_material pos] returns [true] if the game may result in a
+    draw due to insufficient material on both sides. Insufficient material
+    is defined as both sides not having sufficient material to deliver
+    checkmate. *)
+val is_insufficient_material : t -> bool
+
 (** A legal move. *)
 type legal [@@deriving compare, equal, sexp]
 

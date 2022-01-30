@@ -123,29 +123,6 @@ let poll = State.(gets window) >>= fun window ->
   | Some (`Mouse_button_pressed (mx, my)) -> click mx my
   | None -> State.return ()
 
-let is_insufficient_material pos = let open Bb in
-  let king = Position.king pos in
-  let knight = Position.knight pos in
-  let bishop = Position.bishop pos in
-  let active = Position.active_board pos in
-  let inactive = Position.inactive_board pos in
-  let occupied = Position.all_board pos in
-  let kb = king + bishop in
-  let kn = king + knight in
-  (* Only kings are left. *)
-  king = occupied ||
-  (* King + knight/bishop vs king *)
-  (kb = occupied && Int.equal 3 @@ count kb) ||
-  (kn = occupied && Int.equal 3 @@ count kn) ||
-  (* King + bishop vs king + bishop of the same color square. *)
-  ((kb & active) = active &&
-   (kb & inactive) = inactive &&
-   Int.equal 2 @@ count (kb & active) &&
-   Int.equal 2 @@ count (kb & inactive) &&
-   Piece.Color.equal
-     (Square.color @@ Bb.first_set_exn (bishop & active))
-     (Square.color @@ Bb.first_set_exn (bishop & inactive)))
-
 let is_fifty_move pos = Position.halfmove pos >= 100
 
 let print_endgame = function
@@ -158,7 +135,7 @@ let print_endgame = function
 let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
   let endgame =
     let in_check = Position.in_check pos in
-    if not in_check && is_insufficient_material pos
+    if not in_check && Position.is_insufficient_material pos
     then Some Insufficient_material
     (* else if not in_check && is_fifty_move pos then Some Fifty_move *)
     else if List.is_empty legal then
