@@ -255,5 +255,6 @@ let init =
       Random.init ();
       Same_color.init ();
       Suicide_king.init ();
-      Swarm.init ()
+      Swarm.init ();
+      once := true;
     end
