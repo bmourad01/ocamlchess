@@ -154,18 +154,18 @@ let human_move = State.(gets endgame) >>= function
   | Some _ -> State.return None
   | None -> poll >> check_and_print_endgame
 
-let ai_move pos player = State.(gets legal) >>= fun legal ->
-  let m = player#choose pos legal in
+let ai_move player = State.(gets legal) >>= fun legal ->
+  let m = player#choose legal in
   let pos = Legal.new_position m in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
   end >> check_and_print_endgame
 
-let human_or_ai_move pos = function
+let human_or_ai_move = function
   | None -> human_move
   | Some player -> State.(gets endgame) >>= function
-    | None -> ai_move pos player
+    | None -> ai_move player
     | Some _ -> State.return None
 
 let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
@@ -197,7 +197,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     begin match Position.active pos with
       | White -> State.(gets white)
       | Black -> State.(gets black)
-    end >>= human_or_ai_move pos >>= fun endgame ->
+    end >>= human_or_ai_move >>= fun endgame ->
     (* New position? *)
     State.(gets pos) >>= fun new_pos ->
     State.(gets legal) >>= fun legal ->

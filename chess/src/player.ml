@@ -8,7 +8,7 @@ type limits = {
 exception No_moves
 
 type t = <
-  choose : Position.t -> Position.legal list -> Position.legal;
+  choose : Position.legal list -> Position.legal;
   limits : limits option;
   name : string;
   desc : string;
@@ -63,14 +63,14 @@ module Cccp = struct
 
   (* Push a piece that results in the the largest number of controlled
      squares. *)
-  let push pos moves =
-    let active = Position.active pos in
+  let push moves =
     Legal.best moves ~eval:(fun m ->
+        let active = Position.active @@ Legal.parent m in
         let pos = Legal.new_position m in
         Some (Bb.count @@ Position.Attacks.all pos active))
 
   let () = register @@ object
-      method choose pos = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
           let moves = match checkmate moves with
@@ -79,7 +79,7 @@ module Cccp = struct
               | (_ :: _) as moves -> moves
               | [] -> match capture moves with
                 | (_ :: _) as moves -> moves
-                | [] -> push pos moves in
+                | [] -> push moves in
           List.random_element_exn moves
 
       method limits = None
@@ -91,11 +91,11 @@ end
 
 module Huddle = struct
   let () = register @@ object
-      method choose pos = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
-          let active = Position.active pos in
           Legal.best moves ~eval:(fun m ->
+              let active = Position.active @@ Legal.parent m in
               let pos = Legal.new_position m in
               let active_board = Position.board_of_color pos active in
               let king = Position.king pos in
@@ -115,7 +115,7 @@ end
 
 module Max_oppt_moves = struct
   let () = register @@ object
-      method choose _ = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
           Legal.best moves ~eval:(fun m ->
@@ -132,7 +132,7 @@ end
 
 module Min_oppt_moves = struct
   let () = register @@ object
-      method choose _ = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
           Legal.best moves ~eval:(fun m ->
@@ -152,11 +152,11 @@ module Opposite_color = struct
     not @@ Piece.Color.equal active @@ Square.color sq
 
   let () = register @@ object
-      method choose pos = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
-          let active = Position.active pos in
           Legal.best moves ~eval:(fun m ->
+              let active = Position.active @@ Legal.parent m in
               let pos = Legal.new_position m in
               Option.return @@ Bb.count @@
               Bb.filter ~f:(opposite_color active) @@
@@ -172,7 +172,7 @@ end
 
 module Pacifist = struct
   let () = register @@ object
-      method choose _ = function
+      method choose = function
         | [] -> raise No_moves
         | moves -> Legal.best moves ~eval:(fun m ->
             let pos = Legal.new_position m in
@@ -202,7 +202,7 @@ end
 
 module Random = struct
   let () = register @@ object
-      method choose _ moves = match List.random_element moves with
+      method choose moves = match List.random_element moves with
         | None -> raise No_moves
         | Some m -> m
 
@@ -217,11 +217,11 @@ module Same_color = struct
     Piece.Color.equal active @@ Square.color sq
 
   let () = register @@ object
-      method choose pos = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
-          let active = Position.active pos in
           Legal.best moves ~eval:(fun m ->
+              let active = Position.active @@ Legal.new_position m in
               let pos = Legal.new_position m in
               Option.return @@ Bb.count @@
               Bb.filter ~f:(same_color active) @@
@@ -237,11 +237,11 @@ end
 
 module Suicide_king = struct
   let () = register @@ object
-      method choose pos = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
-          let active = Position.active pos in
           Legal.best moves ~eval:(fun m ->
+              let active = Position.active @@ Legal.parent m in
               let pos = Legal.new_position m in
               let king = Position.king pos in
               let active_board = Position.board_of_color pos active in
@@ -260,9 +260,10 @@ end
 
 module Swarm = struct
   let () = register @@ object
-      method choose pos = function
+      method choose = function
         | [] -> raise No_moves
         | moves ->
+          let pos = Legal.parent @@ List.hd_exn moves in
           let active = Position.active pos in
           let inactive = Position.inactive pos in
           let inactive_board = Position.board_of_color pos inactive in

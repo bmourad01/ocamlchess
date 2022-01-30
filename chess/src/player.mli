@@ -11,9 +11,8 @@ exception No_moves
 
 (** The player is expected to implement this interface.
 
-    - [choose pos moves] will choose, from [moves], which move to play based on
-      the position [pos]. May raise [No_moves] if [moves] is empty. [moves]
-      must be the list of moves derived from position [pos].
+    - [choose moves] will choose, from [moves], which move to play. May
+      raise [No_moves] if [moves] is empty.
 
     - [limits] returns the search limits, if any, that were used to construct
       the player.
@@ -23,7 +22,7 @@ exception No_moves
     - [desc] returns a description of the player.
 *)
 type t = <
-  choose : Position.t -> Position.legal list -> Position.legal;
+  choose : Position.legal list -> Position.legal;
   limits : limits option;
   name : string;
   desc : string;
