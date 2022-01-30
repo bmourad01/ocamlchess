@@ -209,10 +209,9 @@ let assert_hash new_pos =
     Position.Fen.of_string_exn |>
     Position.hash in
   let h' = Position.hash new_pos in
-  if Int64.(h <> h') then
-    failwithf "\nNew position has hash %016LX, but %016LX was expected. \
-               Position:\n%s\n%!" h' h (Position.Fen.to_string new_pos) ();
-  h'
+  if Int64.(h = h') then h' else failwithf
+      "\nNew position has hash %016LX, but %016LX was expected. \
+       Position:\n%s\n%!" h' h (Position.Fen.to_string new_pos) ()
 
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
