@@ -1,6 +1,6 @@
 DIR := chess
 
-.PHONY: build clean install uninstall test
+.PHONY: build clean install uninstall test doc indent
 
 all: build install
 
