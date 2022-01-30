@@ -116,6 +116,13 @@ module Kind = struct
   let[@inline] is_sliding = function
     | Bishop | Rook | Queen -> true
     | _ -> false
+
+  let value = function
+    | Pawn -> 1
+    | Knight | Bishop -> 3
+    | Rook -> 5
+    | Queen -> 9
+    | King -> 0
 end
 
 module T = struct

@@ -29,9 +29,6 @@ type t = <
   desc : string;
 >
 
-(** The instantiation signature. *)
-type create = ?limits:limits option -> unit -> t
-
 (** [register player] will register [player] in the database. If a player
     with the same name already exists, then [Invalid_argument] is raised. *)
 val register : t -> unit

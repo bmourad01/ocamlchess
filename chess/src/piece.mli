@@ -95,6 +95,9 @@ module Kind : sig
 
   (** [is_sliding k] returns [true] if [k] is a sliding piece kind. *)
   val is_sliding : t -> bool
+
+  (** [value k] returns the numerical score of how "valuable" [k] is. *)
+  val value : t -> int
 end
 
 (** Representation of a Chess piece as an unboxed integer, which includes its

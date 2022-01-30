@@ -1,10 +1,9 @@
 open Cmdliner
 
-let man_players =
+let man_players () =
+  Elo_world.init ();  
   `S "PLAYER" ::
-  `Pre "These are predefined algorithms for the computer. Most of them \
-        implement weak, simple strategies, so they are mainly good for \
-        testing and/or entertainment." :: begin
+  `Pre "Predefined algorithms for the computer." :: begin
     Chess.Player.enumerate () |> Base.List.map ~f:(fun player ->
         `P (Format.sprintf "%s: %s" player#name player#desc))
   end
@@ -112,11 +111,9 @@ module Default = struct
   let t = Term.(ret @@ const @@ `Help (`Pager, None))
 
   let info =
+    let man = man_players () in
     let doc = "A UCI-compatible chess engine." in
-    Term.info "ocamlchess"
-      ~doc
-      ~exits:Term.default_exits
-      ~man:man_players
+    Term.info "ocamlchess" ~doc ~exits:Term.default_exits ~man
 end
 
 let () =
