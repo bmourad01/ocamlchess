@@ -1501,20 +1501,20 @@ module Algebraic = struct
     let buf = Buffer.create 8 in
     let adds = Buffer.add_string buf in
     let addc = Buffer.add_char buf in
+    let src, dst, promote = Move.decomp @@ Legal.move legal in
+    let pos = Legal.new_position legal in
+    let checkers =
+      let king_sq =
+        List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
+      let occupied = all_board pos in
+      let inactive_board = inactive_board pos in
+      Bb.count @@ Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
+    let checkmate = checkers <> 0 && List.is_empty @@ legal_moves pos in
     begin match Legal.castle_side legal with
       (* Castling *)
       | Some Cr.Kingside -> adds "O-O"
       | Some Cr.Queenside -> adds "O-O-O"
       | None ->
-        let src, dst, promote = Move.decomp @@ Legal.move legal in
-        let pos = Legal.new_position legal in
-        let checkers =
-          let king_sq =
-            List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
-          let occupied = all_board pos in
-          let inactive_board = inactive_board pos in
-          Bb.count @@ Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
-        let checkmate = checkers <> 0 && List.is_empty @@ legal_moves pos in
         let p = piece_at_square_exn pos dst in
         let p = match promote with
           | Some _ -> Piece.with_kind p Pawn
@@ -1543,11 +1543,11 @@ module Algebraic = struct
             | Piece.Rook   -> addc 'R'
             | Piece.Queen  -> addc 'Q'
             | _ -> assert false);
-        (* Checkmate or check *)
-        if checkmate then addc '#'
-        else if checkers = 1 then addc '+'
-        else if checkers = 2 then adds "++"
     end;
+    (* Checkmate or check *)
+    if checkmate then addc '#'
+    else if checkers = 1 then addc '+'
+    else if checkers = 2 then adds "++";
     Buffer.contents buf
 end
 
