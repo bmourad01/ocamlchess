@@ -971,7 +971,7 @@ let start = Fen.(of_string_exn start)
 (* Handling moves
 
    NOTE: We originally used a state monad for the Makemove module, and a reader
-   monad for the Moves module. For performance reasons, we then switched to a
+   monad for the Movegen module. For performance reasons, we then switched to a
    reader monad for Makemove, with mutable fields in the position datatype.
    This pattern acted as a "pseudo" state monad. However, we've gotten rid of
    the monadic code entirely since the compiler had trouble with inlining and
@@ -1187,6 +1187,7 @@ module Legal = struct
   module T = struct
     type t = {
       move : Move.t;
+      parent : T.t;
       new_position : T.t;
       capture : Piece.kind Uopt.t;
       is_en_passant : bool;
@@ -1220,7 +1221,7 @@ end
 
 type legal = Legal.t [@@deriving compare, equal, sexp]
 
-module Moves = struct
+module Movegen = struct
   open Analysis
 
   module Pawn = struct
@@ -1395,12 +1396,12 @@ module Moves = struct
     new_position, capture, is_en_passant, castle_side
 
   (* Accumulator for making more than one move. *)
-  let[@inline] accum_move pos en_passant_pawn p acc move =
+  let[@inline] accum_move parent en_passant_pawn p acc move =
     let src, dst, promote = Move.decomp move in
     let new_position, capture, is_en_passant, castle_side =
-      make_move_aux pos src dst promote p en_passant_pawn in
+      make_move_aux parent src dst promote p en_passant_pawn in
     Legal.Fields.create
-      ~move ~new_position ~capture ~is_en_passant ~castle_side :: acc
+      ~move ~parent ~new_position ~capture ~is_en_passant ~castle_side :: acc
 
   (* If we're promoting, then the back rank should be the only
      available squares. *)
@@ -1424,13 +1425,13 @@ module Moves = struct
     | Piece.Pawn when is_promote_rank b active -> exec_promote src init b ~f
     | _ -> exec_normal src init b ~f
 
-  let[@inline] any sq = function
-    | Piece.Pawn   -> pawn sq
-    | Piece.Knight -> knight sq
-    | Piece.Bishop -> bishop sq
-    | Piece.Rook   -> rook sq
-    | Piece.Queen  -> queen sq
-    | Piece.King   -> king sq
+  let[@inline] any sq k a = match k with
+    | Piece.Pawn   -> pawn sq a
+    | Piece.Knight -> knight sq a
+    | Piece.Bishop -> bishop sq a
+    | Piece.Rook   -> rook sq a
+    | Piece.Queen  -> queen sq a
+    | Piece.King   -> king sq a
 
   let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
@@ -1446,21 +1447,56 @@ let make_move ?(validate = false) pos move =
   let p = piece_at_square_exn pos src in
   let en_passant_pawn = en_passant_pawn_uopt pos in
   let new_position, _, _, _ =
-    Moves.make_move_aux pos src dst promote p en_passant_pawn in
+    Movegen.make_move_aux pos src dst promote p en_passant_pawn in
   if validate then match Valid.check new_position with
     | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
     | Ok () -> new_position
   else new_position    
 
-let legal_moves pos = Analysis.create pos |> Moves.go
+let legal_moves pos = Movegen.go @@ Analysis.create pos
 
 (* Algebraic notation of moves. *)
 
 module Algebraic = struct
-  (* TODO: add disambiguation of moves
+  (* Returns the string to append to the move for disambiguation. *)
+  let disambiguate src dst parent k =
+    let a = Analysis.create parent in
+    (* More than one checker means it's a king move, which are unambiguous. *)
+    if a.Analysis.num_checkers <= 1 then
+      let rank, file = Square.decomp src in
+      (* Find all the other pieces of the same kind and generate their move
+         bitboards. *)
+      collect_kind parent k |>
+      List.filter ~f:(fun (sq, c) ->
+          Square.(sq <> src) && Piece.Color.(c = parent.active)) |>
+      List.map ~f:(fun (sq, _) -> sq, Movegen.any sq k a) |>
+      List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
+      | [] -> ""
+      | moves ->
+        let finish = ident in
+        (* First try to distinguish by file. *)
+        let by_file =
+          let init = Some (String.of_char @@ Square.File.to_char file) in
+          List.fold_until moves ~init ~finish ~f:(fun acc (sq, _) ->
+              if Square.file sq = file then Stop None
+              else Continue acc) in
+        begin match by_file with
+          | Some result -> result
+          | None ->
+            (* Then try to distinguish by rank. *)
+            let by_rank =
+              let init = Some (String.of_char @@ Square.Rank.to_char rank) in
+              List.fold_until moves ~init ~finish ~f:(fun acc (sq, _) ->
+                  if Square.rank sq = rank then Stop None
+                  else Continue acc) in
+            match by_rank with
+            | Some result -> result
+            | None ->
+              (* Finally, disambiguate by departing square. *)
+              Square.to_string src
+        end
+    else ""
 
-     https://en.wikipedia.org/wiki/Algebraic_notation_(chess)#Disambiguating_moves
-  *)
   let of_legal legal =
     let buf = Buffer.create 8 in
     let adds = Buffer.add_string buf in
@@ -1481,15 +1517,16 @@ module Algebraic = struct
         let checkmate = checkers <> 0 && List.is_empty @@ legal_moves pos in
         let p = piece_at_square_exn pos dst in
         (* Piece being moved *)
+        let dis = disambiguate src dst @@ Legal.parent legal in
         begin match Piece.kind p with
           | Piece.Pawn -> if Uopt.is_none legal.capture
             then adds @@ Square.to_string dst
             else addc @@ Square.file_char src
-          | Piece.Knight -> addc 'N'
-          | Piece.Bishop -> addc 'B'
-          | Piece.Rook -> addc 'R'
-          | Piece.Queen -> addc 'Q'
-          | Piece.King -> addc 'K'
+          | Piece.Knight -> addc 'N'; adds @@ dis Knight
+          | Piece.Bishop -> addc 'B'; adds @@ dis Bishop
+          | Piece.Rook   -> addc 'R'; adds @@ dis Rook
+          | Piece.Queen  -> addc 'Q'; adds @@ dis Queen
+          | Piece.King   -> addc 'K'
         end;
         (* Capture *)
         Uopt.to_option legal.capture |> Option.iter ~f:(fun _ -> addc 'x');
@@ -1500,8 +1537,8 @@ module Algebraic = struct
         Option.iter promote ~f:(function
             | Piece.Knight -> addc 'N'
             | Piece.Bishop -> addc 'B'
-            | Piece.Rook -> addc 'R'
-            | Piece.Queen -> addc 'Q'
+            | Piece.Rook   -> addc 'R'
+            | Piece.Queen  -> addc 'Q'
             | _ -> assert false);
         (* Checkmate or check *)
         if checkmate then addc '#'

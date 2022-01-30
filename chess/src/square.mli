@@ -334,6 +334,9 @@ module Rank : sig
 
   (** The mask for invalid ranks. *)
   val nmask : int
+
+  (** The character representation of a rank. *)
+  val to_char : int -> char
 end
 
 (** Integer represenations of the files. *)
@@ -370,6 +373,9 @@ module File : sig
 
   (** The mask for invalid files. *)
   val nmask : int
+
+  (** The character representation of a file. *)
+  val to_char : int -> char
 end
 
 (** The first square that is visited (in integer order). *)

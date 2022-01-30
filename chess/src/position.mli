@@ -307,6 +307,9 @@ module Legal : sig
   (** The actual move that was made. *)
   val move : legal -> Move.t
 
+  (** The parent position that this move was applied to. *)
+  val parent : legal -> t
+
   (** The resulting position. *)
   val new_position : legal -> t
 

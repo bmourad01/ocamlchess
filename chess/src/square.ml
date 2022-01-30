@@ -35,6 +35,12 @@ module Bits = struct
     let count = 8
     let mask = 0b111
     let nmask = lnot mask
+
+    let to_char  =
+      let ranks = "12345678" in
+      fun rank -> if rank land nmask <> 0 then
+          failwithf "Rank index %d is invalid" rank ()
+        else ranks.[rank]
   end
 
   module File = struct
@@ -50,6 +56,12 @@ module Bits = struct
     let count = 8
     let mask = 0b111
     let nmask = lnot mask
+
+    let to_char =
+      let files = "abcdefgh" in
+      fun file -> if file land nmask <> 0 then
+          failwithf "File index %d is invalid" file ()
+        else files.[file]
   end
 
   let a1 = 0b000_000
