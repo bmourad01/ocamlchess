@@ -1150,7 +1150,7 @@ module Makemove = struct
 
   (* Update the piece for the destination square if we're promoting. *)
   let[@inline] do_promote p k pos = match k with
-    | Some k -> Piece.create pos.active k
+    | Some k -> Piece.with_kind p k
     | None -> p
 
   (* Clear the square of the pawn captured by en passant. *)
@@ -1516,6 +1516,9 @@ module Algebraic = struct
           Bb.count @@ Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
         let checkmate = checkers <> 0 && List.is_empty @@ legal_moves pos in
         let p = piece_at_square_exn pos dst in
+        let p = match promote with
+          | Some _ -> Piece.with_kind p Pawn
+          | None -> p in
         (* Piece being moved *)
         let dis = disambiguate src dst @@ Legal.parent legal in
         begin match Piece.kind p with

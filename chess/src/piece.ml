@@ -135,6 +135,9 @@ let[@inline] decomp p = color p, kind p
 let[@inline] create color kind =
   (Color.to_int color lsl kind_bits) lor Kind.to_int kind
 
+let[@inline] with_color p c = create c (kind p)
+let[@inline] with_kind p k = create (color p) k
+
 (* Testing membership *)
 
 let[@inline] is_white p = p land Bits.color_mask = 0b0_000

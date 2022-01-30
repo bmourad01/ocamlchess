@@ -145,6 +145,12 @@ val color : t -> color
 (** [kind p] returns the corresponding kind of piece [p]. *)
 val kind : t -> kind
 
+(** [with_color p k] returns the piece [p] with its color changed to [c]. *)
+val with_color : t -> color -> t
+
+(** [with_kind p k] returns the piece [p] with its kind changed to [k]. *)
+val with_kind : t -> kind -> t
+
 (** [decomp p] returns a pair containing the color and kind of piece [p],
     in that order.  *)
 val decomp : t -> (color * kind)
