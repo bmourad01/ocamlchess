@@ -1394,7 +1394,7 @@ module Movegen = struct
     new_position, capture, is_en_passant, castle_side
 
   (* Accumulator for making more than one move. *)
-  let[@inline] accum_move parent en_passant_pawn piece acc move =
+  let[@inline] accum_move acc move ~pos:parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
     let new_position, capture, is_en_passant, castle_side =
       make_move_aux parent ~src ~dst ~promote ~piece ~en_passant_pawn in
@@ -1418,7 +1418,7 @@ module Movegen = struct
   (* Get the new positions from the bitboard of squares we can move to. *)
   let[@inline] exec src k init {pos; en_passant_pawn; _} b =
     let active = pos.active in
-    let f = accum_move pos en_passant_pawn @@ Piece.create active k in
+    let f = accum_move ~pos ~en_passant_pawn ~piece:(Piece.create active k) in
     match k with
     | Piece.Pawn when is_promote_rank b active -> exec_promote src init b ~f
     | _ -> exec_normal src init b ~f
