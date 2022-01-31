@@ -1470,10 +1470,9 @@ module Algebraic = struct
       List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
       | [] -> ()
       | moves ->
-        let finish = ident in
         let search x ch f =
           let init = Some (ch x) in
-          List.fold_until moves ~init ~finish ~f:(fun acc (sq, _) ->
+          List.fold_until moves ~init ~finish:ident ~f:(fun acc (sq, _) ->
               if f sq = x then Stop None else Continue acc) in
         (* First try to distinguish by file, then by rank, and finally the
            departing square. *)
