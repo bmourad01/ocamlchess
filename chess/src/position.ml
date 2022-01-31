@@ -1459,12 +1459,11 @@ module Algebraic = struct
   let disambiguate buf src dst parent k =
     let a = Analysis.create parent in
     (* More than one checker means it's a king move, which are unambiguous. *)
-    if a.Analysis.num_checkers <= 1 then begin
+    if a.Analysis.num_checkers <= 1 then
       let rank, file = Square.decomp src in
       (* Find all the other pieces of the same kind and generate their move
          bitboards. *)
-      collect_kind parent k |>
-      List.filter ~f:(fun (sq, c) ->
+      collect_kind parent k |> List.filter ~f:(fun (sq, c) ->
           Square.(sq <> src) && Piece.Color.(c = parent.active)) |>
       List.map ~f:(fun (sq, _) -> sq, Movegen.any sq k a) |>
       List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
@@ -1481,7 +1480,6 @@ module Algebraic = struct
         | None -> match search rank Square.Rank.to_char Square.rank with
           | None -> Buffer.add_string buf @@ Square.to_string src
           | Some c -> Buffer.add_char buf c
-    end
 
   let of_legal legal =
     let buf = Buffer.create 8 in
@@ -1489,13 +1487,13 @@ module Algebraic = struct
     let addc = Buffer.add_char buf in
     let src, dst, promote = Move.decomp @@ Legal.move legal in
     let pos = Legal.new_position legal in
-    let checkers =
+    let num_checkers =
       let king_sq =
         List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
       let occupied = all_board pos in
       let inactive_board = inactive_board pos in
       Bb.count @@ Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
-    let checkmate = checkers <> 0 && List.is_empty @@ legal_moves pos in
+    let checkmate = num_checkers <> 0 && List.is_empty @@ legal_moves pos in
     begin match Legal.castle_side legal with
       (* Castling *)
       | Some Cr.Kingside -> adds "O-O"
@@ -1532,8 +1530,8 @@ module Algebraic = struct
     end;
     (* Checkmate or check *)
     if checkmate then addc '#'
-    else if checkers = 1 then addc '+'
-    else if checkers = 2 then adds "++";
+    else if num_checkers = 1 then addc '+'
+    else if num_checkers = 2 then adds "++";
     Buffer.contents buf
 end
 
