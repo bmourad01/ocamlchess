@@ -175,13 +175,13 @@ let piece_at_square_exn pos sq =
 
 let collect_all pos =
   all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      let c = which_color_exn pos sq and k = which_kind_exn pos sq in
+      let c = which_color_exn pos sq in
+      let k = which_kind_exn pos sq in
       (sq, Piece.create c k) :: acc)
 
 (* Zobrist hashing *)
 
 module Hash = struct
-  (* Setup Zobrist keys. *)
   module Keys = struct
     (* This is the seed used in Stockfish. *)
     let seed = 1070372L
@@ -232,9 +232,7 @@ module Hash = struct
       rng#rand
   end
 
-  (* Update individual fields. *)
   module Update = struct
-    (* Fields are updated by exclusive-OR. *)
     let[@inline] flip h x = Int64.(h lxor x)
 
     let[@inline] active_player h = flip h Keys.white_to_move_key
@@ -365,7 +363,7 @@ let in_check pos =
 let is_insufficient_material pos = let open Bb in
   let active = active_board pos in
   let inactive = inactive_board pos in
-  let occupied = all_board pos in
+  let occupied = active + inactive in
   let kb = pos.king + pos.bishop in
   let kn = pos.king + pos.knight in
   (* Only kings are left. *)
@@ -1383,7 +1381,7 @@ module Movegen = struct
     else Uopt.none
 
   (* Actually runs the makemove routine and returns relevant info. *)
-  let[@inline] make_move_aux pos src dst promote piece en_passant_pawn =
+  let[@inline] make_move_aux pos ~src ~dst ~promote ~piece ~en_passant_pawn =
     let new_position = copy pos in
     let direct_capture = piece_at_square_uopt pos dst in
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
@@ -1396,10 +1394,10 @@ module Movegen = struct
     new_position, capture, is_en_passant, castle_side
 
   (* Accumulator for making more than one move. *)
-  let[@inline] accum_move parent en_passant_pawn p acc move =
+  let[@inline] accum_move parent en_passant_pawn piece acc move =
     let src, dst, promote = Move.decomp move in
     let new_position, capture, is_en_passant, castle_side =
-      make_move_aux parent src dst promote p en_passant_pawn in
+      make_move_aux parent ~src ~dst ~promote ~piece ~en_passant_pawn in
     Legal.Fields.create
       ~move ~parent ~new_position ~capture ~is_en_passant ~castle_side :: acc
 
@@ -1444,10 +1442,10 @@ end
 
 let make_move ?(validate = false) pos move =
   let src, dst, promote = Move.decomp move in
-  let p = piece_at_square_exn pos src in
+  let piece = piece_at_square_exn pos src in
   let en_passant_pawn = en_passant_pawn_uopt pos in
   let new_position, _, _, _ =
-    Movegen.make_move_aux pos src dst promote p en_passant_pawn in
+    Movegen.make_move_aux pos ~src ~dst ~promote ~piece ~en_passant_pawn in
   if validate then match Valid.check new_position with
     | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
     | Ok () -> new_position
@@ -1458,11 +1456,10 @@ let legal_moves pos = Movegen.go @@ Analysis.create pos
 (* Algebraic notation of moves. *)
 
 module Algebraic = struct
-  (* Returns the string to append to the move for disambiguation. *)
-  let disambiguate src dst parent k =
+  let disambiguate buf src dst parent k =
     let a = Analysis.create parent in
     (* More than one checker means it's a king move, which are unambiguous. *)
-    if a.Analysis.num_checkers <= 1 then
+    if a.Analysis.num_checkers <= 1 then begin
       let rank, file = Square.decomp src in
       (* Find all the other pieces of the same kind and generate their move
          bitboards. *)
@@ -1471,31 +1468,21 @@ module Algebraic = struct
           Square.(sq <> src) && Piece.Color.(c = parent.active)) |>
       List.map ~f:(fun (sq, _) -> sq, Movegen.any sq k a) |>
       List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
-      | [] -> ""
+      | [] -> ()
       | moves ->
         let finish = ident in
-        (* First try to distinguish by file. *)
-        let by_file =
-          let init = Some (String.of_char @@ Square.File.to_char file) in
+        let search x ch f =
+          let init = Some (ch x) in
           List.fold_until moves ~init ~finish ~f:(fun acc (sq, _) ->
-              if Square.file sq = file then Stop None
-              else Continue acc) in
-        begin match by_file with
-          | Some result -> result
-          | None ->
-            (* Then try to distinguish by rank. *)
-            let by_rank =
-              let init = Some (String.of_char @@ Square.Rank.to_char rank) in
-              List.fold_until moves ~init ~finish ~f:(fun acc (sq, _) ->
-                  if Square.rank sq = rank then Stop None
-                  else Continue acc) in
-            match by_rank with
-            | Some result -> result
-            | None ->
-              (* Finally, disambiguate by departing square. *)
-              Square.to_string src
-        end
-    else ""
+              if f sq = x then Stop None else Continue acc) in
+        (* First try to distinguish by file, then by rank, and finally the
+           departing square. *)
+        match search file Square.File.to_char Square.file with
+        | Some c -> Buffer.add_char buf c
+        | None -> match search rank Square.Rank.to_char Square.rank with
+          | None -> Buffer.add_string buf @@ Square.to_string src
+          | Some c -> Buffer.add_char buf c
+    end
 
   let of_legal legal =
     let buf = Buffer.create 8 in
@@ -1520,15 +1507,15 @@ module Algebraic = struct
           | Some _ -> Piece.with_kind p Pawn
           | None -> p in
         (* Piece being moved *)
-        let dis = disambiguate src dst @@ Legal.parent legal in
+        let dis = disambiguate buf src dst @@ Legal.parent legal in
         begin match Piece.kind p with
           | Piece.Pawn -> if Uopt.is_none legal.capture
             then adds @@ Square.to_string dst
             else addc @@ Square.file_char src
-          | Piece.Knight -> addc 'N'; adds @@ dis Knight
-          | Piece.Bishop -> addc 'B'; adds @@ dis Bishop
-          | Piece.Rook   -> addc 'R'; adds @@ dis Rook
-          | Piece.Queen  -> addc 'Q'; adds @@ dis Queen
+          | Piece.Knight -> addc 'N'; dis Knight
+          | Piece.Bishop -> addc 'B'; dis Bishop
+          | Piece.Rook   -> addc 'R'; dis Rook
+          | Piece.Queen  -> addc 'Q'; dis Queen
           | Piece.King   -> addc 'K'
         end;
         (* Capture *)
