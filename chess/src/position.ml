@@ -1381,7 +1381,7 @@ module Movegen = struct
     else Uopt.none
 
   (* Actually runs the makemove routine and returns relevant info. *)
-  let[@inline] make_move_aux pos ~src ~dst ~promote ~piece ~en_passant_pawn =
+  let[@inline] run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn =
     let new_position = copy pos in
     let direct_capture = piece_at_square_uopt pos dst in
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
@@ -1393,11 +1393,11 @@ module Movegen = struct
     let capture = Makemove.go src dst promote ctx new_position in
     new_position, capture, is_en_passant, castle_side
 
-  (* Accumulator for making more than one move. *)
-  let[@inline] accum_move acc move ~pos:parent ~en_passant_pawn ~piece =
+  (* Accumulator function for a list of moves. *)
+  let[@inline] accum_makemove acc move ~pos:parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
     let new_position, capture, is_en_passant, castle_side =
-      make_move_aux parent ~src ~dst ~promote ~piece ~en_passant_pawn in
+      run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
     Legal.Fields.create
       ~move ~parent ~new_position ~capture ~is_en_passant ~castle_side :: acc
 
@@ -1407,23 +1407,20 @@ module Movegen = struct
     | Piece.White -> Bb.((b & rank_8) = b)
     | Piece.Black -> Bb.((b & rank_1) = b)
 
-  let[@inline] exec_promote src init b ~f =
-    (Bb.fold [@specialised]) b ~init ~f:(fun init dst ->
-        Pawn.promote src dst |> List.fold ~init ~f)
-
-  let[@inline] exec_normal src init b ~f =
-    (Bb.fold [@specialised]) b ~init
-      ~f:(fun acc dst -> Move.create src dst |> f acc)
-
-  (* Get the new positions from the bitboard of squares we can move to. *)
-  let[@inline] exec src k init {pos; en_passant_pawn; _} b =
+  (* Get the list of moves from the bitboard of squares we can move to. *)
+  let[@inline] bitboard_to_moves src k b ~init ~a:{pos; en_passant_pawn; _} =
     let active = pos.active in
-    let f = accum_move ~pos ~en_passant_pawn ~piece:(Piece.create active k) in
+    let piece = Piece.create active k in
+    let f = accum_makemove ~pos ~en_passant_pawn ~piece in
     match k with
-    | Piece.Pawn when is_promote_rank b active -> exec_promote src init b ~f
-    | _ -> exec_normal src init b ~f
+    | Piece.Pawn when is_promote_rank b active -> 
+      (Bb.fold [@specialised]) b ~init ~f:(fun init dst ->
+          Pawn.promote src dst |> List.fold ~init ~f)
+    | _ ->
+      (Bb.fold [@specialised]) b ~init
+        ~f:(fun acc dst -> Move.create src dst |> f acc)
 
-  let[@inline] any sq k a = match k with
+  let[@inline] of_kind sq k a = match k with
     | Piece.Pawn   -> pawn sq a
     | Piece.Knight -> knight sq a
     | Piece.Bishop -> bishop sq a
@@ -1434,10 +1431,11 @@ module Movegen = struct
   let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
-    if num_checkers > 1 then king king_sq a |> exec king_sq King [] a
-    else collect_active pos |>
-         (List.fold [@specialised]) ~init:[] ~f:(fun acc (sq, k) ->
-             any sq k a |> exec sq k acc a)
+    if num_checkers <= 1
+    then collect_active pos |>
+         (List.fold [@specialised]) ~init:[] ~f:(fun init (sq, k) ->
+             of_kind sq k a |> bitboard_to_moves sq k ~init ~a)
+    else king king_sq a |> bitboard_to_moves king_sq King ~init:[] ~a
 end
 
 let make_move ?(validate = false) pos move =
@@ -1445,7 +1443,7 @@ let make_move ?(validate = false) pos move =
   let piece = piece_at_square_exn pos src in
   let en_passant_pawn = en_passant_pawn_uopt pos in
   let new_position, _, _, _ =
-    Movegen.make_move_aux pos ~src ~dst ~promote ~piece ~en_passant_pawn in
+    Movegen.run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn in
   if validate then match Valid.check new_position with
     | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
     | Ok () -> new_position
@@ -1465,7 +1463,7 @@ module Algebraic = struct
          bitboards. *)
       collect_kind parent k |> List.filter ~f:(fun (sq, c) ->
           Square.(sq <> src) && Piece.Color.(c = parent.active)) |>
-      List.map ~f:(fun (sq, _) -> sq, Movegen.any sq k a) |>
+      List.map ~f:(fun (sq, _) -> sq, Movegen.of_kind sq k a) |>
       List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
       | [] -> ()
       | moves ->
