@@ -1408,7 +1408,7 @@ module Movegen = struct
     | Piece.Black -> Bb.((b & rank_1) = b)
 
   (* Get the list of moves from the bitboard of squares we can move to. *)
-  let[@inline] bitboard_to_moves src k b ~init ~a:{pos; en_passant_pawn; _} =
+  let[@inline] bb_to_moves src k b ~init ~a:{pos; en_passant_pawn; _} =
     let active = pos.active in
     let piece = Piece.create active k in
     let f = accum_makemove ~pos ~en_passant_pawn ~piece in
@@ -1431,11 +1431,10 @@ module Movegen = struct
   let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
-    if num_checkers <= 1
-    then collect_active pos |>
-         (List.fold [@specialised]) ~init:[] ~f:(fun init (sq, k) ->
-             of_kind sq k a |> bitboard_to_moves sq k ~init ~a)
-    else king king_sq a |> bitboard_to_moves king_sq King ~init:[] ~a
+    if num_checkers > 1
+    then king king_sq a |> bb_to_moves king_sq King ~init:[] ~a
+    else (List.fold [@specialised]) ~init:[] ~f:(fun init (sq, k) ->
+        of_kind sq k a |> bb_to_moves sq k ~init ~a) @@ collect_active pos
 end
 
 let make_move ?(validate = false) pos move =
