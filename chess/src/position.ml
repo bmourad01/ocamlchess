@@ -1453,9 +1453,9 @@ let legal_moves pos = Movegen.go @@ Analysis.create pos
 (* Algebraic notation of moves. *)
 
 module Algebraic = struct
-  let disambiguate buf src dst parent k =
+  let disambiguate parent k ~addc ~adds ~src ~dst =
     let a = Analysis.create parent in
-    (* More than one checker means it's a king move, which are unambiguous. *)
+    (* More than one checker means it's a king move, which is unambiguous. *)
     if a.Analysis.num_checkers <= 1 then
       let rank, file = Square.decomp src in
       (* Find all the other pieces of the same kind and generate their move
@@ -1466,20 +1466,17 @@ module Algebraic = struct
       List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
       | [] -> ()
       | moves ->
-        let search x ch f =
-          let init = Some (ch x) in
-          List.fold_until moves ~init ~finish:ident ~f:(fun acc (sq, _) ->
-              if f sq = x then Stop None else Continue acc) in
+        let search x f =
+          List.fold_until moves ~init:true ~finish:ident ~f:(fun acc (sq, _) ->
+              if f sq = x then Stop false else Continue acc) in
         (* First try to distinguish by file, then by rank, and finally the
            departing square. *)
-        match search file Square.File.to_char Square.file with
-        | Some c -> Buffer.add_char buf c
-        | None -> match search rank Square.Rank.to_char Square.rank with
-          | None -> Buffer.add_string buf @@ Square.to_string src
-          | Some c -> Buffer.add_char buf c
+        if search file Square.file then addc @@ Square.File.to_char file
+        else if search rank Square.rank then addc @@ Square.Rank.to_char rank
+        else adds @@ Square.to_string src
 
   let of_legal legal =
-    let buf = Buffer.create 8 in
+    let buf = Buffer.create 16 in
     let adds = Buffer.add_string buf in
     let addc = Buffer.add_char buf in
     let src, dst, promote = Move.decomp @@ Legal.move legal in
@@ -1501,7 +1498,7 @@ module Algebraic = struct
           | Some _ -> Piece.with_kind p Pawn
           | None -> p in
         (* Piece being moved *)
-        let dis = disambiguate buf src dst @@ Legal.parent legal in
+        let dis = disambiguate ~addc ~adds ~src ~dst @@ Legal.parent legal in
         begin match Piece.kind p with
           | Piece.Pawn -> if Uopt.is_none legal.capture
             then adds @@ Square.to_string dst
