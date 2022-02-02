@@ -402,7 +402,7 @@ module Analysis = struct
   end
 
   (* Attacks of all piece kinds, starting from the king, intersected with
-     the squares occupied by inactive pieces. *)
+     the squares occupied by the corresponding inactive pieces. *)
   let[@inline] checkers pos ~king_sq ~inactive_board ~occupied =
     let open Bb.Syntax in
     let p = Pre.pawn_capture king_sq pos.active & pos.pawn in
@@ -420,45 +420,41 @@ module Analysis = struct
      king. Any of our pieces that are in this intersection are thus
      pinned. *)
   let[@inline] pinners ~active_board ~king_sq ~inactive_sliders ~occupied =
-    let open Bb.Syntax in
-    let bishop  = lazy (Pre.bishop king_sq occupied) in
-    let rook    = lazy (Pre.rook   king_sq occupied) in
-    let queen   = lazy (Pre.queen  king_sq occupied) in
+    let open Bb in
+    let bishop  = Pre.bishop king_sq occupied in
+    let rook    = Pre.rook   king_sq occupied in
+    let queen   = Pre.queen  king_sq occupied in
     let mask    = active_board -- king_sq in
-    let pinners = Array.create ~len:Square.count Bb.empty in
+    let pinners = Array.create ~len:Square.count empty in
     List.iter inactive_sliders ~f:(fun (sq, k) ->
-        let mask = mask & Pre.between king_sq sq in
         let checker, king = match k with
-          | Piece.Bishop -> Pre.bishop sq occupied, Lazy.force bishop
-          | Piece.Rook   -> Pre.rook   sq occupied, Lazy.force rook
-          | Piece.Queen  -> Pre.queen  sq occupied, Lazy.force queen
-          | _ -> Bb.(empty, empty) in
-        Bb.first_set (checker & king & mask) |>
-        Option.iter ~f:(fun pinner ->
-            let i = Square.to_int pinner in
-            let b = Array.unsafe_get pinners i ++ sq in
-            Array.unsafe_set pinners i b));
+          | Piece.Bishop -> Pre.bishop sq occupied, bishop
+          | Piece.Rook   -> Pre.rook   sq occupied, rook
+          | Piece.Queen  -> Pre.queen  sq occupied, queen
+          | _ -> empty, empty in
+        let b = checker & king & mask & Pre.between king_sq sq in
+        if b <> empty then
+          let i = Square.to_int @@ first_set_exn b in
+          let b = Array.unsafe_get pinners i ++ sq in
+          Array.unsafe_set pinners i b);
     pinners
 
   (* Generate the masks which may restrict movement in the event of a check. *)
   let[@inline] checks pos ~en_passant_pawn:pw ~num_checkers ~checkers ~king_sq =
-    if num_checkers <> 1 then Bb.(full, empty)
-    else
+    if num_checkers = 1 then
       (* Test if the checker is a sliding piece. If so, then we can try to
          block the attack. Otherwise, they may only be captured. *)
       let open Bb.Syntax in
       let sq = Bb.first_set_exn checkers in
       match which_kind_exn pos sq with
       | Bishop | Rook | Queen -> checkers + Pre.between king_sq sq, Bb.empty
-      | Pawn ->
+      | Pawn when Uopt.is_some pw ->
         (* Edge case for being able to get out of check via en passant
            capture. *)
-        if Uopt.is_none pw then checkers, Bb.empty
-        else
-          let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
-          if Square.(sq = pw) then checkers, !!ep
-          else checkers, Bb.empty
+        let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
+        if Square.(sq = pw) then checkers, !!ep else checkers, Bb.empty
       |  _ -> checkers, Bb.empty
+    else Bb.(full, empty)
 
   (* Populate info needed for generating legal moves. *)
   let[@inline] create pos =
@@ -966,7 +962,10 @@ let pp ppf pos = Format.fprintf ppf "%s" @@ Fen.to_string pos
 
 let start = Fen.(of_string_exn start)
 
-(* Handling moves
+(* Handling moves.
+
+   This is likely to be the biggest source of bugs, as it is quite easy to
+   incorrectly implement the rules of chess.
 
    NOTE: We originally used a state monad for the Makemove module, and a reader
    monad for the Movegen module. For performance reasons, we then switched to a
@@ -981,7 +980,7 @@ let start = Fen.(of_string_exn start)
 module Makemove = struct
   (* `en_passant_pawn` is the pawn that is "in front" of the en passant
      square. This field is only valid if the move we are making is in fact an
-     en passant move.
+     en passant capture.
 
      `castle` is the side on which castling occurred, if any.
 
@@ -1019,8 +1018,8 @@ module Makemove = struct
     update_hash pos ~f:(Hash.Update.piece c k sq);
     k
 
-  let[@inline] set sq = Bb.(fun b -> b ++ sq)
-  let[@inline] clr sq = Bb.(fun b -> b -- sq)
+  let set = Fn.flip Bb.set
+  let clr = Fn.flip Bb.clear
 
   let[@inline] set_square p sq pos = map_piece p sq pos ~f:(set sq) |> ignore
   let[@inline] clear_square p sq pos = map_piece p sq pos ~f:(clr sq) |> ignore
@@ -1105,8 +1104,7 @@ module Makemove = struct
     | _ -> ()
 
   (* Rook moved from a square. *)
-  let[@inline] rook_moved src pos =
-    rook_moved_or_captured src pos.active pos
+  let[@inline] rook_moved src pos = rook_moved_or_captured src pos.active pos
 
   (* Rook was captured at a square. Assume that it is the inactive's color. *)
   let[@inline] rook_captured dst direct_capture pos =
@@ -1147,7 +1145,7 @@ module Makemove = struct
     | White -> ()
 
   (* Update the piece for the destination square if we're promoting. *)
-  let[@inline] do_promote p k pos = match k with
+  let[@inline] do_promote p promote pos = match promote with
     | Some k -> Piece.with_kind p k
     | None -> p
 
@@ -1222,152 +1220,155 @@ type legal = Legal.t [@@deriving compare, equal, sexp]
 module Movegen = struct
   open Analysis
 
-  module Pawn = struct
-    let[@inline] push sq {pos; occupied; _} =
-      Bb.(Pre.pawn_advance sq pos.active - occupied)
+  module Pieces = struct
+    module Pawn = struct
+      let[@inline] push sq {pos; occupied; _} =
+        Bb.(Pre.pawn_advance sq pos.active - occupied)
 
-    let[@inline] push2 rank file {pos; occupied; _} =
-      let open Bb.Syntax in
-      match pos.active with
-      | Piece.White when Square.Rank.(rank = two) ->
-        !!(Square.create_unsafe ~rank:Square.Rank.four ~file) - occupied
-      | Piece.Black when Square.Rank.(rank = seven) ->
-        !!(Square.create_unsafe ~rank:Square.Rank.five ~file) - occupied
-      | _ -> Bb.empty
+      (* Double pawn push. *)
+      let[@inline] push2 rank file {pos; occupied; _} =
+        let open Bb.Syntax in
+        match pos.active with
+        | Piece.White when Square.Rank.(rank = two) ->
+          !!(Square.create_unsafe ~rank:Square.Rank.four ~file) - occupied
+        | Piece.Black when Square.Rank.(rank = seven) ->
+          !!(Square.create_unsafe ~rank:Square.Rank.five ~file) - occupied
+        | _ -> Bb.empty
 
-    (* Check if our pawn or the captured pawn is along a pin ray. If so,
-       then this capture would be illegal, since it would lead to a discovery
-       on the king. En passant moves arise rarely across all chess positions,
-       so we can do a bit of heavy calculation here. *)
-    let[@inline] en_passant sq ep pw diag
-        {king_sq; occupied; inactive_sliders; _} = let open Bb.Syntax in
-      (* Remove our pawn and the captured pawn from the board, but pretend that
-         the en passant square is occupied. This covers the case where we can
-         capture the pawn, but it may leave our pawn pinned. *)
-      let occupied = occupied -- sq -- pw ++ ep in
-      let init = diag ++ ep and finish = ident in
-      (* Check if an appropriate diagonal attack from the king would reach
-         that corresponding piece. *)
-      let bishop = lazy (Pre.bishop king_sq occupied) in
-      let rook   = lazy (Pre.rook   king_sq occupied) in
-      let queen  = lazy (Pre.queen  king_sq occupied) in
-      (List.fold_until [@specialised]) inactive_sliders ~init ~finish
-        ~f:(fun acc -> function
-            | sq, Piece.Bishop when sq @ (Lazy.force bishop) -> Stop diag
-            | sq, Piece.Rook   when sq @ (Lazy.force rook)   -> Stop diag
-            | sq, Piece.Queen  when sq @ (Lazy.force queen)  -> Stop diag
-            | _ -> Continue acc)
+      (* Check if our pawn or the captured pawn is along a pin ray. If so,
+         then this capture would be illegal, since it would lead to a discovery
+         on the king. En passant moves arise rarely across all chess positions,
+         so we can do a bit of heavy calculation here. *)
+      let[@inline] en_passant sq ep pw diag
+          {king_sq; occupied; inactive_sliders; _} = let open Bb.Syntax in
+        (* Remove our pawn and the captured pawn from the board, but pretend
+           that the en passant square is occupied. This covers the case where
+           we can capture the pawn, but it may leave our pawn pinned. *)
+        let occupied = occupied -- sq -- pw ++ ep in
+        let init = diag ++ ep and finish = ident in
+        (* Check if an appropriate diagonal attack from the king would reach
+           that corresponding piece. *)
+        let bishop = Pre.bishop king_sq occupied in
+        let rook   = Pre.rook   king_sq occupied in
+        let queen  = Pre.queen  king_sq occupied in
+        (List.fold_until [@specialised]) inactive_sliders ~init ~finish
+          ~f:(fun acc -> function
+              | sq, Piece.Bishop when sq @ bishop -> Stop diag
+              | sq, Piece.Rook   when sq @ rook   -> Stop diag
+              | sq, Piece.Queen  when sq @ queen  -> Stop diag
+              | _ -> Continue acc)
 
-    let[@inline] capture sq
-        ({pos; en_passant_pawn = pw; inactive_board; _} as a) =
-      let open Bb.Syntax in
-      let capture = Pre.pawn_capture sq pos.active in
-      let diag = capture & inactive_board in
-      if Uopt.is_some pw then
-        let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
-        if ep @ capture then en_passant sq ep pw diag a
+      let[@inline] capture sq
+          ({pos; en_passant_pawn = pw; inactive_board; _} as a) =
+        let open Bb.Syntax in
+        let capture = Pre.pawn_capture sq pos.active in
+        let diag = capture & inactive_board in
+        if Uopt.is_some pw then
+          let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
+          if ep @ capture then en_passant sq ep pw diag a
+          else diag
         else diag
-      else diag
 
-    let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
+      let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
 
-    (* We need to multiply the move by the number of pieces we can
-       promote to. *)
-    let[@inline] promote src dst =
-      List.map promote_kinds ~f:(Move.create_with_promote src dst)
+      (* We need to multiply the move by the number of pieces we can
+         promote to. *)
+      let[@inline] promote src dst =
+        List.map promote_kinds ~f:(Move.create_with_promote src dst)
+    end
+
+    module Knight = struct
+      let[@inline] jump sq {active_board; _} = Bb.(Pre.knight sq - active_board)
+    end
+
+    module Bishop = struct
+      let[@inline] slide sq {occupied; active_board; _} =
+        Bb.(Pre.bishop sq occupied - active_board)
+    end
+
+    module Rook = struct
+      let[@inline] slide sq {occupied; active_board; _} =
+        Bb.(Pre.rook sq occupied - active_board)
+    end
+
+    module Queen = struct
+      let[@inline] slide sq {occupied; active_board; _} =
+        Bb.(Pre.queen sq occupied - active_board)
+    end
+
+    module King = struct
+      (* Note that `inactive_attacks` includes squares occupied by inactive
+         pieces. Therefore, the king may not attack those squares. *)
+      let[@inline] move sq {active_board; inactive_attacks; _} =
+        Bb.(Pre.king sq - (active_board + inactive_attacks))
+
+      let castle {pos; occupied; inactive_attacks; num_checkers; _} =
+        let open Bb in
+        (* Cannot castle out of check. *)
+        if Int.(num_checkers = 0) then
+          let active = pos.active in
+          let m = occupied + inactive_attacks in
+          let[@inline] ks_castle sq =
+            let b = Pre.castle pos.castle active Kingside in
+            if Int.equal 2 @@ count (b - m) then !!sq else empty in
+          let[@inline] qs_castle sq bsq =
+            if not (bsq @ occupied) then
+              let b = Pre.castle pos.castle active Queenside in
+              if Int.equal 2 @@ count (b - m) then !!sq else empty
+            else empty in
+          let ks, qs, bsq = match active with
+            | Piece.White -> Square.(g1, c1, b1)
+            | Piece.Black -> Square.(g8, c8, b8) in
+          ks_castle ks + qs_castle qs bsq
+        else empty
+    end
+
+    (* Use this mask to restrict the movement of pinned pieces. *)
+    let[@inline] pin_mask sq {king_sq; pinners; _} = let open Bb in
+      let p = Array.unsafe_get pinners @@ Square.to_int sq in
+      match count p with
+      | 1 ->
+        let pinner = first_set_exn p in
+        Pre.between king_sq pinner ++ pinner
+      | 0 -> full
+      | _ -> empty
+
+    (* Special case for pawns, with en passant capture being an option to
+       escape check. *)
+    let[@inline] check_mask_pawn capture
+        {num_checkers; check_mask; en_passant_check_mask; _} =
+      if num_checkers <> 1 then check_mask
+      else Bb.(check_mask + (capture & en_passant_check_mask))
+
+    (* Pawn has special case for check mask. *)
+    let[@inline] make_pawn sq b capture a =
+      Bb.(b & pin_mask sq a & check_mask_pawn capture a)
+
+    (* All other pieces (except the king). *)
+    let[@inline] make sq a b = Bb.(b & pin_mask sq a & a.check_mask)
+
+    let[@inline] pawn sq a =
+      let open Pawn in
+      let open Bb.Syntax in
+      let push = push sq a in
+      (* Only allow double push if a single push is available. *)
+      let push = if Bb.(push <> empty) then
+          let rank, file = Square.decomp sq in
+          push + push2 rank file a
+        else push in
+      let capture = capture sq a in
+      make_pawn sq (push + capture) capture a
+
+    let[@inline] knight sq a = make sq a @@ Knight.jump  sq a
+    let[@inline] bishop sq a = make sq a @@ Bishop.slide sq a
+    let[@inline] rook   sq a = make sq a @@ Rook.slide   sq a
+    let[@inline] queen  sq a = make sq a @@ Queen.slide  sq a
+
+    let[@inline] king sq a =
+      let open King in
+      let open Bb.Syntax in
+      move sq a + castle a
   end
-
-  module Knight = struct
-    let[@inline] jump sq {active_board; _} = Bb.(Pre.knight sq - active_board)
-  end
-
-  module Bishop = struct
-    let[@inline] slide sq {occupied; active_board; _} =
-      Bb.(Pre.bishop sq occupied - active_board)
-  end
-
-  module Rook = struct
-    let[@inline] slide sq {occupied; active_board; _} =
-      Bb.(Pre.rook sq occupied - active_board)
-  end
-
-  module Queen = struct
-    let[@inline] slide sq {occupied; active_board; _} =
-      Bb.(Pre.queen sq occupied - active_board)
-  end
-
-  module King = struct
-    (* Note that `inactive_attacks` includes squares occupied by inactive pieces.
-       Therefore, the king may not attack those squares. *)
-    let[@inline] move sq {active_board; inactive_attacks; _} =
-      Bb.(Pre.king sq - (active_board + inactive_attacks))
-
-    let castle {pos; occupied; inactive_attacks; num_checkers; _} =
-      let open Bb in
-      (* Cannot castle out of check. *)
-      if Int.(num_checkers = 0) then
-        let active = pos.active in
-        let m = occupied + inactive_attacks in
-        let[@inline] ks_castle sq =
-          let b = Pre.castle pos.castle active Kingside in
-          if Int.equal 2 @@ count (b - m) then !!sq else empty in
-        let[@inline] qs_castle sq bsq =
-          if not (bsq @ occupied) then
-            let b = Pre.castle pos.castle active Queenside in
-            if Int.equal 2 @@ count (b - m) then !!sq else empty
-          else empty in
-        let ks, qs, bsq = match active with
-          | Piece.White -> Square.(g1, c1, b1)
-          | Piece.Black -> Square.(g8, c8, b8) in
-        ks_castle ks + qs_castle qs bsq
-      else empty
-  end
-
-  (* Use this mask to restrict the movement of pinned pieces. *)
-  let[@inline] pin_mask sq {king_sq; pinners; _} = let open Bb in
-    let p = Array.unsafe_get pinners @@ Square.to_int sq in
-    match count p with
-    | 1 ->
-      let pinner = first_set_exn p in
-      Pre.between king_sq pinner ++ pinner
-    | 0 -> full
-    | _ -> empty
-
-  (* Special case for pawns, with en passant capture being an option to escape
-     check. *)
-  let[@inline] check_mask_pawn capture
-      {num_checkers; check_mask; en_passant_check_mask; _} =
-    if num_checkers <> 1 then check_mask
-    else Bb.(check_mask + (capture & en_passant_check_mask))
-
-  (* Pawn has special case for check mask. *)
-  let[@inline] make_pawn sq b capture a =
-    Bb.(b & pin_mask sq a & check_mask_pawn capture a)
-
-  (* All other pieces (except the king). *)
-  let[@inline] make sq a b = Bb.(b & pin_mask sq a & a.check_mask)
-
-  let[@inline] pawn sq a =
-    let open Pawn in
-    let open Bb.Syntax in
-    let push = push sq a in
-    (* Only allow double push if a single push is available. *)
-    let push = if Bb.(push <> empty) then
-        let rank, file = Square.decomp sq in
-        push + push2 rank file a
-      else push in
-    let capture = capture sq a in
-    make_pawn sq (push + capture) capture a
-
-  let[@inline] knight sq a = make sq a @@ Knight.jump  sq a
-  let[@inline] bishop sq a = make sq a @@ Bishop.slide sq a
-  let[@inline] rook   sq a = make sq a @@ Rook.slide   sq a
-  let[@inline] queen  sq a = make sq a @@ Queen.slide  sq a
-
-  let[@inline] king sq a =
-    let open King in
-    let open Bb.Syntax in
-    move sq a + castle a
 
   let[@inline] castle_side piece src dst =
     if Piece.is_king piece then
@@ -1415,26 +1416,27 @@ module Movegen = struct
     match k with
     | Piece.Pawn when is_promote_rank b active -> 
       (Bb.fold [@specialised]) b ~init ~f:(fun init dst ->
-          Pawn.promote src dst |> List.fold ~init ~f)
+          Pieces.Pawn.promote src dst |> List.fold ~init ~f)
     | _ ->
       (Bb.fold [@specialised]) b ~init
         ~f:(fun acc dst -> Move.create src dst |> f acc)
 
-  let[@inline] of_kind sq k a = match k with
-    | Piece.Pawn   -> pawn sq a
-    | Piece.Knight -> knight sq a
-    | Piece.Bishop -> bishop sq a
-    | Piece.Rook   -> rook sq a
-    | Piece.Queen  -> queen sq a
-    | Piece.King   -> king sq a
+  (* Piece-specific bitboards for legal moves. *)
+  let[@inline] bb_of_kind sq k a = match k with
+    | Piece.Pawn   -> Pieces.pawn sq a
+    | Piece.Knight -> Pieces.knight sq a
+    | Piece.Bishop -> Pieces.bishop sq a
+    | Piece.Rook   -> Pieces.rook sq a
+    | Piece.Queen  -> Pieces.queen sq a
+    | Piece.King   -> Pieces.king sq a
 
   let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
     if num_checkers > 1
-    then king king_sq a |> bb_to_moves king_sq King ~init:[] ~a
+    then Pieces.king king_sq a |> bb_to_moves king_sq King ~init:[] ~a
     else (List.fold [@specialised]) ~init:[] ~f:(fun init (sq, k) ->
-        of_kind sq k a |> bb_to_moves sq k ~init ~a) @@ collect_active pos
+        bb_of_kind sq k a |> bb_to_moves sq k ~init ~a) @@ collect_active pos
 end
 
 let make_move ?(validate = false) pos move =
@@ -1462,7 +1464,7 @@ module Algebraic = struct
          bitboards. *)
       collect_kind parent k |> List.filter ~f:(fun (sq, c) ->
           Square.(sq <> src) && Piece.Color.(c = parent.active)) |>
-      List.map ~f:(fun (sq, _) -> sq, Movegen.of_kind sq k a) |>
+      List.map ~f:(fun (sq, _) -> sq, Movegen.bb_of_kind sq k a) |>
       List.filter ~f:(fun (_, b) -> Bb.(dst @ b)) |> function
       | [] -> ()
       | moves ->

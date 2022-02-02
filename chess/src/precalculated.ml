@@ -3,6 +3,7 @@ open Core_kernel
 module Bb = Bitboard
 
 (* Magic shift constants. *)
+
 module Shift = struct
   let diagonal = [|
     6; 5; 5; 5; 5; 5; 5; 6;
@@ -34,6 +35,7 @@ end
 
    Credit: Tord Romstad
 *)
+
 module Magic = struct
   let bishop = [|
     0x89A1121896040240L; 0x2004844802002010L; 0x2068080051921000L;
@@ -88,6 +90,7 @@ end
 
 (* Simple movement patterns which can be wholly precalculated with no
    parameters. *)
+
 module Simple = struct
   (* Construct a simple table which maps squares to bitboards. *)
   let make f = Array.init Square.count ~f:(fun i ->
@@ -134,6 +137,7 @@ module Simple = struct
 end
 
 (* Masks for various movement directions. *)
+
 module Mask = struct
   (* Direction to move in when starting from a particular square. *)
   let dir r f =
@@ -163,27 +167,24 @@ module Mask = struct
 end
 
 (* Generation of sliding attack patterns. *)
+
 module Sliding = struct
-  (* Computes the bitboards for diagonal and orthogonal attacks, given a
-     starting square and the set of occupied squares. *)
   let diagonal, orthogonal =
-    let gen arr i occupied =
+    (* Computes the bitboards for diagonal and orthogonal attacks, given a
+       starting square and the set of occupied squares. *)
+    let gen dirs i occupied =
       let open Bb in
       let occupied = of_int64 occupied in
-      Array.map arr ~f:(fun (tbl, f) ->
-          let b = tbl.(i) in
-          let j = match to_int64 (b & occupied) with
-            | 0L -> None
-            | b' -> Some (f b') in
-          b, j) |>
-      Array.foldi ~init:empty ~f:(fun i acc (b, j) ->
-          let acc = acc + b in
-          Option.value_map j ~default:acc
-            ~f:(fun j -> acc - (fst arr.(i)).(j))) in
+      List.fold dirs ~init:empty ~f:(fun acc (tbl, f) ->
+          let ray = tbl.(i) in
+          let acc = acc + ray in
+          match to_int64 (ray & occupied) with
+          | 0L -> acc
+          | ray' -> acc - tbl.(f ray')) in
     let l b = Square.last - Int64.clz b in
     let r = Int64.ctz in
-    Mask.(gen [|(neast, r); (nwest, r); (seast, l); (swest, l)|],
-          gen [|(east,  r); (west,  l); (north, r); (south, l)|])
+    Mask.(gen [(neast, r); (nwest, r); (seast, l); (swest, l)],
+          gen [(east,  r); (west,  l); (north, r); (south, l)])
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
@@ -198,11 +199,11 @@ module Sliding = struct
     done;
     !blockers
 
-  (* Compute the index into the magic hash table. *)
+  (* Compute the index into the hash table. *)
   let[@inline] hash occupied magic shift =
     Int64.((occupied * magic) lsr Int.(64 - shift) |> to_int_trunc)
 
-  (* Generate the magic hash table for bishop and rook moves. *)
+  (* Populate the hash tables for bishop and rook moves. *)
   let bishop, rook =
     let go len shift mask magic gen =
       let tbl = Array.create Bb.empty ~len:(Square.count * len) in
