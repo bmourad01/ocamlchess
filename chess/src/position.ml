@@ -1190,6 +1190,7 @@ module Legal = struct
       castle_side : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
 
+    let is_move legal m = Move.(m = legal.move)
     let capture legal = Uopt.to_option legal.capture
     let castle_side legal = Uopt.to_option legal.castle_side
 
@@ -1439,18 +1440,12 @@ module Movegen = struct
         bb_of_kind sq k a |> bb_to_moves sq k ~init ~a) @@ collect_active pos
 end
 
-let make_move ?(validate = false) pos move =
-  let src, dst, promote = Move.decomp move in
-  let piece = piece_at_square_exn pos src in
-  let en_passant_pawn = en_passant_pawn_uopt pos in
-  let new_position, _, _, _ =
-    Movegen.run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn in
-  if validate then match Valid.check new_position with
-    | Error e -> invalid_argf "Invalid move: %s" (Valid.Error.to_string e) ()
-    | Ok () -> new_position
-  else new_position    
-
 let legal_moves pos = Movegen.go @@ Analysis.create pos
+
+let make_move pos move =
+  match legal_moves pos |> List.find ~f:(Fn.flip Legal.is_move move) with
+  | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
+  | Some legal -> Legal.new_position legal
 
 (* Algebraic notation of moves. *)
 

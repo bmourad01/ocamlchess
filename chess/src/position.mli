@@ -307,6 +307,10 @@ module Legal : sig
   (** The actual move that was made. *)
   val move : legal -> Move.t
 
+  (** [is_move legal m] returns [true] if [m] is the move that was made for
+      [legal] *)
+  val is_move : legal -> Move.t -> bool
+  
   (** The parent position that this move was applied to. *)
   val parent : legal -> t
 
@@ -340,13 +344,11 @@ module Legal : sig
   include Base.Comparable.S with type t := t
 end
 
-(** [make_move pos m ~validate] applies move [m] to position [pos], returning
-    thenew position. If there is no piece at the source square of [m], then
-    [Invalid_argument] is raised. The resulting position is not guaranteed
-    to be legal. If [validate] is [true], then the resulting position will be
-    checked for validity, raising [Invalid_argument] upon failure. By default,
-    it is [false]. It is assumed that [pos] is a legal position. *)
-val make_move : ?validate:bool -> t -> Move.t -> t
+(** [make_move pos m] applies move [m] to position [pos], returning the new
+    position. If [m] is not a legal move, then [Invalid_argument] is raised.
+    Additionally, if [pos] is an illegal position, then either the result is
+    undefined, or an exception is raised. *)
+val make_move : t -> Move.t -> t
 
 (** [legal_moves pos] returns a list of legal moves for the active color of
     position [pos]. It is assumed that [pos] is reachable from the starting 
