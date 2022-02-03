@@ -1445,7 +1445,7 @@ let legal_moves pos = Movegen.go @@ Analysis.create pos
 let make_move pos move =
   match legal_moves pos |> List.find ~f:(Fn.flip Legal.is_move move) with
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
-  | Some legal -> Legal.new_position legal
+  | Some legal -> legal
 
 (* Algebraic notation of moves. *)
 

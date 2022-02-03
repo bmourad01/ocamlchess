@@ -2,9 +2,12 @@ open Core_kernel
 open OUnit2
 open Chess
 
+module Fen = Position.Fen
+module Legal = Position.Legal
+
 let expected_hash pos =
-  Position.Fen.to_string pos |>
-  Position.Fen.of_string_exn |>
+  Fen.to_string pos |>
+  Fen.of_string_exn |>
   Position.hash
 
 let test_single_aux m pos =
@@ -17,8 +20,8 @@ let test_single_aux m pos =
             Position.pp pos hash Move.pp m expected)
 
 let test_single legal =
-  let m = Position.Legal.move legal in
-  let pos = Position.Legal.new_position legal in
+  let m = Legal.move legal in
+  let pos = Legal.new_position legal in
   test_single_aux m pos
 
 let test pos = Position.legal_moves pos |> List.iter ~f:test_single
@@ -26,30 +29,31 @@ let test pos = Position.legal_moves pos |> List.iter ~f:test_single
 let test_starting () = test Position.start
 
 let test_position_2 () =
-  test @@ Position.Fen.of_string_exn
+  test @@ Fen.of_string_exn
     "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
 
 let test_position_3 () =
-  test @@ Position.Fen.of_string_exn
+  test @@ Fen.of_string_exn
     "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"
 
 let test_position_4 () =
-  test @@ Position.Fen.of_string_exn
+  test @@ Fen.of_string_exn
     "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1"
 
 let test_position_5 () =
-  test @@ Position.Fen.of_string_exn
+  test @@ Fen.of_string_exn
     "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
 
 let test_position_6 () =
-  test @@ Position.Fen.of_string_exn
+  test @@ Fen.of_string_exn
     "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
 
-let test_move m pos = Position.make_move pos m |> test_single_aux m
+let test_move m pos =
+  Position.make_move pos m |> Legal.new_position |> test_single_aux m
 
 let test_7 () =
   let m = Move.of_string_exn "h7h6" in
-  let pos = Position.Fen.of_string_exn
+  let pos = Fen.of_string_exn
       "r1bqkbnr/1ppppppp/p7/8/1n3P2/1P4PN/P1PPP2P/RNBQKB1R b KQkq f3 0 4" in
   test_move m pos
 

@@ -344,11 +344,12 @@ module Legal : sig
   include Base.Comparable.S with type t := t
 end
 
-(** [make_move pos m] applies move [m] to position [pos], returning the new
-    position. If [m] is not a legal move, then [Invalid_argument] is raised.
-    Additionally, if [pos] is an illegal position, then either the result is
-    undefined, or an exception is raised. *)
-val make_move : t -> Move.t -> t
+(** [make_move pos m] applies move [m] to position [pos]. If [m] is not a
+    legal move, then [Invalid_argument] is raised. Additionally, if [pos]
+    is an illegal position, then either the result is undefined, or an
+    exception is raised. The return value is the legal move, which contains
+    the new position. *)
+val make_move : t -> Move.t -> legal
 
 (** [legal_moves pos] returns a list of legal moves for the active color of
     position [pos]. It is assumed that [pos] is reachable from the starting 
