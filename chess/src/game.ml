@@ -131,8 +131,15 @@ let to_string game =
   let result = Result.to_pgn game.result in
   adds "[Result \"";
   adds result;
-  adds "\"]\n\n";
+  adds "\"]\n";
+  (* FEN *)
+  if Position.(game.start <> start) then begin
+    adds "[FEN \"";
+    adds @@ Position.Fen.to_string game.start;
+    adds "\"]\n";
+  end;
   (* Moves *)
+  addc '\n';
   List.rev game.moves |> List.iter ~f:(fun legal ->
       let parent = Legal.parent legal in
       let parent_halfmove = Position.halfmove parent in
