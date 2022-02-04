@@ -2,13 +2,23 @@ open Core_kernel
 
 module Legal = Position.Legal
 
-type draw =
-  | Stalemate
-  | Insufficient_material
-  | Mutual_agreement
-  | Threefold_repetition
-  | Fivefold_repetition
-  | Fifty_move_rule
+(** Draws that must be declared by a player. *)
+type declared_draw = [
+  | `Mutual_agreement
+  | `Threefold_repetition
+  | `Fifty_move_rule
+] [@@deriving compare, equal, sexp]
+
+(** Draws that are automatic. *)
+type automatic_draw = [
+  | `Stalemate
+  | `Insufficient_material
+  | `Fivefold_repetition
+  | `Seventy_five_move_rule
+] [@@deriving compare, equal, sexp]
+
+(** The kind of draw for the game. *)
+type draw = [declared_draw | automatic_draw]
 [@@deriving compare, equal, sexp]
 
 module Draw = struct
@@ -18,6 +28,14 @@ module Draw = struct
 
   include T
   include Comparable.Make(T)
+
+  let is_declared = function
+    | #declared_draw -> true
+    | _ -> false
+
+  let is_automatic = function
+    | #automatic_draw -> true
+    | _ -> false
 end
 
 type result =
@@ -88,7 +106,7 @@ let create
   moves = [];
 }
 
-let add_move game legal result =
+let add_move ?(resigned = None) ?(declared_draw = None) game legal =
   if is_over game then failwith "Game is over, cannot add any more moves"
   else
     let moves =
@@ -101,6 +119,21 @@ let add_move game legal result =
           "Parent position of move %s differs from the previous \
            move" (Move.to_string @@ Legal.move legal) ()
       else legal :: game.moves in
+    let result = match resigned with
+      | Some c -> Resigned c
+      | None -> match declared_draw with
+        | Some draw -> Draw (draw :> draw)
+        | None ->
+          let pos = Legal.new_position legal in
+          let c = Position.active pos in
+          let in_check = Position.in_check pos in
+          if not in_check && Position.is_insufficient_material pos
+          then Draw `Insufficient_material
+          else if not in_check && Position.halfmove pos >= 150
+          then Draw `Seventy_five_move_rule
+          else if List.is_empty @@ Position.legal_moves pos
+          then if in_check then Checkmate c else Draw `Stalemate
+          else Ongoing in
     {game with moves; result}
 
 let to_string game =

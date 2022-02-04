@@ -1,19 +1,34 @@
 (** This module implements support for the PGN (Portable Game Notation)
     format. *)
 
+(** Draws that must be declared by a player. *)
+type declared_draw = [
+  | `Mutual_agreement
+  | `Threefold_repetition
+  | `Fifty_move_rule
+]
+
+(** Draws that are automatic. *)
+type automatic_draw = [
+  | `Stalemate
+  | `Insufficient_material
+  | `Fivefold_repetition
+  | `Seventy_five_move_rule
+]
+
 (** The kind of draw for the game. *)
-type draw =
-  | Stalemate
-  | Insufficient_material
-  | Mutual_agreement
-  | Threefold_repetition
-  | Fivefold_repetition
-  | Fifty_move_rule
+type draw = [declared_draw | automatic_draw]
 [@@deriving compare, equal, sexp]
 
 module Draw : sig
   (** The kind of draw for the game. *)
   type t = draw [@@deriving compare, equal, sexp]
+
+  (** Returns [true] if the draw was declared by a player. *)
+  val is_declared : t -> bool
+
+  (** Returns [true] if the draw was automatic. *)
+  val is_automatic : t -> bool
 
   include Base.Comparable.S with type t := t
 end
@@ -84,11 +99,18 @@ val create :
   unit ->
   t
 
-(** [add_move game legal result] updates [game] with a new move [legal] and
-    a result [result]. Raises [Failure] when [game] has already reached a
-    conclusion. Raises [Invalid_argument] when [legal] has a different
-    parent position than the move than the most recent move made in [game]. *)
-val add_move : t -> Position.legal -> result -> t
+(** [add_move game legal ~resigned ~declared_draw] updates [game] with a new
+    move [legal]. [resigned] indicates that a player resigned after the move was
+    made. [declared_draw] optionally denotes that a player declared a draw after
+    the move was made. Raises [Failure] when [game] has already ended. Raises
+    [Invalid_argument] when [legal] has a different parent position than the
+    move than the most recent move made in [game]. *)
+val add_move :
+  ?resigned:Piece.color option ->
+  ?declared_draw:declared_draw option ->
+  t ->
+  Position.legal ->
+  t
 
 (** Returns a PGN representation of the game. *)
 val to_string : t -> string
