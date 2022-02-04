@@ -90,17 +90,9 @@ let create
     ?(white = None)
     ?(black =  None)
     ?(start = Position.start)
-    () = {
-  event;
-  site;
-  date;
-  round;
-  white;
-  black;
-  result = Ongoing;
-  start;
-  moves = [];
-}
+    () =
+  Fields.create ~event ~site ~date ~round ~white ~black
+    ~result:Ongoing ~start ~moves:[]
 
 let add_move ?(resigned = None) ?(declared_draw = None) game legal =
   if is_over game then failwith "Game is over, cannot add any more moves"
