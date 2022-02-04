@@ -122,7 +122,8 @@ let to_string game =
       let parent_halfmove = Position.halfmove parent in
       let is_new_move = (parent_halfmove land 1) = 0 in
       if is_new_move then adds @@ sprintf "%d. " @@ Position.fullmove parent;
-      adds @@ Position.Algebraic.of_legal legal);
+      adds @@ Position.Algebraic.of_legal legal;
+      adds " ");
   adds result;
   Buffer.contents buf
 
