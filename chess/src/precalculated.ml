@@ -1,6 +1,7 @@
 open Core_kernel
 
 module Bb = Bitboard
+module Cr = Castling_rights
 
 (* Magic shift constants. *)
 
@@ -261,7 +262,7 @@ let[@inline] king sq = Array.unsafe_get Simple.king @@ Square.to_int sq
 
 let castle_tbl =
   let open Bb in
-  let open Castling_rights in
+  let open Cr in
   let wk = Square.(!!f1 + !!g1) in
   let wq = Square.(!!c1 + !!d1) in
   let bk = Square.(!!f8 + !!g8) in
@@ -277,8 +278,8 @@ let castle_tbl =
       List.fold valid ~init:empty ~f:(fun b (c, s, b') ->
           if mem x c s then b + b' else b))
 
-let[@inline] castle cr c s = Array.unsafe_get castle_tbl @@
-  Castling_rights.(to_int @@ inter cr @@ singleton c s)
+let[@inline] castle cr c s =
+  Cr.(to_int @@ inter cr @@ singleton_unsafe c s) |> Array.unsafe_get castle_tbl
 
 let between_tbl =
   let tbl = Array.create Bb.empty ~len:Square.(count * count) in

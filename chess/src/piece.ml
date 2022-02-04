@@ -63,16 +63,16 @@ module Color = struct
   let[@inline] of_int_exn i =
     if Int.(i land nmask <> 0)
     then invalid_argf "Integer %d is not a valid color" i ()
-    else ((Obj.magic i) : t)
+    else (Obj.magic i : t)
 
-  let[@inline] of_int_unsafe i = ((Obj.magic i) : t)
+  let[@inline] of_int_unsafe i = (Obj.magic i : t)
 
   let[@inline] of_int i =
-    Option.some_if Int.(i land nmask = 0) ((Obj.magic i) : t)
+    Option.some_if Int.(i land nmask = 0) (Obj.magic i : t)
 
-  let[@inline] to_int c = (Obj.magic (Obj.repr c) : int)
+  let[@inline] to_int c = (Obj.(magic (repr c)) : int)
   let[@inline] opposite_int c = to_int c lxor 1
-  let[@inline] opposite c = ((Obj.magic @@ opposite_int c) : t)
+  let[@inline] opposite c = (Obj.magic @@ opposite_int c : t)
 
   let to_string_hum = function
     | White -> "white"
@@ -96,14 +96,14 @@ module Kind = struct
   let[@inline] of_int_exn i =
     if Int.(i < 0 || i >= count)
     then invalid_argf "Integer %d is not a valid kind" i ()
-    else ((Obj.magic i) : t)
+    else (Obj.magic i : t)
 
-  let[@inline] of_int_unsafe i = ((Obj.magic i) : t)
+  let[@inline] of_int_unsafe i = (Obj.magic i : t)
 
   let[@inline] of_int i =
-    Option.some_if Int.(i >= 0 && i < count) ((Obj.magic i) : t)
+    Option.some_if Int.(i >= 0 && i < count) (Obj.magic i : t)
 
-  let[@inline] to_int k = (Obj.magic (Obj.repr k) : int)
+  let[@inline] to_int k = (Obj.(magic (repr k)) : int)
 
   let to_string_hum = function
     | Pawn -> "pawn"

@@ -87,6 +87,11 @@ val all : t
     and side [side]. *)
 val singleton : Piece.color -> side -> t
 
+(** [singleton_unsafe c side] creates a singeton of castling rights for color
+    [c] and side [side], but no sanity checks are performed. The result may be
+    undefined. *)
+val singleton_unsafe : Piece.color -> side -> t
+
 (** [inter x y] returns the intersection of castling rights for [x] and [y]. *)
 val inter : t -> t -> t
 

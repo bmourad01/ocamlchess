@@ -29,14 +29,14 @@ module Side = struct
   let of_int_exn i =
     if Int.(i land nmask <> 0)
     then invalid_argf "Invalid side integer %d" i ()
-    else ((Obj.magic i) : t)
+    else (Obj.magic i : t)
 
   let of_int i =
     if Int.(i land nmask <> 0) then None
-    else Some ((Obj.magic i) : t)
+    else Some (Obj.magic i : t)
 
-  let of_int_unsafe i = ((Obj.magic i) : t)
-  let to_int s = ((Obj.magic (Obj.repr s)) : int)
+  let of_int_unsafe i = (Obj.magic i : t)
+  let to_int s = (Obj.(magic @@ repr s) : int)
 end
 
 (* Integer conversion. *)
@@ -52,24 +52,30 @@ let[@inline] to_int cr = cr
 
 (* Predefined constants. *)
 
-let none = 0b0000
-let white_kingside = 0b0001
+let none            = 0b0000
+let white_kingside  = 0b0001
 let white_queenside = 0b0010
-let white = white_kingside lor white_queenside
-let black_kingside = 0b0100
+let black_kingside  = 0b0100
 let black_queenside = 0b1000
-let black = black_kingside lor black_queenside
-let kingside = white_kingside lor black_kingside
+
+let white     = white_kingside lor white_queenside
+let black     = black_kingside lor black_queenside
+let kingside  = white_kingside lor black_kingside
 let queenside = white_queenside lor black_queenside
-let all = white lor black
+let all       = white lor black
 
 (* Constructor *)
 
 let[@inline] singleton c s = match c, s with
-  | Piece.White, Kingside -> white_kingside
+  | Piece.White, Kingside  -> white_kingside
   | Piece.White, Queenside -> white_queenside
-  | Piece.Black, Kingside -> black_kingside
+  | Piece.Black, Kingside  -> black_kingside
   | Piece.Black, Queenside -> black_queenside
+
+let[@inline] singleton_unsafe c s =
+  let c = (Obj.magic c : int) in
+  let s = (Obj.magic s : int) in
+  (succ s) lsl (c * succ c)
 
 (* Logical operators. *)
 
@@ -81,9 +87,9 @@ let[@inline] minus x y = inter x @@ compl y
 (* Testing membership. *)
 
 let[@inline] mem x color side = match color, side with
-  | Piece.White, Kingside -> inter x white_kingside <> none
+  | Piece.White, Kingside  -> inter x white_kingside <> none
   | Piece.White, Queenside -> inter x white_queenside <> none
-  | Piece.Black, Kingside -> inter x black_kingside <> none
+  | Piece.Black, Kingside  -> inter x black_kingside <> none
   | Piece.Black, Queenside -> inter x black_queenside <> none
 
 (* String operations. *)
