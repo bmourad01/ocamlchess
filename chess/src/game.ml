@@ -2,14 +2,12 @@ open Core_kernel
 
 module Legal = Position.Legal
 
-(** Draws that must be declared by a player. *)
 type declared_draw = [
   | `Mutual_agreement
   | `Threefold_repetition
   | `Fifty_move_rule
 ] [@@deriving compare, equal, sexp]
 
-(** Draws that are automatic. *)
 type automatic_draw = [
   | `Stalemate
   | `Insufficient_material
@@ -17,9 +15,7 @@ type automatic_draw = [
   | `Seventy_five_move_rule
 ] [@@deriving compare, equal, sexp]
 
-(** The kind of draw for the game. *)
-type draw = [declared_draw | automatic_draw]
-[@@deriving compare, equal, sexp]
+type draw = [declared_draw | automatic_draw] [@@deriving compare, equal, sexp]
 
 module Draw = struct
   module T = struct  

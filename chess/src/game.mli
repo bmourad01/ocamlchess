@@ -17,8 +17,7 @@ type automatic_draw = [
 ]
 
 (** The kind of draw for the game. *)
-type draw = [declared_draw | automatic_draw]
-[@@deriving compare, equal, sexp]
+type draw = [declared_draw | automatic_draw] [@@deriving compare, equal, sexp]
 
 module Draw : sig
   (** The kind of draw for the game. *)
