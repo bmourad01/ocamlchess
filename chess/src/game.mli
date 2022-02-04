@@ -79,7 +79,8 @@ val create :
 
 (** [add_move game legal result] updates [game] with a new move [legal] and
     a result [result]. Raises [Failure] when [game] has already reached a
-    conclusion.  *)
+    conclusion. Raises [Invalid_argument] when [legal] has a different
+    parent position than the move than the most recent move made in [game]. *)
 val add_move : t -> Position.legal -> result -> t
 
 (** Returns a PGN representation of the game. *)

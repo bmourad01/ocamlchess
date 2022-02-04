@@ -83,11 +83,18 @@ let create
 
 let add_move game legal result =
   if is_over game then failwith "Game is over, cannot add any more moves"
-  else {
-    game with
-    moves = legal :: game.moves;
-    result;
-  }
+  else
+    let moves = match game.moves with
+      | [] -> [legal]
+      | (prev :: _) as moves ->
+        let prev = Legal.new_position prev in
+        let parent = Legal.parent legal in
+        (* We do hard comparison instead of checking the hashes because we also
+           care about the halfmove and fullmove clocks. *)
+        if Position.(prev = parent) then legal :: moves
+        else invalid_arg "Parent position of the new move differs from the \
+                          previous move" in
+    {game with moves; result}
 
 let to_string game =
   let buf = Buffer.create 256 in
