@@ -59,12 +59,18 @@ val black : t -> string option
 (** The result of the game. *)
 val result : t -> result
 
-(** Returns [true] if the game is over. *)
-val is_over : t -> bool
+(** The starting position. *)
+val start : t -> Position.t
 
 (** The list of moves that were played. The order of moves is reversed,
     with the last move being played at the beginning of the list. *)
 val moves : t -> Position.legal list
+
+(** Returns the current position of the game. *)
+val position : t -> Position.t
+
+(** Returns [true] if the game is over. *)
+val is_over : t -> bool
 
 (** Creates a new game. *)
 val create :
@@ -74,6 +80,7 @@ val create :
   ?round:int option ->
   ?white:string option ->
   ?black:string option ->
+  ?start:Position.t ->
   unit ->
   t
 

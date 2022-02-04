@@ -53,11 +53,16 @@ module T = struct
     white : string option;
     black : string option;
     result : result;
+    start : Position.t;
     moves : Position.legal list;
   } [@@deriving compare, equal, sexp, fields]
 end
 
 include T
+
+let position game = match game.moves with
+  | prev :: _ -> Legal.new_position prev
+  | [] -> game.start
 
 let is_over game = match game.result with
   | Ongoing -> false
@@ -70,6 +75,7 @@ let create
     ?(round = None)
     ?(white = None)
     ?(black =  None)
+    ?(start = Position.start)
     () = {
   event;
   site;
@@ -78,6 +84,7 @@ let create
   white;
   black;
   result = Ongoing;
+  start;
   moves = [];
 }
 
