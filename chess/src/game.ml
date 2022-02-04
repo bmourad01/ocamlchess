@@ -115,7 +115,7 @@ let to_string game =
   let result = Result.to_pgn game.result in
   adds "[Result \"";
   adds result;
-  adds "\"]\n";
+  adds "\"]\n\n";
   (* Moves *)
   List.rev game.moves |> List.iter ~f:(fun legal ->
       let parent = Legal.parent legal in
