@@ -7,6 +7,7 @@ type draw =
   | Insufficient_material
   | Mutual_agreement
   | Threefold_repetition
+  | Fivefold_repetition
   | Fifty_move_rule
 [@@deriving compare, equal, sexp]
 
