@@ -82,6 +82,17 @@ let is_over game = match game.result with
   | Ongoing -> false
   | _ -> true
 
+let result_of pos =
+  let c = Position.active pos in
+  let in_check = Position.in_check pos in
+  if not in_check && Position.is_insufficient_material pos
+  then Draw `Insufficient_material
+  else if not in_check && Position.halfmove pos >= 150
+  then Draw `Seventy_five_move_rule
+  else if List.is_empty @@ Position.legal_moves pos
+  then if in_check then Checkmate c else Draw `Stalemate
+  else Ongoing 
+
 let create
     ?(event = None)
     ?(site = None)
@@ -92,7 +103,7 @@ let create
     ?(start = Position.start)
     () =
   Fields.create ~event ~site ~date ~round ~white ~black
-    ~result:Ongoing ~start ~moves:[]
+    ~result:(result_of start) ~start ~moves:[]
 
 let add_move ?(resigned = None) ?(declared_draw = None) game legal =
   if is_over game then failwith "Game is over, cannot add any more moves"
@@ -111,17 +122,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
       | Some c -> Resigned c
       | None -> match declared_draw with
         | Some draw -> Draw (draw :> draw)
-        | None ->
-          let pos = Legal.new_position legal in
-          let c = Position.active pos in
-          let in_check = Position.in_check pos in
-          if not in_check && Position.is_insufficient_material pos
-          then Draw `Insufficient_material
-          else if not in_check && Position.halfmove pos >= 150
-          then Draw `Seventy_five_move_rule
-          else if List.is_empty @@ Position.legal_moves pos
-          then if in_check then Checkmate c else Draw `Stalemate
-          else Ongoing in
+        | None -> result_of @@ Legal.new_position legal in
     {game with moves; result}
 
 let to_string game =
@@ -166,7 +167,7 @@ let to_string game =
       let parent_halfmove = Position.halfmove parent in
       let is_new_move = (parent_halfmove land 1) = 0 in
       if is_new_move then adds @@ sprintf "%d. " @@ Position.fullmove parent;
-      adds @@ Position.Algebraic.of_legal legal;
+      adds @@ Position.San.of_legal legal;
       addc ' ');
   adds result;
   Buffer.contents buf

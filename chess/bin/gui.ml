@@ -207,7 +207,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
         let mv = Option.value_exn prev in
         let m = Legal.move mv in
         printf "%s (%s): %s\n%!"
-          (Move.to_string m) (Position.Algebraic.of_legal mv)
+          (Move.to_string m) (Position.San.of_legal mv)
           (Position.Fen.to_string new_pos);
         printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
         printf "%d legal moves\n%!" @@ List.length legal;

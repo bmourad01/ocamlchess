@@ -86,7 +86,8 @@ val position : t -> Position.t
 (** Returns [true] if the game is over. *)
 val is_over : t -> bool
 
-(** Creates a new game. *)
+(** Creates a new game. If [start] is not the starting position, then
+    the game is partial, since the history of moves cannot be inferred. *)
 val create :
   ?event:string option ->
   ?site:string option ->

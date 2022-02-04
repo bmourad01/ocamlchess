@@ -1447,9 +1447,9 @@ let make_move pos move =
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
   | Some legal -> legal
 
-(* Algebraic notation of moves. *)
+(* Standard Algebraic Notation (SAN). *)
 
-module Algebraic = struct
+module San = struct
   let disambiguate parent k ~addc ~adds ~src ~dst =
     let a = Analysis.create parent in
     (* More than one checker means it's a king move, which is unambiguous. *)

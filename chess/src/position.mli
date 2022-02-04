@@ -310,7 +310,7 @@ module Legal : sig
   (** [is_move legal m] returns [true] if [m] is the move that was made for
       [legal] *)
   val is_move : legal -> Move.t -> bool
-  
+
   (** The parent position that this move was applied to. *)
   val parent : legal -> t
 
@@ -357,7 +357,8 @@ val make_move : t -> Move.t -> legal
     is guaranteed for the resulting list. *)
 val legal_moves : t -> legal list
 
-module Algebraic : sig
-  (** Returns a string representing the legal move in algebraic notation. *)
+(** Implements SAN (Standard Algebraic Notation). *)
+module San : sig
+  (** Returns a string representing the legal move in SAN. *)
   val of_legal : legal -> string
 end
