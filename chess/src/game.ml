@@ -91,6 +91,7 @@ let add_move game legal result =
 let to_string game =
   let buf = Buffer.create 256 in
   let adds = Buffer.add_string buf in
+  let addc = Buffer.add_char buf in
   (* Event *)
   adds "[Event \"";
   adds @@ Option.value ~default:"" game.event;
@@ -123,7 +124,7 @@ let to_string game =
       let is_new_move = (parent_halfmove land 1) = 0 in
       if is_new_move then adds @@ sprintf "%d. " @@ Position.fullmove parent;
       adds @@ Position.Algebraic.of_legal legal;
-      adds " ");
+      addc ' ');
   adds result;
   Buffer.contents buf
 
