@@ -62,7 +62,7 @@ let is_over game = match game.result with
   | Ongoing -> false
   | _ -> true
 
-let empty
+let create
     ?(event = None)
     ?(site = None)
     ?(date = None)
