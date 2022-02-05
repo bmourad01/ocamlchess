@@ -98,12 +98,43 @@ val create :
   unit ->
   t
 
+(** Raised when [add_move] is called on a game that has ended. *)
+exception Game_over
+
+(** Raised when [add_move] is called with a legal move that was not derived
+    from the previous position. *)
+exception Invalid_parent
+
+(** Raised when [add_move] is called with a draw declaring a threefold
+    repetition, when the resulting position has not transposed at least
+    3 times. *)
+exception Invalid_threefold
+
+(** Raised when [add_move] is called with a draw invoking the fifty move
+    rule, when the halfmove clock has not yet reached 100. *)
+exception Invalid_fifty_move
+
 (** [add_move game legal ~resigned ~declared_draw] updates [game] with a new
-    move [legal]. [resigned] indicates that a player resigned after the move was
-    made. [declared_draw] optionally denotes that a player declared a draw after
-    the move was made. Raises [Failure] when [game] has already ended. Raises
-    [Invalid_argument] when [legal] has a different parent position than the
-    move than the most recent move made in [game]. *)
+    move [legal].
+
+    [resigned] indicates that a player resigned after the move was made.
+
+    [declared_draw] optionally denotes that a player declared a draw after
+    the move was made.
+
+    [resigned] takes precedence over [declared_draw].
+
+    Raises [Game_over] when [game] has already ended.
+
+    Raises [Invalid_parent] when [legal] was not derived from the previous
+    position in [game].
+
+    Raises [Invalid_threefold] when [declared_draw] is [`Threefold_repetition]
+    and the resulting position has not transposed at least three times.
+
+    Raises [Invalid_fifty_move] when [declared_draw] is [`Fifty_move_rule] and
+    the halfmove clock has not reached at least [100].
+*)
 val add_move :
   ?resigned:Piece.color option ->
   ?declared_draw:declared_draw option ->

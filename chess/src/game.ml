@@ -69,6 +69,7 @@ module T = struct
     result : result;
     start : Position.t;
     moves : Position.legal list;
+    transpositions : int Int64.Map.t;
   } [@@deriving compare, equal, sexp, fields]
 end
 
@@ -84,15 +85,19 @@ let is_over game = match game.result with
   | Ongoing -> false
   | _ -> true
 
-let result_of pos =
+let result_of ?(transpositions = Int64.Map.empty) pos =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
+  let num =
+    Map.find transpositions @@ Position.hash pos |>
+    Option.value ~default:0 in
   if not in_check && Position.is_insufficient_material pos
   then Draw `Insufficient_material
   else if not in_check && Position.halfmove pos >= 150
   then Draw `Seventy_five_move_rule
   else if List.is_empty @@ Position.legal_moves pos
   then if in_check then Checkmate c else Draw `Stalemate
+  else if num >= 5 then Draw `Fifty_move_rule
   else Ongoing 
 
 let create
@@ -106,26 +111,43 @@ let create
     () =
   Fields.create ~event ~site ~date ~round ~white ~black
     ~result:(result_of start) ~start ~moves:[]
+    ~transpositions:Int64.Map.empty
+
+exception Game_over
+exception Invalid_parent
+exception Invalid_threefold
+exception Invalid_fifty_move
 
 let add_move ?(resigned = None) ?(declared_draw = None) game legal =
-  if is_over game then failwith "Game is over, cannot add any more moves"
-  else
+  if not @@ is_over game then
     let moves =
       let prev = position game in
       let parent = Legal.parent legal in
       (* We do hard comparison instead of checking the hashes because we also
          care about the halfmove and fullmove clocks. *)
-      if Position.(prev <> parent) then
-        invalid_argf
-          "Parent position of move %s differs from the previous \
-           move" (Move.to_string @@ Legal.move legal) ()
+      if Position.(prev <> parent) then raise Invalid_parent
       else legal :: game.moves in
+    let pos = Legal.new_position legal in
+    let hash = Position.hash pos in
+    let transpositions =
+      Map.update game.transpositions hash ~f:(function
+          | Some n -> n + 1
+          | None -> 1) in
+    (* Resignation takes precedence. A declared draw needs to be validated. *)
     let result = match resigned with
       | Some c -> Resigned c
       | None -> match declared_draw with
-        | Some draw -> Draw (draw :> draw)
-        | None -> result_of @@ Legal.new_position legal in
+        | None -> result_of pos ~transpositions
+        | Some draw -> match draw with
+          | `Mutual_agreement -> Draw (draw :> draw)
+          | `Threefold_repetition ->
+            if Map.find_exn transpositions hash >= 3
+            then Draw (draw :> draw) else raise Invalid_threefold
+          | `Fifty_move_rule ->
+            if Position.halfmove pos >= 100
+            then Draw (draw :> draw) else raise Invalid_fifty_move in
     {game with moves; result}
+  else raise Game_over
 
 let to_string game =
   let buf = Buffer.create 256 in

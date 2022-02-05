@@ -124,7 +124,7 @@ let print_result : Game.result -> unit = function
     Piece.Color.(to_string_hum @@ opposite c)
   | Draw `Stalemate -> printf "Draw by stalemate.\n%!"
   | Draw `Insufficient_material -> printf "Draw by insufficient material\n%!"
-  | Draw `Seventy_five_move_rule -> printf "Draw by seventy-five-move rule\n%!"
+  | Draw `Seventy_five_move_rule -> printf "Draw by seventy-five move rule\n%!"
   | Draw `Fivefold_repetition -> printf "Draw by fivefold repetition\n%!"
   | _ -> ()
 
