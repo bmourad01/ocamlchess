@@ -25,21 +25,14 @@ module Window = struct
     "ml_window_paint_board"
 end
 
-type endgame =
-  | Checkmate of Piece.color
-  | Insufficient_material
-  | Fifty_move
-  | Stalemate
-
 module State = struct
   module T = struct
     type t = {
       window : Window.t;
-      pos : Position.t;
+      game : Game.t;
       legal : Position.legal list;
       sel : (Square.t * Position.legal list) option;
       prev : Position.legal option;
-      endgame : endgame option;
       white : Player.e option;
       black : Player.e option;
     } [@@deriving fields]
@@ -96,7 +89,7 @@ let find_promote sq k mv =
   Square.(sq = Move.dst m) &&
   Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)
 
-let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
+let click mx my = State.update @@ fun ({window; game; legal; sel; _} as st) ->
   match screen_to_sq window mx my with
   | None -> st
   | Some sq -> match sel with
@@ -110,16 +103,15 @@ let click mx my = State.update @@ fun ({window; legal; sel; _} as st) ->
     | Some (_, moves) -> match List.find moves ~f:(find_move sq) with
       | None -> st
       | Some m ->
-        let pos = Legal.new_position m in
-        let m, pos = match Move.promote @@ Legal.move m with
-          | None -> m, pos
+        let m = match Move.promote @@ Legal.move m with
+          | None -> m
           | Some _ ->
             promote_prompt ();
             let k = promote () in
-            let m = List.find_exn moves ~f:(find_promote sq k) in
-            m, Legal.new_position m in
-        let legal = Position.legal_moves pos in
-        {st with pos; legal; sel = None; prev = Some m}
+            List.find_exn moves ~f:(find_promote sq k) in
+        let game = Game.add_move game m in
+        let legal = Position.legal_moves @@ Legal.new_position m in
+        {st with game; legal; sel = None; prev = Some m}
 
 let poll = State.(gets window) >>= fun window ->
   match Window.poll_event window with
@@ -128,34 +120,20 @@ let poll = State.(gets window) >>= fun window ->
 
 let is_fifty_move pos = Position.halfmove pos >= 100
 
-let print_endgame = function
-  | Insufficient_material -> printf "Draw by insufficient material\n%!"
-  | Fifty_move -> printf "Draw by fifty-move rule\n%!"
-  | Stalemate -> printf "Draw by stalemate\n%!"
+let print_result : Game.result -> unit = function
   | Checkmate c ->
-    printf "Checkmate, %s wins\n%!" @@ Piece.Color.to_string_hum c
+    printf "Checkmate, %s wins\n%!" @@
+    Piece.Color.(to_string_hum @@ opposite c)
+  | Draw `Stalemate -> printf "Draw by stalemate.\n%!"
+  | Draw `Insufficient_material -> printf "Draw by insufficient material\n%!"
+  | Draw `Seventy_five_move_rule -> printf "Draw by seventy-five-move rule\n%!"
+  | Draw `Fivefold_repetition -> printf "Draw by fivefold repetition\n%!"
+  | _ -> ()
 
-let check_endgame = State.update @@ fun ({pos; legal; _} as st) ->
-  let endgame =
-    let in_check = Position.in_check pos in
-    if not in_check && Position.is_insufficient_material pos
-    then Some Insufficient_material
-    (* else if not in_check && is_fifty_move pos then Some Fifty_move *)
-    else if List.is_empty legal then
-      if in_check
-      then Some (Checkmate (Position.inactive pos))
-      else Some Stalemate
-    else None in
-  {st with endgame}
-
-let check_and_print_endgame =
-  check_endgame >> State.(gets endgame) >>| fun endgame ->
-  Option.iter endgame ~f:print_endgame;
-  endgame
-
-let human_move = State.(gets endgame) >>= function
-  | Some _ -> State.return None
-  | None -> poll >> check_and_print_endgame
+let human_move = State.(gets game) >>= fun game ->
+  if Game.is_over game then State.return ()
+  else poll >> State.(gets game) >>| fun game ->
+    print_result @@ Game.result game
 
 let update_player_state c player pst =
   let player = Player.(T (set_state player pst)) in
@@ -163,21 +141,22 @@ let update_player_state c player pst =
   | Piece.White -> {st with white = Some player}
   | Piece.Black -> {st with black = Some player}
 
-let ai_move c player = State.(gets pos) >>= fun pos ->
+let ai_move c player = State.(gets game) >>= fun game ->
+  let pos = Game.position game in
   let Player.(T player) = player in
   let m, st = Player.choose player pos in
   update_player_state c player st >>
-  let pos = Legal.new_position m in
-  let legal = Position.legal_moves pos in
+  let game = Game.add_move game m in
+  let legal = Position.legal_moves @@ Legal.new_position m in
   begin State.update @@ fun st ->
-    {st with pos; legal; sel = None; prev = Some m}
-  end >> check_and_print_endgame
+    {st with game; legal; sel = None; prev = Some m}
+  end >>| fun () -> print_result @@ Game.result game
 
 let human_or_ai_move c = function
   | None -> human_move
-  | Some player -> State.(gets endgame) >>= function
-    | None -> ai_move c player
-    | Some _ -> State.return None
+  | Some player -> State.(gets game) >>= fun game ->
+    if Game.is_over game then State.return ()
+    else ai_move c player
 
 let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
   Window.clear window;
@@ -204,14 +183,16 @@ let assert_hash new_pos =
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
-    State.(gets pos) >>= fun pos ->
+    State.(gets game) >>= fun game ->
+    let pos = Game.position game in
     let active = Position.active pos in
     begin match active with
       | White -> State.(gets white)
       | Black -> State.(gets black)
-    end >>= human_or_ai_move active >>= fun endgame ->
+    end >>= human_or_ai_move active >>
     (* New position? *)
-    State.(gets pos) >>= fun new_pos ->
+    State.(gets game) >>= fun game ->
+    let new_pos = Game.position game in
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
@@ -238,16 +219,14 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     end >>= fun (bb, sq) ->
     display_board new_pos window ~bb ~sq ~prev;
     (* Nothing more to do if the game is over. *)
-    match endgame with
-    | Some _ -> State.return @@ prompt_end window
-    | None -> delay (); main_loop ~delay ()
+    if Game.is_over game then State.return ()
+    else (delay (); main_loop ~delay ())
   else State.return ()
 
-let start_with_endgame_check delay = check_and_print_endgame >>= function
-  | None -> main_loop ~delay ()
-  | Some _ ->
-    State.(gets window) >>= fun window ->
-    State.(gets pos) >>| fun pos ->
+let start_with_game_over_check delay = State.(gets game) >>= fun game ->
+  if not @@ Game.is_over game then main_loop ~delay ()
+  else State.(gets window) >>| fun window ->
+    let pos = Game.position game in
     if Window.is_open window then begin
       display_board pos window;
       prompt_end window
@@ -266,22 +245,34 @@ let go pos ~white ~black ~delay =
   init_named_values ();
   let window = Window.create window_size window_size "chess" in
   let legal = Position.legal_moves pos in
-  begin match white with
-    | None -> printf "White is human\n%!"
+  let white_name = match white with
+    | None -> printf "White is human\n%!"; "human"
     | Some Player.(T player) ->
-      printf "White is AI: %s\n%!" @@ Player.name player
-  end;
-  begin match black with
-    | None -> printf "Black is human\n%!"
+      printf "White is AI: %s\n%!" @@ Player.name player;
+      Player.name player in
+  let black_name = match black with
+    | None -> printf "Black is human\n%!"; "human"
     | Some Player.(T player) ->
-      printf "Black is AI: %s\n%!" @@ Player.name player
-  end;
+      printf "Black is AI: %s\n%!" @@ Player.name player;
+      Player.name player in
+  let game = Game.create ()
+      ~event:(Some "ocamlchess")
+      ~site:(Some "gui")
+      ~date:(Some (Date.today ~zone:Time.Zone.utc))
+      ~round:(Some 1)
+      ~white:(Some white_name)
+      ~black:(Some black_name)
+      ~start:pos in
   printf "\n%!";
   printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
   printf "Hash: %016LX\n%!" @@ Position.hash pos;
   printf "%d legal moves\n%!" @@ List.length legal;
   printf "\n%!";
-  Monad.State.eval (start_with_endgame_check delay) @@
-  State.Fields.create ~window ~pos ~legal
-    ~sel:None ~prev:None ~endgame:None
-    ~white ~black
+  let State.T.{game; _} =
+    let sel = None in
+    let prev = None in
+    Monad.State.exec (start_with_game_over_check delay) @@
+    State.Fields.create ~window ~game ~legal ~sel ~prev ~white ~black in
+  printf "PGN of game:\n\n%!";
+  printf "%s\n\n%!" @@ Game.to_string game;
+  prompt_end window
