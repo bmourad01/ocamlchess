@@ -2,7 +2,7 @@ DIR := chess
 
 .PHONY: build clean install uninstall test doc indent
 
-all: build install
+all: install
 
 build:
 	$(MAKE) -C $(DIR)
@@ -10,7 +10,7 @@ build:
 clean:
 	$(MAKE) clean -C $(DIR)
 
-install:
+install: build
 	$(MAKE) install -C $(DIR)
 
 uninstall:
