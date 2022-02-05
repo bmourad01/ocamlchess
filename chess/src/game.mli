@@ -76,8 +76,7 @@ val result : t -> result
 (** The starting position. *)
 val start : t -> Position.t
 
-(** The list of moves that were played. The order of moves is reversed,
-    with the last move being played at the beginning of the list. *)
+(** The list of moves that were played. *)
 val moves : t -> Position.legal list
 
 (** Returns the current position of the game. *)

@@ -74,6 +74,8 @@ end
 
 include T
 
+let moves game = List.rev game.moves
+
 let position game = match game.moves with
   | prev :: _ -> Legal.new_position prev
   | [] -> game.start
@@ -162,7 +164,7 @@ let to_string game =
   end;
   (* Moves *)
   addc '\n';
-  List.rev game.moves |> List.iter ~f:(fun legal ->
+  moves game |> List.iter ~f:(fun legal ->
       let parent = Legal.parent legal in
       let parent_halfmove = Position.halfmove parent in
       let is_new_move = (parent_halfmove land 1) = 0 in
