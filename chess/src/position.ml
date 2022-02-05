@@ -1528,10 +1528,10 @@ module San = struct
         then adds @@ Square.to_string dst;
         (* Promotion *)
         Option.iter promote ~f:(function
-            | Piece.Knight -> addc 'N'
-            | Piece.Bishop -> addc 'B'
-            | Piece.Rook   -> addc 'R'
-            | Piece.Queen  -> addc 'Q'
+            | Piece.Knight -> adds "=N"
+            | Piece.Bishop -> adds "=B"
+            | Piece.Rook   -> adds "=R"
+            | Piece.Queen  -> adds "=Q"
             | _ -> assert false);
     end;
     (* Checkmate or check *)

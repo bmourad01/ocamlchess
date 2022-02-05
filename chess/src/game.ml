@@ -186,11 +186,10 @@ let to_string game =
   end;
   (* Moves *)
   addc '\n';
-  moves game |> List.iter ~f:(fun legal ->
+  moves game |> List.iteri ~f:(fun i legal ->
       let parent = Legal.parent legal in
-      let parent_halfmove = Position.halfmove parent in
-      let is_new_move = (parent_halfmove land 1) = 0 in
-      if is_new_move then adds @@ sprintf "%d. " @@ Position.fullmove parent;
+      if (i land 1) = 0 then
+        adds @@ sprintf "%d. " @@ Position.fullmove parent;
       adds @@ Position.San.of_legal legal;
       addc ' ');
   adds result;
