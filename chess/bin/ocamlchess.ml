@@ -4,8 +4,11 @@ let man_players () =
   Elo_world.init ();  
   `S "PLAYER" ::
   `Pre "Predefined algorithms for the computer." :: begin
-    Chess.Player.enumerate () |> Base.List.map ~f:(fun player ->
-        `P (Format.sprintf "%s: %s" player#name player#desc))
+    Chess.Player.enumerate () |> Base.List.map
+      ~f:(fun Chess.Player.(T player) ->
+          `P (Format.sprintf "%s: %s"
+                (Chess.Player.name player)
+                (Chess.Player.desc player)))
   end
 
 let choose_player ?(none_ok = true) = function

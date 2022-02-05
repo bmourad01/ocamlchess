@@ -1,3 +1,3 @@
 open Chess
 
-val go : Player.t -> unit
+val go : Player.e -> unit

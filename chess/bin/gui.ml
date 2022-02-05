@@ -40,16 +40,19 @@ module State = struct
       sel : (Square.t * Position.legal list) option;
       prev : Position.legal option;
       endgame : endgame option;
-      white : Player.t option;
-      black : Player.t option;
+      white : Player.e option;
+      black : Player.e option;
     } [@@deriving fields]
   end
 
   include T
+  include Monad.State.T1(T)(Monad.Ident)
   include Monad.State.Make(T)(Monad.Ident)
 end
 
 open State.Syntax
+
+type 'a state = 'a State.t
 
 let (>>) m n = m >>= fun _ -> n
 
@@ -154,18 +157,28 @@ let human_move = State.(gets endgame) >>= function
   | Some _ -> State.return None
   | None -> poll >> check_and_print_endgame
 
-let ai_move player = State.(gets legal) >>= fun legal ->
-  let m = player#choose legal in
+let update_player_state :
+  type a. Piece.color -> a Player.t -> a -> unit state = fun c player pst ->
+  State.update @@ fun st ->
+  let player = Player.(T (update player ~f:(fun _ -> pst))) in
+  match c with
+  | White -> {st with white = Some player}
+  | Black -> {st with black = Some player}
+
+let ai_move c player = State.(gets pos) >>= fun pos ->
+  let Player.(T player) = player in
+  let m, st = Player.choose player pos in
+  update_player_state c player st >>
   let pos = Legal.new_position m in
   let legal = Position.legal_moves pos in
   begin State.update @@ fun st ->
     {st with pos; legal; sel = None; prev = Some m}
   end >> check_and_print_endgame
 
-let human_or_ai_move = function
+let human_or_ai_move c = function
   | None -> human_move
   | Some player -> State.(gets endgame) >>= function
-    | None -> ai_move player
+    | None -> ai_move c player
     | Some _ -> State.return None
 
 let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
@@ -194,10 +207,11 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
     State.(gets pos) >>= fun pos ->
-    begin match Position.active pos with
+    let active = Position.active pos in
+    begin match active with
       | White -> State.(gets white)
       | Black -> State.(gets black)
-    end >>= human_or_ai_move >>= fun endgame ->
+    end >>= human_or_ai_move active >>= fun endgame ->
     (* New position? *)
     State.(gets pos) >>= fun new_pos ->
     State.(gets legal) >>= fun legal ->
@@ -256,11 +270,13 @@ let go pos ~white ~black ~delay =
   let legal = Position.legal_moves pos in
   begin match white with
     | None -> printf "White is human\n%!"
-    | Some player -> printf "White is AI: %s\n%!" player#name
+    | Some Player.(T player) ->
+      printf "White is AI: %s\n%!" @@ Player.name player
   end;
   begin match black with
     | None -> printf "Black is human\n%!"
-    | Some player -> printf "Black is AI: %s\n%!" player#name
+    | Some Player.(T player) ->
+      printf "Black is AI: %s\n%!" @@ Player.name player
   end;
   printf "\n%!";
   printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
