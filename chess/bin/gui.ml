@@ -47,8 +47,6 @@ open State.Syntax
 
 type 'a state = 'a State.t
 
-let (>>) m n = m >>= fun _ -> n
-
 let screen_to_sq window mx my =
   let sx, sy = Window.size window in
   let tw, th = sx / Square.File.count, sy / Square.Rank.count in
@@ -132,7 +130,8 @@ let print_result : Game.result -> unit = function
 
 let human_move = State.(gets game) >>= fun game ->
   if Game.is_over game then State.return ()
-  else poll >> State.(gets game) >>| fun game ->
+  else poll >>= fun () ->
+    State.(gets game) >>| fun game ->
     print_result @@ Game.result game
 
 let update_player_state c player pst =
@@ -149,7 +148,7 @@ let ai_move c player = State.(gets game) >>= fun game ->
     | Player.Invalid_move (_, m) ->
       failwithf "Tried to play invalid move %s."
         (Move.to_string @@ Legal.move m) () in
-  update_player_state c player st >>
+  update_player_state c player st >>= fun () ->
   let game = Game.add_move game m in
   let legal = Position.legal_moves @@ Legal.new_position m in
   begin State.update @@ fun st ->
@@ -193,7 +192,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     begin match active with
       | White -> State.(gets white)
       | Black -> State.(gets black)
-    end >>= human_or_ai_move active >>
+    end >>= human_or_ai_move active >>= fun () ->
     (* New position? *)
     State.(gets game) >>= fun game ->
     let new_pos = Game.position game in

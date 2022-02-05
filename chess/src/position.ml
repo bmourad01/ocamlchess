@@ -502,6 +502,8 @@ end
 module Valid = struct
   module Error = struct
     type t =
+      | Empty_board
+      | Full_board
       | Invalid_number_of_kings of Piece.color * int
       | Kings_not_separated
       | Inactive_in_check of Piece.color
@@ -519,6 +521,8 @@ module Valid = struct
       | Invalid_fullmove
 
     let to_string = function
+      | Empty_board -> "Board is empty"
+      | Full_board -> "Board is full"
       | Invalid_number_of_kings (c, n) ->
         sprintf "Invalid number of %s kings (%d)"
           (Piece.Color.to_string_hum c) n
@@ -568,7 +572,17 @@ module Valid = struct
 
   open E.Syntax
 
-  let (>>) m n = m >>= fun _ -> n
+  module Trivial = struct
+    let check_empty pos =
+      if Bb.(all_board pos = empty) then E.fail Empty_board else E.return ()
+
+    let check_full pos =
+      if Bb.(all_board pos = full) then E.fail Empty_board else E.return ()
+
+    let go pos =
+      check_empty pos >>= fun () ->
+      check_full pos
+  end
 
   module King = struct
     let check_count pos =
@@ -587,7 +601,7 @@ module Valid = struct
       else E.return ()
 
     let go pos =
-      check_count pos >>
+      check_count pos >>= fun () ->
       check_sep pos
   end
 
@@ -625,7 +639,7 @@ module Valid = struct
         | _ -> E.return ()
 
     let go pos = 
-      check_inactive_in_check pos >>
+      check_inactive_in_check pos >>= fun () ->
       check_checkers pos
   end
 
@@ -690,10 +704,10 @@ module Valid = struct
       else E.return ()
 
     let go pos =
-      check_count pos >>
-      check_back_rank pos >>
-      check_en_passant pos >>
-      check_promotions pos White pos.white >>
+      check_count pos >>= fun () ->
+      check_back_rank pos >>= fun () ->
+      check_en_passant pos >>= fun () ->
+      check_promotions pos White pos.white >>= fun () ->
       check_promotions pos Black pos.black
   end
 
@@ -714,11 +728,11 @@ module Valid = struct
       else E.return ()
 
     let go pos =
-      check_king_moved pos White pos.white >>
-      check_king_moved pos Black pos.black >>
-      check_rook_moved pos White pos.white Kingside  Square.h1 >>
-      check_rook_moved pos White pos.white Queenside Square.a1 >>
-      check_rook_moved pos Black pos.black Kingside  Square.h8 >>
+      check_king_moved pos White pos.white >>= fun () ->
+      check_king_moved pos Black pos.black >>= fun () ->
+      check_rook_moved pos White pos.white Kingside  Square.h1 >>= fun () ->
+      check_rook_moved pos White pos.white Queenside Square.a1 >>= fun () ->
+      check_rook_moved pos Black pos.black Kingside  Square.h8 >>= fun () ->
       check_rook_moved pos Black pos.black Queenside Square.a8
   end
 
@@ -737,15 +751,16 @@ module Valid = struct
       else E.return ()
 
     let go pos =
-      check_en_passant pos >>
+      check_en_passant pos >>= fun () ->
       check_both pos
   end
 
   let check pos =
-    King.go pos >>
-    Checks.go pos >>
-    Pawn.go pos >>
-    Castling.go pos >>
+    Trivial.go pos >>= fun () ->
+    King.go pos >>= fun () ->
+    Checks.go pos >>= fun () ->
+    Pawn.go pos >>= fun () ->
+    Castling.go pos >>= fun () ->
     Half_and_fullmove.go pos
 end
 

@@ -134,6 +134,8 @@ module Valid : sig
   (** The possible errors that can arise from validating a position. *)
   module Error : sig
     type t =
+      | Empty_board
+      | Full_board
       | Invalid_number_of_kings of Piece.color * int
       | Kings_not_separated
       | Inactive_in_check of Piece.color

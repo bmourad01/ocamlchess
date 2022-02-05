@@ -56,7 +56,7 @@ val limits : 'a t -> limits option
 (** [choose player pos] will choose the preferred legal move from the
     position [pos] according to the choice function of [player].
     Additionally, it will return an updated internal state of the player.
-   
+
     If there are no legal moves for [pos], then [No_moves] is raised. 
 
     If the move chosen is not within the set of legal moves for [pos],
