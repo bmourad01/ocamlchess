@@ -579,9 +579,16 @@ module Valid = struct
     let check_full pos =
       if Bb.(all_board pos = full) then E.fail Empty_board else E.return ()
 
+    let check_sixteen pos c =
+      let n = Bb.count @@ board_of_color pos c in
+      if n > 16 then E.fail @@ Invalid_number_of_pieces (c, n)
+      else E.return ()
+
     let go pos =
       check_empty pos >>= fun () ->
-      check_full pos
+      check_full pos >>= fun () ->
+      check_sixteen pos White >>= fun () ->
+      check_sixteen pos Black
   end
 
   module King = struct
@@ -696,11 +703,6 @@ module Valid = struct
         max 0 (num_rook   - 2) +
         max 0 (num_queen  - 1) in
       if extra > (8 - num_pawn) then E.fail @@ Invalid_extra_pieces (c, extra)
-      else if extra <> 0 then
-        let c' = Piece.Color.opposite c in
-        let n = Bb.count @@ board_of_color pos c' in
-        if n >= 16 then E.fail @@ Invalid_number_of_pieces (c', n)
-        else E.return ()
       else E.return ()
 
     let go pos =

@@ -85,20 +85,17 @@ let is_over game = match game.result with
   | Ongoing -> false
   | _ -> true
 
-let result_of ?(transpositions = Int64.Map.empty) pos =
+let result_of pos transpositions =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
-  let num =
-    Option.value ~default:1 @@
-    Map.find transpositions @@
-    Position.hash pos in
+  let hash = Position.hash pos in
   if not in_check && Position.is_insufficient_material pos
   then Draw `Insufficient_material
   else if not in_check && Position.halfmove pos >= 150
   then Draw `Seventy_five_move_rule
   else if List.is_empty @@ Position.legal_moves pos
   then if in_check then Checkmate c else Draw `Stalemate
-  else if num >= 5 then Draw `Fivefold_repetition
+  else if Map.find_exn transpositions hash >= 5 then Draw `Fivefold_repetition
   else Ongoing 
 
 let create
@@ -110,9 +107,10 @@ let create
     ?(black =  None)
     ?(start = Position.start)
     () =
+  let transpositions = Int64.Map.singleton (Position.hash start) 1 in
+  let result = result_of start transpositions in
   Fields.create ~event ~site ~date ~round ~white ~black
-    ~result:(result_of start) ~start ~moves:[]
-    ~transpositions:Int64.Map.empty
+    ~result ~start ~moves:[] ~transpositions
 
 exception Game_over
 exception Invalid_parent
@@ -138,7 +136,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
     let result = match resigned with
       | Some c -> Resigned c
       | None ->
-        let result = result_of pos ~transpositions in
+        let result = result_of pos transpositions in
         match result with
         | Ongoing -> begin
             match declared_draw with
