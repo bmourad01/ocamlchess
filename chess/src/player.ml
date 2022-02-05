@@ -28,7 +28,7 @@ let choose {choice; limits; state; _} pos =
   | [] -> raise No_moves
   | moves -> choice limits state moves
 
-let update player ~f = {player with state = f player.state}
+let set_state player state = {player with state}
 
 (* We're using a map because we want the order to be consistent when
    displaying the available players. *)

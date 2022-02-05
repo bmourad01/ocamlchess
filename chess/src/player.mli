@@ -64,9 +64,9 @@ val desc : 'a t -> string
 (** Returns the internal state of the player. *)
 val state : 'a t -> 'a
 
-(** [update player ~f] applies the update function [f] to the internal
-    state of [player], and returns a new player with the updated state. *)
-val update : 'a t -> f:('a -> 'a) -> 'a t
+(** [set_state player st] sets the internal state of [player] to [st],
+    returning the new player. *)
+val set_state : 'a t -> 'a -> 'a t
 
 (** [register player] will register [player] in the database. If a player
     with the same name already exists, then [Invalid_argument] is raised. *)

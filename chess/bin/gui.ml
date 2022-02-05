@@ -157,13 +157,11 @@ let human_move = State.(gets endgame) >>= function
   | Some _ -> State.return None
   | None -> poll >> check_and_print_endgame
 
-let update_player_state :
-  type a. Piece.color -> a Player.t -> a -> unit state = fun c player pst ->
-  State.update @@ fun st ->
-  let player = Player.(T (update player ~f:(fun _ -> pst))) in
-  match c with
-  | White -> {st with white = Some player}
-  | Black -> {st with black = Some player}
+let update_player_state c player pst =
+  let player = Player.(T (set_state player pst)) in
+  State.update @@ fun st -> match c with
+  | Piece.White -> {st with white = Some player}
+  | Piece.Black -> {st with black = Some player}
 
 let ai_move c player = State.(gets pos) >>= fun pos ->
   let Player.(T player) = player in
