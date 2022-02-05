@@ -9,6 +9,10 @@ type limits = {
 (** Raised when no legal moves are available for the player. *)
 exception No_moves
 
+(** Raised when a move is chosen that is not withing the set
+    of legal moves for a given position. *)
+exception Invalid_move of Position.t * Position.legal
+
 (** The player whose internal state is of type ['a]. *)
 type 'a t
 
@@ -52,7 +56,12 @@ val limits : 'a t -> limits option
 (** [choose player pos] will choose the preferred legal move from the
     position [pos] according to the choice function of [player].
     Additionally, it will return an updated internal state of the player.
-    If there are no legal moves for [pos], then [No_moves] is raised. *)
+   
+    If there are no legal moves for [pos], then [No_moves] is raised. 
+
+    If the move chosen is not within the set of legal moves for [pos],
+    then [Invalid_move] is raised.
+*)
 val choose : 'a t -> Position.t -> Position.legal * 'a
 
 (** Returns the name of the player. *)
