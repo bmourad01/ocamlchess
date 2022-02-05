@@ -89,8 +89,9 @@ let result_of ?(transpositions = Int64.Map.empty) pos =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
   let num =
-    Map.find transpositions @@ Position.hash pos |>
-    Option.value ~default:0 in
+    Option.value ~default:1 @@
+    Map.find transpositions @@
+    Position.hash pos in
   if not in_check && Position.is_insufficient_material pos
   then Draw `Insufficient_material
   else if not in_check && Position.halfmove pos >= 150
