@@ -144,7 +144,11 @@ let update_player_state c player pst =
 let ai_move c player = State.(gets game) >>= fun game ->
   let pos = Game.position game in
   let Player.(T player) = player in
-  let m, st = Player.choose player pos in
+  let m, st = try Player.choose player pos with
+    | Player.No_moves -> failwith "Tried to play AI move with no legal moves."
+    | Player.Invalid_move (_, m) ->
+      failwithf "Tried to play invalid move %s."
+        (Move.to_string @@ Legal.move m) () in
   update_player_state c player st >>
   let game = Game.add_move game m in
   let legal = Position.legal_moves @@ Legal.new_position m in
