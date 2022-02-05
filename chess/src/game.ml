@@ -142,7 +142,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
         match result with
         | Ongoing -> begin
             match declared_draw with
-            | None -> result_of pos ~transpositions
+            | None -> result
             | Some draw -> match draw with
               | `Mutual_agreement -> Draw (draw :> draw)
               | `Threefold_repetition ->
