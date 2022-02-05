@@ -97,7 +97,7 @@ let result_of ?(transpositions = Int64.Map.empty) pos =
   then Draw `Seventy_five_move_rule
   else if List.is_empty @@ Position.legal_moves pos
   then if in_check then Checkmate c else Draw `Stalemate
-  else if num >= 5 then Draw `Fifty_move_rule
+  else if num >= 5 then Draw `Fivefold_repetition
   else Ongoing 
 
 let create
@@ -146,7 +146,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
           | `Fifty_move_rule ->
             if Position.halfmove pos >= 100
             then Draw (draw :> draw) else raise Invalid_fifty_move in
-    {game with moves; result}
+    {game with moves; result; transpositions}
   else raise Game_over
 
 let to_string game =
