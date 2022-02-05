@@ -137,16 +137,22 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
     (* Resignation takes precedence. A declared draw needs to be validated. *)
     let result = match resigned with
       | Some c -> Resigned c
-      | None -> match declared_draw with
-        | None -> result_of pos ~transpositions
-        | Some draw -> match draw with
-          | `Mutual_agreement -> Draw (draw :> draw)
-          | `Threefold_repetition ->
-            if Map.find_exn transpositions hash >= 3
-            then Draw (draw :> draw) else raise Invalid_threefold
-          | `Fifty_move_rule ->
-            if Position.halfmove pos >= 100
-            then Draw (draw :> draw) else raise Invalid_fifty_move in
+      | None ->
+        let result = result_of pos ~transpositions in
+        match result with
+        | Ongoing -> begin
+            match declared_draw with
+            | None -> result_of pos ~transpositions
+            | Some draw -> match draw with
+              | `Mutual_agreement -> Draw (draw :> draw)
+              | `Threefold_repetition ->
+                if Map.find_exn transpositions hash >= 3
+                then Draw (draw :> draw) else raise Invalid_threefold
+              | `Fifty_move_rule ->
+                if Position.halfmove pos >= 100
+                then Draw (draw :> draw) else raise Invalid_fifty_move
+          end
+        | _ -> result in
     {game with moves; result; transpositions}
   else raise Game_over
 
