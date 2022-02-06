@@ -45,8 +45,6 @@ end
 
 open State.Syntax
 
-type 'a state = 'a State.t
-
 let screen_to_sq window mx my =
   let sx, sy = Window.size window in
   let tw, th = sx / Square.File.count, sy / Square.Rank.count in
