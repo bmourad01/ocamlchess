@@ -1441,12 +1441,12 @@ module Movegen = struct
 
   (* Piece-specific bitboards for legal moves. *)
   let[@inline] bb_of_kind sq k a = match k with
-    | Piece.Pawn   -> Pieces.pawn sq a
+    | Piece.Pawn   -> Pieces.pawn   sq a
     | Piece.Knight -> Pieces.knight sq a
     | Piece.Bishop -> Pieces.bishop sq a
-    | Piece.Rook   -> Pieces.rook sq a
-    | Piece.Queen  -> Pieces.queen sq a
-    | Piece.King   -> Pieces.king sq a
+    | Piece.Rook   -> Pieces.rook   sq a
+    | Piece.Queen  -> Pieces.queen  sq a
+    | Piece.King   -> Pieces.king   sq a
 
   let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
