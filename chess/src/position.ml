@@ -989,8 +989,8 @@ let start = Fen.(of_string_exn start)
    reader monad for Makemove, with mutable fields in the position datatype.
    This pattern acted as a "pseudo" state monad. However, we've gotten rid of
    the monadic code entirely since the compiler had trouble with inlining and
-   specialization, as there were a lot of anonymous functions left in the
-   compiled code. While the monadic style was much more concise and elegant,
+   specialization, as there were a lot of calls to anonymous functions left in
+   the compiled code. While the monadic style was much more concise and elegant,
    our priority for this code weighs far more in favor of performance.
 *)
 
