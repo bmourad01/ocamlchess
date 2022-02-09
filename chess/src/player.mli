@@ -73,9 +73,13 @@ val desc : 'a t -> string
 (** Returns the internal state of the player. *)
 val state : 'a t -> 'a
 
-(** [set_state player st] sets the internal state of [player] to [st],
+(** [update player st] sets the internal state of [player] to [st],
     returning the new player. *)
-val set_state : 'a t -> 'a -> 'a t
+val update : 'a t -> 'a -> 'a t
+
+(** [with_limits player limits] returns [player] with (optional) search
+    limits [limits]. *)
+val with_limits : 'a t -> limits option -> 'a t
 
 (** [register player] will register [player] in the database. If a player
     with the same name already exists, then [Invalid_argument] is raised. *)

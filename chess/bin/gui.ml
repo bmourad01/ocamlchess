@@ -133,7 +133,7 @@ let human_move = State.(gets game) >>= fun game ->
     print_result @@ Game.result game
 
 let update_player_state c player pst =
-  let player = Player.(T (set_state player pst)) in
+  let player = Player.(T (update player pst)) in
   State.update @@ fun st -> match c with
   | Piece.White -> {st with white = Some player}
   | Piece.Black -> {st with black = Some player}

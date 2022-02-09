@@ -34,7 +34,8 @@ let choose {choice; limits; state; _} pos =
     if List.mem moves m ~equal:Legal.equal then m, state
     else raise @@ Invalid_move (pos, m)
 
-let set_state player state = {player with state}
+let update player state = {player with state}
+let with_limits player limits = {player with limits}
 
 (* We're using a map because we want the order to be consistent when
    displaying the available players. *)
