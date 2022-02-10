@@ -2,6 +2,7 @@ open Core_kernel
 open Chess
 
 module Bb = Bitboard
+module Cr = Castling_rights
 module Legal = Position.Legal
 
 module Cccp = struct
@@ -40,6 +41,110 @@ module Cccp = struct
   let player = Player.create () ~choice ~state:() ~name:"cccp"
       ~desc:"The player that plays the \"checkmate, check, capture, \
              push strategy\" (in that order)."
+end
+
+module Equalizer = struct
+  type state = {
+    moved : int Map.M(Square).t;
+    visited_white : int Map.M(Square).t;
+    visited_black : int Map.M(Square).t;
+  }
+
+  let least_moved moved moves =
+    Legal.best moves ~eval:(fun m ->
+        match Map.find moved @@ Move.src @@ Legal.move m with
+        | Some n -> Some (-n)
+        | None -> Some 0)
+
+  let least_visited visited moves =
+    Legal.best moves ~eval:(fun m ->
+        match Map.find visited @@ Move.dst @@ Legal.move m with
+        | Some n -> Some (-n)
+        | None -> Some 0)
+
+  let update_moved moved src dst =
+    let n = match Map.find moved src with
+      | Some n -> n + 1
+      | None -> 1 in
+    let moved = Map.remove moved src in
+    Map.set moved ~key:dst ~data:n
+
+  let choice _ state moves =
+    let parent = Legal.parent @@ List.hd_exn moves in
+    let active = Position.active parent in
+    let visited = match active with
+      | White -> state.visited_white
+      | Black -> state.visited_black in
+    let least_moved = least_moved state.moved moves in
+    let moves =
+      let len = List.length least_moved in
+      if len = List.length moves
+      then least_visited visited moves
+      else least_moved in
+    let m = List.random_element_exn moves in
+    let src = Move.dst @@ Legal.move m in
+    let dst = Move.dst @@ Legal.move m in
+    let moved = update_moved state.moved src dst in
+    let visited = Map.update visited dst ~f:(function
+        | Some n -> n + 1
+        | None -> 1) in
+    (* Update the square of the rook if we castled. *)
+    let moved, visited =
+      Legal.castle_side m |>
+      Option.value_map ~default:(moved, visited) ~f:(fun side ->
+          let rank = match active with
+            | White -> Square.Rank.one
+            | Black -> Square.Rank.eight in
+          let file, src = match side with
+            | Cr.Kingside ->
+              Square.File.f, Square.create_unsafe ~rank ~file:Square.File.h
+            | Cr.Queenside ->
+              Square.File.d, Square.create_unsafe ~rank ~file:Square.File.a in
+          let dst = Square.create_unsafe ~rank ~file in
+          let moved = update_moved moved src dst in
+          let visited =
+            Square.create_unsafe ~rank ~file |>
+            Map.update visited ~f:(function
+                | Some n -> n + 1
+                | None -> 1) in
+          moved, visited) in
+    (* Handle en passant capture. *)
+    let moved =
+      if Legal.is_en_passant m then
+        let rank = Square.rank dst in
+        let pw = match active with
+          | White -> Square.with_rank_unsafe dst @@ rank - 1
+          | Black -> Square.with_rank_unsafe dst @@ rank + 1 in
+        Map.remove moved pw
+      else moved in
+    (* Update the state. *)
+    let state = match active with
+      | White -> {state with moved; visited_white = visited}
+      | Black -> {state with moved; visited_black = visited} in
+    m, state
+
+  let state =
+    let moved = Map.empty (module Square) in
+    let visited_white = Map.of_alist_exn (module Square) [
+        Square.a1, 1; Square.b1, 1; Square.c1, 1; Square.d1, 1;
+        Square.e1, 1; Square.f1, 1; Square.g1, 1; Square.h1, 1;
+        Square.a2, 1; Square.b2, 1; Square.c2, 1; Square.d2, 1;
+        Square.e2, 1; Square.f2, 1; Square.g2, 1; Square.h2, 1;
+      ] in
+    let visited_black = Map.of_alist_exn (module Square) [
+        Square.a7, 1; Square.b7, 1; Square.c7, 1; Square.d7, 1;
+        Square.e7, 1; Square.f7, 1; Square.g7, 1; Square.h7, 1;
+        Square.a8, 1; Square.b8, 1; Square.c8, 1; Square.d8, 1;
+        Square.e8, 1; Square.f8, 1; Square.g8, 1; Square.h8, 1;
+      ] in
+    {moved; visited_white; visited_black}
+
+  let player = Player.create () ~choice ~state ~name:"equalizer"
+      ~desc:"The player that prefers to move pieces that have been moved the \
+             fewest number of times, then prefers to move to squares that \
+             have been visited the least number of times. The behavior of \
+             this player is undefined when not playing from the default \
+             starting position."
 end
 
 module Huddle = struct
@@ -192,6 +297,7 @@ let init =
   let once = ref false in
   fun () -> if !once then () else begin
       register Cccp.player;
+      register Equalizer.player;
       register Huddle.player;
       register Max_oppt_moves.player;
       register Min_oppt_moves.player;
