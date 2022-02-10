@@ -122,9 +122,8 @@ exception Invalid_fifty_move
     [declared_draw] optionally denotes that a player declared a draw after
     the move was made.
 
-    [resigned] takes the highest precedence in determining the result of the
-    game. If the actual result of playing the move is not [Ongoing], then
-    [declared_draw] is ignored.
+    If the game is not automatically ended with [legal], then [resigned] is
+    checked first. Otherwise, [declared_draw] is checked.
 
     Raises [Game_over] when [game] has already ended.
 

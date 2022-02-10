@@ -132,14 +132,17 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
       Map.update game.transpositions hash ~f:(function
           | Some n -> n + 1
           | None -> 1) in
-    (* Resignation takes precedence. A declared draw needs to be validated. *)
-    let result = match resigned with
-      | Some c -> Resigned c
-      | None ->
-        let result = result_of pos transpositions in
-        match result with
-        | Ongoing -> begin
-            match declared_draw with
+    (* In the following order, we check:
+       1. Automatic end to the game
+       2. Resignation
+       3. Declared draw (must be validated). *)
+    let result = 
+      let result = result_of pos transpositions in
+      match result with
+      | Ongoing -> begin
+          match resigned with
+          | Some c -> Resigned c
+          | None ->  match declared_draw with
             | None -> result
             | Some draw -> match draw with
               | `Mutual_agreement -> Draw (draw :> draw)
@@ -149,8 +152,8 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
               | `Fifty_move_rule ->
                 if Position.halfmove pos >= 100
                 then Draw (draw :> draw) else raise Invalid_fifty_move
-          end
-        | _ -> result in
+        end
+      | _ -> result in
     {game with moves; result; transpositions}
   else raise Game_over
 
