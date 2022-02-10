@@ -185,6 +185,22 @@ let first_set_rev b =
   if b = empty then None 
   else Some (next_square_rev b)
 
+let to_list b =
+  let[@inline] rec aux acc b =
+    if b = empty then acc
+    else
+      let sq = next_square_rev b in
+      aux (sq :: acc) @@ clear b sq in
+  aux [] b
+
+let to_list_rev b =
+  let[@inline] rec aux acc b =
+    if b = empty then acc
+    else
+      let sq = next_square b in
+      aux (sq :: acc) @@ clear_fast_fwd b in
+  aux [] b
+
 (* Infix operators. *)
 
 module Syntax = struct

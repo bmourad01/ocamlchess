@@ -172,16 +172,23 @@ val filter : t -> f:(Square.t -> bool) -> t
     satisfies [f sq], if it exists. *)
 val find : t -> f:(Square.t -> bool) -> Square.t option
 
-(** [find_rev b ~f] returns the first square [sq] of [b], starting from h8, which
-    satisfies [f sq], if it exists. *)
+(** [find_rev b ~f] returns the first square [sq] of [b], starting from h8,
+    which satisfies [f sq], if it exists. *)
 val find_rev : t -> f:(Square.t -> bool) -> Square.t option
+
+(** [to_list b] returns the list of squares set in [b], in ascending order. *)
+val to_list : t -> Square.t list
+
+(** [to_list_rev b] returns the list of squares set in [b], in descending
+    order. *)
+val to_list_rev : t -> Square.t list
 
 (** [first_set_exn b] returns the first square [sq] of [b], starting from a1,
     if it exists. Otherwise, [Invalid_argument] is raised. *)
 val first_set_exn : t -> Square.t
 
-(** [first_set_rev_exn b] returns the first square [sq] of [b], starting from h8,
-    if it exists. Otherwise, [Invalid_argument] is raised. *)
+(** [first_set_rev_exn b] returns the first square [sq] of [b], starting from
+    h8, if it exists. Otherwise, [Invalid_argument] is raised. *)
 val first_set_rev_exn : t -> Square.t
 
 (** [first_set b] returns the first square [sq] of [b], starting from a1, if it
