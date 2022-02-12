@@ -4,4 +4,5 @@
     (http://tom7.org/chess/weak.pdf) by Tom Murphy VII.
 *)
 
+(** Registers the players. *)
 val init : unit -> unit

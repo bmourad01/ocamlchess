@@ -91,15 +91,7 @@ module Gui = struct
 end
 
 module Uci = struct
-  let go player = match choose_player player ~none_ok:false with
-    | None -> failwith "Expected player"
-    | Some player -> Uci.go player
-
-  let player =
-    let doc = "The AI player." in
-    Arg.(required & pos 0 (some string) None & info [] ~docv:"PLAYER" ~doc)
-
-  let t = Term.(const go $ player)
+  let t = Term.(const Uci.go $ const ())
 
   let info =
     let doc = "Runs the UCI loop." in

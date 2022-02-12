@@ -1,3 +1,4 @@
 open Chess
 
-val go : Player.e -> unit
+(** Runs the UCI loop. *)
+val go : unit -> unit

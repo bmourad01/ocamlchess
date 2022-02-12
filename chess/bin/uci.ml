@@ -1,3 +1,3 @@
 open Core_kernel
 
-let go _player = failwith "unimplemented"
+let go () = failwith "UCI not yet implemented"
