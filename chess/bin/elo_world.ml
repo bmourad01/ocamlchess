@@ -291,21 +291,19 @@ module Swarm = struct
              pieces and the inactive king."
 end
 
-let register : 'a. 'a Player.t -> unit = Player.register
-
 let init =
   let once = ref false in
   fun () -> if !once then () else begin
-      register Cccp.player;
-      register Equalizer.player;
-      register Huddle.player;
-      register Max_oppt_moves.player;
-      register Min_oppt_moves.player;
-      register Opposite_color.player;
-      register Pacifist.player;
-      register Random.player;
-      register Same_color.player;
-      register Suicide_king.player;
-      register Swarm.player;
+      Players.register Cccp.player;
+      Players.register Equalizer.player;
+      Players.register Huddle.player;
+      Players.register Max_oppt_moves.player;
+      Players.register Min_oppt_moves.player;
+      Players.register Opposite_color.player;
+      Players.register Pacifist.player;
+      Players.register Random.player;
+      Players.register Same_color.player;
+      Players.register Suicide_king.player;
+      Players.register Swarm.player;
       once := true;
     end

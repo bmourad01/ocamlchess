@@ -80,15 +80,3 @@ val update : 'a t -> 'a -> 'a t
 (** [with_limits player limits] returns [player] with (optional) search
     limits [limits]. *)
 val with_limits : 'a t -> limits option -> 'a t
-
-(** [register player] will register [player] in the database. If a player
-    with the same name already exists, then [Invalid_argument] is raised. *)
-val register : 'a t -> unit
-
-(** [lookup name] will look up the player with the name [name]. If it does
-    not exist, then [None] is returned. *)
-val lookup : string -> e option
-
-(** [enumerate ()] will return a list of all currently registered players,
-    sorted by name. *)
-val enumerate : unit -> e list

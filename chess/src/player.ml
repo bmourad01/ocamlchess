@@ -36,16 +36,3 @@ let choose {choice; limits; state; _} pos =
 
 let update player state = {player with state}
 let with_limits player limits = {player with limits}
-
-(* We're using a map because we want the order to be consistent when
-   displaying the available players. *)
-let players = ref @@ Map.empty (module String)
-
-let register : type a. a t -> unit = fun player ->
-  let key = player.name in
-  match Map.add !players ~key ~data:(T player) with
-  | `Duplicate -> invalid_argf "Player %s is already registered" key ()
-  | `Ok m -> players := m
-
-let lookup name = Map.find !players name
-let enumerate () = Map.data !players

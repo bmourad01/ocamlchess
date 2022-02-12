@@ -4,7 +4,7 @@ let man_players () =
   Elo_world.init ();  
   `S "PLAYER" ::
   `Pre "Predefined algorithms for the computer." :: begin
-    Chess.Player.enumerate () |> Base.List.map
+    Players.enumerate () |> Base.List.map
       ~f:(fun Chess.Player.(T player) ->
           `P (Format.sprintf "%s: %s"
                 (Chess.Player.name player)
@@ -13,7 +13,7 @@ let man_players () =
 
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
-  | s -> match Chess.Player.lookup s with
+  | s -> match Players.lookup s with
     | None -> Core_kernel.invalid_argf "Player %s is not registered" s ()
     | Some _ as player -> player
 
