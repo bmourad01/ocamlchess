@@ -1,7 +1,6 @@
 open Core_kernel
 open Monads.Std
 
-module Bb = Bitboard
 module Legal = Position.Legal
 
 module Limits = struct
@@ -105,8 +104,7 @@ let go search = match Position.legal_moves search.root with
           let new_pos = Legal.new_position m in
           negamax new_pos depth (-beta) (-alpha) >>| fun score ->
           let score = -score in
-          if score >= beta then Stop (best, beta)
-          else if score > alpha then
+          if score > alpha then
             (* Stop if we've reached a maximally good move. *)
             if score = Int.max_value
             then Stop (m, score) else Continue (m, score)
