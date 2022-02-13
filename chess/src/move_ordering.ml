@@ -40,11 +40,11 @@ let create = function
             | None -> m, 0) |>
       List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) in
     object
-      val remaining = ref moves
+      val mutable remaining = moves
       method best = fst @@ List.hd_exn moves
-      method next = match !remaining with
+      method next = match remaining with
         | [] -> None
         | (m, _) :: rest ->
-          remaining := rest;
+          remaining <- rest;
           Some m
     end
