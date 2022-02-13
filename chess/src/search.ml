@@ -94,7 +94,8 @@ let rec negamax search pos depth alpha beta =
 
 and eval _search pos =
   State.(update inc_nodes) >>| fun () ->
-  (* Stupid evaluation function for now. *)
+  (* Stupid evaluation function for now. We just calculate the material
+     imbalance from the active player's perspective. *)
   let active = Position.active_board pos in
   let inactive = Position.inactive_board pos in
   let pawn = Position.pawn pos in
