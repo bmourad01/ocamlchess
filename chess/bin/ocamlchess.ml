@@ -7,13 +7,23 @@ module Default_player = struct
   let limits = Search.Limits.{depth = 5; nodes = Some 300_000}
   let transpositions = Int64.Map.empty
 
-  let choice _ moves =
+  let update_transp m pos =
+    Position.hash pos |> Map.update m ~f:(function
+        | Some n -> n + 1
+        | None -> 1)
+  
+  let choice transpositions moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
+    let transpositions = update_transp transpositions root in
     let search = Search.create ~limits ~root ~transpositions in
-    fst @@ Search.go search, ()
+    let m, _ = Search.go search in
+    let new_pos = Position.Legal.new_position m in
+    let transpositions = update_transp transpositions new_pos in
+    m, transpositions
 
-  let player = Player.create ~choice ~state:() ~name:"ocamlchess"
-      ~desc:"The ocamlchess player"
+  let player = Player.create ~choice ~state:transpositions ~name:"caml"
+      ~desc:"The default player, based on traditional game tree search and \
+             evaluation"
 end
 
 let man_players () =
