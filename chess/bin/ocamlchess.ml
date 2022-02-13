@@ -21,7 +21,7 @@ module Default_player = struct
     m, transpositions
 
   let player = Player.create ~choice ~state:Int64.Map.empty ~name:"caml"
-      ~desc:"The default player, based on traditional game tree search and \
+      ~desc:"The flagship player, based on traditional game tree search and \
              evaluation"
 end
 
