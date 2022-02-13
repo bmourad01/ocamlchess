@@ -92,14 +92,12 @@ let rec negamax pos ~depth ~alpha ~beta =
   else (* Continue the search. *)
     let moves = Position.legal_moves pos in
     let in_check = Position.in_check pos in
-    if List.is_empty moves then
-      (* Checkmate or stalemate. *)
-      State.return @@ if in_check then Int.min_value else 0
+    if List.is_empty moves
+    then State.return @@ if in_check then Int.min_value else 0
     else (* Evaluate once we reach a depth of zero. We extend the search
             if a player is in check. *)
       let check_ext = Bool.to_int in_check in
-      if depth + check_ext = 0
-      then State.(update inc_nodes) >>| fun () -> Eval.go pos
+      if depth + check_ext = 0 then quescience' pos moves ~alpha ~beta
       else let open Continue_or_stop in
         (* Search deeper into the game tree. *)
         let init = {
@@ -113,13 +111,14 @@ let rec negamax pos ~depth ~alpha ~beta =
             let pos' = Legal.new_position m in
             let depth = depth - 1 + check_ext in
             recurse acc pos' ~depth ~beta >>| fun score ->
-            let alpha' = max acc.alpha score in
-            if alpha' >= beta then Stop alpha'
-            else if score <= acc.alpha then Continue {acc with score}
+            let alpha = max alpha score in
+            if alpha >= beta then Stop score
+            else if score <= acc.alpha
+            then Continue {acc with score; alpha}
             else Continue {
                 best_move = m;
                 score;
-                alpha = alpha';
+                alpha;
                 full_window = false;
               })
 
@@ -131,6 +130,41 @@ and recurse acc pos ~depth ~beta =
   | s when acc.full_window -> finish s
   | s when (-s) > acc.alpha -> f ~alpha:(-beta) >>= finish
   | s -> finish s
+  
+and quescience pos ~alpha ~beta =
+  State.(gets nodes) >>= fun nodes ->
+  State.(gets search) >>= fun search ->
+  if Limits.is_max_nodes nodes search.limits
+  then State.return 0
+  else
+    let moves = Position.legal_moves pos in
+    let in_check = Position.in_check pos in
+    if List.is_empty moves
+    then State.return @@ if in_check then Int.min_value else 0
+    else quescience' pos moves ~alpha ~beta
+
+and quescience' pos moves ~alpha ~beta =
+  State.(update inc_nodes) >>= fun () ->
+  let score = Eval.go pos in
+  (* Keep searching until we reach a "quiet" position. *)
+  let moves = List.filter moves ~f:(fun m ->
+      Option.is_some @@ Legal.capture m ||
+      Option.is_some @@ Move.promote @@ Legal.move m) in
+  if List.is_empty moves then State.return score
+  else
+    let alpha = max score alpha in
+    if alpha >= beta then State.return score
+    else let open Continue_or_stop in
+      let init = score, alpha in
+      let finish = Fn.compose State.return fst in
+      State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+          let score, alpha = acc in
+          let pos' = Legal.new_position m in
+          quescience pos' ~alpha:(-beta) ~beta:(-alpha) >>| fun s ->
+          let score = max score (-s) in
+          let alpha = max alpha score in
+          if alpha >= beta then Stop score
+          else Continue (score, alpha))
 
 let go search = match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"
