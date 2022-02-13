@@ -10,6 +10,7 @@ let calculate_material =
     List.fold kinds ~init:0 ~f:(fun acc k ->
         let b = Position.board_of_kind pos k in
         let v = Piece.Kind.value k in
-        acc + (Bb.(count (b & us)) - Bb.(count (b & them))) * v)
+        let d = Bb.(count (b & us)) - Bb.(count (b & them)) in
+        acc + v * d)
 
 let go pos = calculate_material pos
