@@ -59,7 +59,7 @@ let check_threefold_repetition search pos =
   Position.hash pos |> Map.find search.transpositions |>
   Option.value_map ~default:false ~f:(fun n -> n >= 3)
 
-let rec negamax pos depth alpha beta =
+let rec negamax pos ~depth ~alpha ~beta =
   State.(gets nodes) >>= fun nodes ->
   State.(gets search) >>= fun search ->
   (* Check if we reached the search limits, as well as for positions
@@ -84,9 +84,11 @@ let rec negamax pos depth alpha beta =
         State.List.fold_until moves ~init ~finish ~f:(fun alpha m ->
             let new_pos = Legal.new_position m in
             let depth = depth - 1 + check_ext in
-            negamax new_pos depth (-beta) (-alpha) >>| fun score ->
+            negamax new_pos ~depth ~alpha:(-beta) ~beta:(-alpha) >>| fun score ->
             let score = -score in
+            (* Opponent got a better move, so prune this branch from the tree. *)
             if score >= beta then Stop beta
+            (* We got a better move, so update alpha. *)
             else if score > alpha then Continue score
             else Continue alpha)
 
@@ -102,7 +104,7 @@ let go search = match Position.legal_moves search.root with
       let init = best, alpha and finish = State.return in
       State.List.fold_until moves ~init ~finish ~f:(fun (best, alpha) m ->
           let new_pos = Legal.new_position m in
-          negamax new_pos depth (-beta) (-alpha) >>| fun score ->
+          negamax new_pos ~depth ~alpha:(-beta) ~beta:(-alpha) >>| fun score ->
           let score = -score in
           if score > alpha then
             (* Stop if we've reached a maximally good move. *)
