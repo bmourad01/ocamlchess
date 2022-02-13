@@ -7,7 +7,13 @@ module Limits = struct
   type t = {
     depth : int;
     nodes : int option;
-  }
+  } [@@deriving fields]
+
+  let create ?(nodes = None) ~depth () =
+    if depth < 0 then invalid_argf "Invalid depth limit %d" depth ()
+    else match nodes with
+      | Some n when n < 1 -> invalid_argf "Invalid node limit %d" n ()
+      | _ -> Fields.create ~depth ~nodes
 
   let is_max_nodes n = function
     | {nodes = Some nodes; _} -> n >= nodes
@@ -22,6 +28,15 @@ type t = {
   transpositions : int Int64.Map.t;
 } [@@deriving fields]
 
+module Result = struct
+  type t = {
+    best_move : Position.legal;
+    score : int;
+    nodes_searched : int;
+  } [@@deriving fields]
+end
+
+type result = Result.t
 type search = t
 
 let create = Fields.create
@@ -80,17 +95,16 @@ let rec negamax pos ~depth ~alpha ~beta =
       then State.(update inc_nodes) >>| fun () -> Eval.go pos
       else let open Continue_or_stop in
         (* Search deeper into the game tree. *)
-        let init = alpha and finish = State.return in
-        State.List.fold_until moves ~init ~finish ~f:(fun alpha m ->
+        let init = Int.min_value, alpha in
+        let finish = Fn.compose State.return fst in
+        State.List.fold_until moves ~init ~finish ~f:(fun (score, alpha) m ->
             let new_pos = Legal.new_position m in
             let depth = depth - 1 + check_ext in
-            negamax new_pos ~depth ~alpha:(-beta) ~beta:(-alpha) >>| fun score ->
-            let score = -score in
-            (* Opponent got a better move, so prune this branch from the tree. *)
-            if score >= beta then Stop beta
-            (* We got a better move, so update alpha. *)
-            else if score > alpha then Continue score
-            else Continue alpha)
+            negamax new_pos ~depth ~alpha:(-beta) ~beta:(-alpha) >>| fun s' ->
+            let score = max score (-s') in
+            let alpha = max alpha score in
+            if alpha >= beta then Stop alpha
+            else Continue (score, alpha))
 
 let go search = match Position.legal_moves search.root with
   | [] -> failwith "No legal moves"
@@ -101,14 +115,17 @@ let go search = match Position.legal_moves search.root with
       let depth = search.limits.depth - 1 in
       (* In case the search is inconclusive, pick a random move. *)
       let best = List.random_element_exn moves in
-      let init = best, alpha and finish = State.return in
-      State.List.fold_until moves ~init ~finish ~f:(fun (best, alpha) m ->
+      let init = (best, Int.min_value), alpha in
+      let finish = Fn.compose State.return fst in
+      State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+          let (best, score), alpha = acc in
           let new_pos = Legal.new_position m in
-          negamax new_pos ~depth ~alpha:(-beta) ~beta:(-alpha) >>| fun score ->
-          let score = -score in
+          negamax new_pos ~depth ~alpha:(-beta) ~beta:(-alpha) >>| fun s' ->
+          let score = max score (-s') in
           if score > alpha then
             (* Stop if we've reached a maximally good move. *)
-            if score = Int.max_value
-            then Stop (m, score) else Continue (m, score)
-          else Continue (best, alpha)) in
-    Monad.State.eval f st
+            if score = Int.max_value then Stop (m, score)
+            else Continue ((m, score), score)
+          else Continue ((best, score), alpha)) in
+    let (best_move, score), st = Monad.State.run f st in
+    Result.Fields.create ~best_move ~score ~nodes_searched:st.nodes

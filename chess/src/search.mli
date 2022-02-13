@@ -1,17 +1,22 @@
 (** The search limits. *)
 module Limits : sig
-  (** The search limits.
+  (** The search limits. *)
+  type t
 
-      [depth] is the number of halfmoves that will be
-      searched (e.g. the depth of the game tree).
+  (** Creates the search limits. Raises [Invalid_argument] on invalid
+      inputs. *)
+  val create :
+    ?nodes:int option ->
+    depth:int ->
+    unit ->
+    t
 
-      [nodes] is the optional limit on the number of
-      positions that may be evaluated.
-  *)
-  type t = {
-    depth : int;
-    nodes : int option;
-  }
+  (** The number of halfmoves that will be searched (e.g. the depth of
+      the game tree). *)
+  val depth : t -> int
+
+  (** The limit on the number of positions that may be evaluated. *)
+  val nodes : t -> int option
 end
 
 (** The search limits. *)
@@ -19,6 +24,24 @@ type limits = Limits.t
 
 (** The search information. *)
 type t
+
+(** The search result. *)
+module Result : sig
+  (** The search result. *)
+  type t
+
+  (** The best move to play. *)
+  val best_move : t -> Position.legal
+
+  (** The score that was given to the best move. *)
+  val score : t -> int
+
+  (** The number of nodes that were searched. *)
+  val nodes_searched : t -> int
+end
+
+(** The search result. *)
+type result = Result.t
 
 (** Returns the search limits. *)
 val limits : t -> limits
@@ -33,6 +56,5 @@ val create :
   transpositions:int Core_kernel.Int64.Map.t ->
   t
 
-(** [go search] runs the game tree search and returns the most
-    favorable move along with its score. *)
-val go : t -> Position.legal * int
+(** [go search] runs the game tree search and returns the search result. *)
+val go : t -> result
