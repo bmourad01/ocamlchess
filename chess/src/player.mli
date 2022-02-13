@@ -1,11 +1,5 @@
 (** The interface used to implement computer players. *)
 
-(** Search limits. *)
-type limits = {
-  depth : int;
-  nodes : int;
-}
-
 (** Raised when no legal moves are available for the player. *)
 exception No_moves
 
@@ -23,15 +17,13 @@ type e = T : 'a t -> e
 (** The signature of the [choice] function. All players are
     expected to implement this interface.
 
-    Given the search limits, the current state of the player,
-    and a list of legal moves, return the preferred move along
-    with an updated state.
+    Given the current state of the player and a list of legal moves,
+    return the preferred move along with an updated state.
 
     The list of moves is guaranteed to be non-empty, and each
     move in the list is derived from the same parent position.
 *)
-type 'a choice =
-  limits option -> 'a -> Position.legal list -> Position.legal * 'a
+type 'a choice = 'a -> Position.legal list -> Position.legal * 'a
 
 (** Creates a new player.
 
@@ -42,16 +34,11 @@ type 'a choice =
     [state] is the initial/default state of the player.
 *)
 val create :
-  ?limits:limits option ->
   choice:'a choice ->
   name:string ->
   desc:string ->
   state:'a ->
-  unit ->
   'a t
-
-(** Returns the search limits of the player. *)
-val limits : 'a t -> limits option
 
 (** [choose player pos] will choose the preferred legal move from the
     position [pos] according to the choice function of [player].
@@ -74,9 +61,5 @@ val desc : 'a t -> string
 val state : 'a t -> 'a
 
 (** [update player st] sets the internal state of [player] to [st],
-    returning the new player. *)
+    returning the updated player. *)
 val update : 'a t -> 'a -> 'a t
-
-(** [with_limits player limits] returns [player] with (optional) search
-    limits [limits]. *)
-val with_limits : 'a t -> limits option -> 'a t

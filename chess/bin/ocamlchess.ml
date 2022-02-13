@@ -1,6 +1,23 @@
 open Cmdliner
 
+module Default_player = struct
+  open Chess
+  open Core_kernel
+
+  let limits = Search.Limits.{depth = 5; nodes = Some 300_000}
+  let transpositions = Int64.Map.empty
+
+  let choice _ moves =
+    let root = Position.Legal.parent @@ List.hd_exn moves in
+    let search = Search.create ~limits ~root ~transpositions in
+    fst @@ Search.go search, ()
+
+  let player = Player.create ~choice ~state:() ~name:"ocamlchess"
+      ~desc:"The ocamlchess player"
+end
+
 let man_players () =
+  Players.register Default_player.player;
   Elo_world.init ();  
   `S "PLAYER" ::
   `Pre "Predefined algorithms for the computer." :: begin

@@ -28,7 +28,7 @@ module Cccp = struct
       let pos = Legal.new_position m in
       Some (Bb.count @@ Position.Attacks.all pos active))
 
-  let choice _ _ moves =
+  let choice _ moves =
     let moves = match checkmate moves with
       | (_ :: _) as moves -> moves
       | [] -> match check moves with
@@ -38,7 +38,7 @@ module Cccp = struct
           | [] -> push moves in
     List.random_element_exn moves, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"cccp"
+  let player = Player.create ~choice ~state:() ~name:"cccp"
       ~desc:"The player that plays the \"checkmate, check, capture, \
              push strategy\" (in that order)."
 end
@@ -50,17 +50,15 @@ module Equalizer = struct
     visited_black : int Map.M(Square).t;
   }
 
-  let least_moved moved moves =
-    Legal.best moves ~eval:(fun m ->
-        match Map.find moved @@ Move.src @@ Legal.move m with
-        | Some n -> Some (-n)
-        | None -> Some 0)
+  let least_moved moved moves = Legal.best moves ~eval:(fun m ->
+      match Map.find moved @@ Move.src @@ Legal.move m with
+      | Some n -> Some (-n)
+      | None -> Some 0)
 
-  let least_visited visited moves =
-    Legal.best moves ~eval:(fun m ->
-        match Map.find visited @@ Move.dst @@ Legal.move m with
-        | Some n -> Some (-n)
-        | None -> Some 0)
+  let least_visited visited moves = Legal.best moves ~eval:(fun m ->
+      match Map.find visited @@ Move.dst @@ Legal.move m with
+      | Some n -> Some (-n)
+      | None -> Some 0)
 
   let update_moved moved src dst =
     let n = match Map.find moved src with
@@ -69,7 +67,35 @@ module Equalizer = struct
     let moved = Map.remove moved src in
     Map.set moved ~key:dst ~data:n
 
-  let choice _ state moves =
+  let update_castle m moved visited active =
+    Option.value_map ~default:(moved, visited) ~f:(fun side ->
+        let rank = match active with
+          | Piece.White -> Square.Rank.one
+          | Piece.Black -> Square.Rank.eight in
+        let file, src = match side with
+          | Cr.Kingside ->
+            Square.File.f, Square.create_unsafe ~rank ~file:Square.File.h
+          | Cr.Queenside ->
+            Square.File.d, Square.create_unsafe ~rank ~file:Square.File.a in
+        let dst = Square.create_unsafe ~rank ~file in
+        let moved = update_moved moved src dst in
+        let visited =
+          Square.create_unsafe ~rank ~file |>
+          Map.update visited ~f:(function
+              | Some n -> n + 1
+              | None -> 1) in
+        moved, visited) @@ Legal.castle_side m
+
+  let update_en_passant m moved dst active = 
+    if Legal.is_en_passant m then
+      let rank = Square.rank dst in
+      let pw = match active with
+        | Piece.White -> Square.with_rank_unsafe dst @@ rank - 1
+        | Piece.Black -> Square.with_rank_unsafe dst @@ rank + 1 in
+      Map.remove moved pw
+    else moved
+
+  let choice state moves =
     let parent = Legal.parent @@ List.hd_exn moves in
     let active = Position.active parent in
     let visited = match active with
@@ -89,34 +115,9 @@ module Equalizer = struct
         | Some n -> n + 1
         | None -> 1) in
     (* Update the square of the rook if we castled. *)
-    let moved, visited =
-      Legal.castle_side m |>
-      Option.value_map ~default:(moved, visited) ~f:(fun side ->
-          let rank = match active with
-            | White -> Square.Rank.one
-            | Black -> Square.Rank.eight in
-          let file, src = match side with
-            | Cr.Kingside ->
-              Square.File.f, Square.create_unsafe ~rank ~file:Square.File.h
-            | Cr.Queenside ->
-              Square.File.d, Square.create_unsafe ~rank ~file:Square.File.a in
-          let dst = Square.create_unsafe ~rank ~file in
-          let moved = update_moved moved src dst in
-          let visited =
-            Square.create_unsafe ~rank ~file |>
-            Map.update visited ~f:(function
-                | Some n -> n + 1
-                | None -> 1) in
-          moved, visited) in
+    let moved, visited = update_castle m moved visited active in
     (* Handle en passant capture. *)
-    let moved =
-      if Legal.is_en_passant m then
-        let rank = Square.rank dst in
-        let pw = match active with
-          | White -> Square.with_rank_unsafe dst @@ rank - 1
-          | Black -> Square.with_rank_unsafe dst @@ rank + 1 in
-        Map.remove moved pw
-      else moved in
+    let moved = update_en_passant m moved dst active in
     (* Update the state. *)
     let state = match active with
       | White -> {state with moved; visited_white = visited}
@@ -139,7 +140,7 @@ module Equalizer = struct
       ] in
     {moved; visited_white; visited_black}
 
-  let player = Player.create () ~choice ~state ~name:"equalizer"
+  let player = Player.create ~choice ~state ~name:"equalizer"
       ~desc:"The player that prefers to move pieces that have been moved the \
              fewest number of times, then prefers to move to squares that \
              have been visited the least number of times. The behavior of \
@@ -148,43 +149,40 @@ module Equalizer = struct
 end
 
 module Huddle = struct
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let active = Position.active @@ Legal.parent m in
-        let pos = Legal.new_position m in
-        let active_board = Position.board_of_color pos active in
-        let king = Position.king pos in
-        let king_sq = Bb.(first_set_exn (king & active_board)) in
-        Position.collect_color pos active |>
-        List.fold ~init:0 ~f:(fun acc (sq, _) ->
-            acc - Square.chebyshev king_sq sq) |>
-        Option.return) |> List.random_element_exn, ()
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let active = Position.active @@ Legal.parent m in
+      let pos = Legal.new_position m in
+      let active_board = Position.board_of_color pos active in
+      let king = Position.king pos in
+      let king_sq = Bb.(first_set_exn (king & active_board)) in
+      Position.collect_color pos active |>
+      List.fold ~init:0 ~f:(fun acc (sq, _) ->
+          acc - Square.chebyshev king_sq sq) |>
+      Option.return) |> List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"huddle"
+  let player = Player.create ~choice ~state:() ~name:"huddle"
       ~desc:"The player that tries to minimize the distance between its \
              pieces and its king."
 end
 
 module Max_oppt_moves = struct
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let pos = Legal.new_position m in
-        Some (List.length @@ Position.legal_moves pos)) |>
-    List.random_element_exn, ()
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let pos = Legal.new_position m in
+      Some (List.length @@ Position.legal_moves pos)) |>
+                       List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"max-oppt-moves"
+  let player = Player.create ~choice ~state:() ~name:"max-oppt-moves"
       ~desc:"The player that attempts to maximize the number of \
              moves the opponent can make."
 end
 
 module Min_oppt_moves = struct
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let pos = Legal.new_position m in
-        Some (-(List.length @@ Position.legal_moves pos))) |>
-    List.random_element_exn, ()
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let pos = Legal.new_position m in
+      Some (-(List.length @@ Position.legal_moves pos))) |>
+                       List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"min-oppt-moves"
+  let player = Player.create ~choice ~state:() ~name:"min-oppt-moves"
       ~desc:"The player that attempts to minimize the number of \
              moves the opponent can make."
 end
@@ -193,40 +191,38 @@ module Opposite_color = struct
   let opposite_color active sq =
     not @@ Piece.Color.equal active @@ Square.color sq
 
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let active = Position.active @@ Legal.parent m in
-        let pos = Legal.new_position m in
-        Option.return @@ Bb.count @@
-        Bb.filter ~f:(opposite_color active) @@
-        Position.board_of_color pos active) |> List.random_element_exn, ()
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let active = Position.active @@ Legal.parent m in
+      let pos = Legal.new_position m in
+      Option.return @@ Bb.count @@
+      Bb.filter ~f:(opposite_color active) @@
+      Position.board_of_color pos active) |> List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"opposite-color"
+  let player = Player.create ~choice ~state:() ~name:"opposite-color"
       ~desc:"The player that tries to maximize the number of pieces \
              that are on squares that are opposite of its color."
 end
 
 module Pacifist = struct
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let pos = Legal.new_position m in
-        let in_check = Position.in_check pos in
-        (* Give the highest possible penalty for checkmating the opponent.
-           Give a similarly high penalty for checking the opponent's king.
-           In all other cases, maximize the opponent's material advantage. 
-           This works to prioritize moves where we avoid capturing any
-           piece. *)
-        let score = match Position.legal_moves pos with
-          | [] when in_check -> Int.min_value
-          | _ when in_check -> Int.min_value / 2
-          | _ ->
-            Position.collect_active pos |>
-            List.fold ~init:0 ~f:(fun material (_, k) ->
-                material + Piece.Kind.value k) in
-        Some score) |> List.random_element_exn, ()
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let pos = Legal.new_position m in
+      let in_check = Position.in_check pos in
+      (* Give the highest possible penalty for checkmating the opponent.
+         Give a similarly high penalty for checking the opponent's king.
+         In all other cases, maximize the opponent's material advantage. 
+         This works to prioritize moves where we avoid capturing any
+         piece. *)
+      let score = match Position.legal_moves pos with
+        | [] when in_check -> Int.min_value
+        | _ when in_check -> Int.min_value / 2
+        | _ ->
+          Position.collect_active pos |>
+          List.fold ~init:0 ~f:(fun material (_, k) ->
+              material + Piece.Kind.value k) in
+      Some score) |> List.random_element_exn, ()
 
 
-  let player = Player.create () ~choice ~state:() ~name:"pacifist"
+  let player = Player.create ~choice ~state:() ~name:"pacifist"
       ~desc:"The player that avoids, in the following priority, \
              checkmating the opponent, checking the opponent, and \
              capturing pieces. Failing that, it will capture the \
@@ -234,45 +230,44 @@ module Pacifist = struct
 end
 
 module Random = struct
-  let choice _ _ moves = List.random_element_exn moves, ()
-  let player = Player.create () ~choice ~state:() ~name:"random"
+  let choice _ moves = List.random_element_exn moves, ()
+  let player = Player.create ~choice ~state:() ~name:"random"
       ~desc:"The player that makes moves randomly."
 end
 
 module Same_color = struct
   let same_color active sq = Piece.Color.equal active @@ Square.color sq
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let active = Position.active @@ Legal.new_position m in
-        let pos = Legal.new_position m in
-        Option.return @@ Bb.count @@
-        Bb.filter ~f:(same_color active) @@
-        Position.board_of_color pos active) |> List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"same-color"
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let active = Position.active @@ Legal.new_position m in
+      let pos = Legal.new_position m in
+      Option.return @@ Bb.count @@
+      Bb.filter ~f:(same_color active) @@
+      Position.board_of_color pos active) |> List.random_element_exn, ()
+
+  let player = Player.create ~choice ~state:() ~name:"same-color"
       ~desc:"The player that tries to maximize the number of pieces \
              that are on squares of its color."
 end
 
 module Suicide_king = struct
-  let choice _ _ moves =
-    Legal.best moves ~eval:(fun m ->
-        let active = Position.active @@ Legal.parent m in
-        let pos = Legal.new_position m in
-        let king = Position.king pos in
-        let active_board = Position.board_of_color pos active in
-        let inactive_board = Position.active_board pos in
-        let k1 = Bb.(first_set_exn (king & active_board)) in
-        let k2 = Bb.(first_set_exn (king & inactive_board)) in
-        Some (-(Square.chebyshev k1 k2))) |> List.random_element_exn, ()
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let active = Position.active @@ Legal.parent m in
+      let pos = Legal.new_position m in
+      let king = Position.king pos in
+      let active_board = Position.board_of_color pos active in
+      let inactive_board = Position.active_board pos in
+      let k1 = Bb.(first_set_exn (king & active_board)) in
+      let k2 = Bb.(first_set_exn (king & inactive_board)) in
+      Some (-(Square.chebyshev k1 k2))) |> List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"suicide-king"
+  let player = Player.create ~choice ~state:() ~name:"suicide-king"
       ~desc:"The player that attempts to minimize the distance between \
              both kings."
 end
 
 module Swarm = struct
-  let choice _ _ moves =
+  let choice _ moves =
     let pos = Legal.parent @@ List.hd_exn moves in
     let active = Position.active pos in
     let inactive = Position.inactive pos in
@@ -286,7 +281,7 @@ module Swarm = struct
             acc - Square.chebyshev king_sq sq) |>
         Option.return) |> List.random_element_exn, ()
 
-  let player = Player.create () ~choice ~state:() ~name:"swarm"
+  let player = Player.create ~choice ~state:() ~name:"swarm"
       ~desc:"The player that tries to minimize the distance between its \
              pieces and the inactive king."
 end

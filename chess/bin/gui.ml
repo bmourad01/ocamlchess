@@ -39,7 +39,6 @@ module State = struct
   end
 
   include T
-  include Monad.State.T1(T)(Monad.Ident)
   include Monad.State.Make(T)(Monad.Ident)
 end
 
