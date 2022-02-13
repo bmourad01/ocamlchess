@@ -39,9 +39,10 @@ let create = function
             | Some k -> m, promote_bonus + Piece.Kind.value k
             | None -> m, 0) |>
       List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) in
+    let best = fst @@ List.hd_exn moves in
     object
       val mutable remaining = moves
-      method best = fst @@ List.hd_exn moves
+      method best = best
       method next = match remaining with
         | [] -> None
         | (m, _) :: rest ->
