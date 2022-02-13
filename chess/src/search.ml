@@ -53,19 +53,6 @@ module State = struct
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
-
-  module List = struct
-    include List
-
-    let fold_until =
-      let open Continue_or_stop in
-      let rec aux acc ~f ~finish = function
-        | [] -> finish acc
-        | x :: xs -> f acc x >>= function
-          | Continue y -> aux y xs ~f ~finish
-          | Stop z -> return z in
-      fun l ~init -> aux init l
-  end
 end
 
 open State.Syntax
@@ -86,8 +73,8 @@ let ordered_search order =
   let rec aux acc ~f ~finish = match order#next with
     | None -> finish acc
     | Some m -> f acc m >>= function
-      | Continue y -> aux y ~f ~finish
-      | Stop z -> State.return z in
+      | Continue acc -> aux acc ~f ~finish
+      | Stop x -> State.return x in
   fun ~init -> aux init
 
 let rec negamax pos ~depth ~alpha ~beta =
@@ -184,14 +171,15 @@ let go search = match Position.legal_moves search.root with
     let alpha = Int.min_value and beta = Int.max_value in
     let f = let open Continue_or_stop in
       let depth = search.limits.depth - 1 in
+      let order = Move_ordering.create moves in
       let init = {
-        best_move = List.random_element_exn moves;
+        best_move = order#best;
         score = Int.min_value;
         alpha;
         full_window = true;
       } in
       let finish acc = State.return (acc.best_move, acc.score) in
-      State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+      ordered_search order ~init ~finish ~f:(fun acc m ->
           let pos' = Legal.new_position m in
           recurse acc pos' ~depth ~beta >>| fun score ->
           if score <= acc.alpha
