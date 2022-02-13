@@ -81,6 +81,15 @@ type accum = {
   full_window : bool;
 }
 
+let ordered_search order =
+  let open Continue_or_stop in
+  let rec aux acc ~f ~finish = match order#next with
+    | None -> finish acc
+    | Some m -> f acc m >>= function
+      | Continue y -> aux y ~f ~finish
+      | Stop z -> State.return z in
+  fun ~init -> aux init
+
 let rec negamax pos ~depth ~alpha ~beta =
   State.(gets nodes) >>= fun nodes ->
   State.(gets search) >>= fun search ->
@@ -100,14 +109,15 @@ let rec negamax pos ~depth ~alpha ~beta =
       if depth + check_ext = 0 then quescience' pos moves ~alpha ~beta
       else let open Continue_or_stop in
         (* Search deeper into the game tree. *)
+        let order = Move_ordering.create moves in
         let init = {
-          best_move = List.random_element_exn moves;
+          best_move = order#best;
           score = Int.min_value;
           alpha;
           full_window = true;
         } in
         let finish acc = State.return acc.score in
-        State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+        ordered_search order ~init ~finish ~f:(fun acc m ->
             let pos' = Legal.new_position m in
             let depth = depth - 1 + check_ext in
             recurse acc pos' ~depth ~beta >>| fun score ->
@@ -130,7 +140,7 @@ and recurse acc pos ~depth ~beta =
   | s when acc.full_window -> finish s
   | s when (-s) > acc.alpha -> f ~alpha:(-beta) >>= finish
   | s -> finish s
-  
+
 and quescience pos ~alpha ~beta =
   State.(gets nodes) >>= fun nodes ->
   State.(gets search) >>= fun search ->
@@ -157,7 +167,8 @@ and quescience' pos moves ~alpha ~beta =
     else let open Continue_or_stop in
       let init = score, alpha in
       let finish = Fn.compose State.return fst in
-      State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+      Move_ordering.create moves |>
+      ordered_search ~init ~finish ~f:(fun acc m ->
           let score, alpha = acc in
           let pos' = Legal.new_position m in
           quescience pos' ~alpha:(-beta) ~beta:(-alpha) >>| fun s ->
