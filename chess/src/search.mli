@@ -56,5 +56,6 @@ val create :
   transpositions:int Core_kernel.Int64.Map.t ->
   t
 
-(** [go search] runs the game tree search and returns the search result. *)
+(** [go search] runs the game tree search and returns the search result.
+    Raises [Invalid_argument] if there are no legal moves. *)
 val go : t -> result
