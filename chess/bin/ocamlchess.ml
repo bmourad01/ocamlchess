@@ -22,7 +22,7 @@ module Default_player = struct
 
   let player = Player.create ~choice ~state:Int64.Map.empty ~name:"caml"
       ~desc:"The flagship player, based on traditional game tree search and \
-             evaluation"
+             evaluation."
 end
 
 let man_players () =
