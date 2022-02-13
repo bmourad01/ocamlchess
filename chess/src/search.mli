@@ -1,7 +1,7 @@
 (** The search limits. *)
 module Limits : sig
   (** The search limits.
-    
+
       [depth] is the number of halfmoves that will be
       searched (e.g. the depth of the game tree).
 
