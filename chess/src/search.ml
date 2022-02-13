@@ -98,7 +98,9 @@ let go search = match Position.legal_moves search.root with
     let alpha = Int.min_value and beta = Int.max_value in
     let f = let open Continue_or_stop in
       let depth = search.limits.depth - 1 in
-      let init = List.hd_exn moves, alpha and finish = State.return in
+      (* In case the search is inconclusive, pick a random move. *)
+      let best = List.random_element_exn moves in
+      let init = best, alpha and finish = State.return in
       State.List.fold_until moves ~init ~finish ~f:(fun (best, alpha) m ->
           let new_pos = Legal.new_position m in
           negamax new_pos depth (-beta) (-alpha) >>| fun score ->
