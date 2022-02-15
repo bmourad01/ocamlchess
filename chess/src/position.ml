@@ -1219,6 +1219,11 @@ module Legal = struct
         else Fn.flip en_passant_pawn_aux dst @@ inactive legal.new_position
   end
 
+  let sort moves ~eval =
+    List.map moves ~f:(fun m -> m, eval m) |>
+    List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
+    List.map ~f:fst
+
   let best moves ~eval =
     let open Option.Monad_infix in
     List.filter_map moves ~f:(fun m -> eval m >>| fun score -> (m, score)) |>
