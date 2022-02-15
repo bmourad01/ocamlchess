@@ -1486,8 +1486,7 @@ module San = struct
       | [] -> ()
       | moves ->
         let search x f =
-          List.fold_until moves ~init:true ~finish:ident ~f:(fun acc (sq, _) ->
-              if f sq = x then Stop false else Continue acc) in
+          not @@ List.exists moves ~f:(fun (sq, _) -> f sq = x) in
         (* First try to distinguish by file, then by rank, and finally the
            departing square. *)
         if search file Square.file then addc @@ Square.File.to_char file
