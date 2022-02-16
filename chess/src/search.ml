@@ -267,10 +267,10 @@ and negamax pos ~depth ~alpha ~beta =
         let check_ext = Bool.to_int in_check in
         if depth + check_ext = 0 then quescience' pos moves ~alpha ~beta
         else
-          negamax' moves
-            ~pos ~depth ~check_ext ~alpha ~beta >>| fun (best, score, alpha) ->
+          negamax' moves ~pos ~depth ~check_ext ~alpha ~beta >>| fun acc ->
           (* Update the transposition table and return the score. *)
-          let bound = if alpha <= alpha' then Tt.Upper else Tt.Exact in
+          let bound = if acc.alpha <= alpha' then Tt.Upper else Tt.Exact in
+          let score, best = acc.score, acc.best_move in
           Tt.(set tt pos ~depth ~score ~best ~bound);
           score
 
@@ -285,15 +285,14 @@ and negamax' moves ~pos ~depth ~check_ext ~alpha ~beta =
     alpha;
     full_window = true;
   } in
-  let finish acc = State.return (acc.best_move, acc.score, acc.alpha) in
   let depth' = depth - 1 + check_ext in
-  State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+  State.List.fold_until moves ~init ~finish:State.return ~f:(fun acc m ->
       let pos' = Legal.new_position m in
       pvs acc pos' ~depth:depth' ~beta >>| fun score ->
       let alpha = max alpha score in
       if alpha >= beta then begin
         Tt.(set tt pos ~depth ~score ~best:m ~bound:Lower);
-        Stop (acc.best_move, score, alpha)
+        Stop {acc with score; alpha}
       end
       else if score <= acc.alpha
       then Continue {acc with score; alpha}
