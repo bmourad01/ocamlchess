@@ -150,7 +150,11 @@ module Ordering = struct
   let is_best pos tt =
     let best =
       Position.hash pos |> Hashtbl.find tt |>
-      Option.map ~f:(fun entry -> entry.Tt.best) in
+      Option.bind ~f:(fun (entry : Tt.entry) ->
+          (* Only allow exact scores. *)
+          match entry.bound with
+          | Exact -> Some entry.best
+          | _ -> None) in
     fun m -> Option.exists best ~f:(fun best ->
         Position.same_hash (Legal.parent m) pos &&
         Position.same_hash (Legal.new_position m) (Legal.new_position best))
