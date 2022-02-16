@@ -196,17 +196,17 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     State.(gets legal) >>= fun legal ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
-    let prev = if not @@ Position.same_hash pos new_pos then begin
-        let mv = Option.value_exn prev in
-        let m = Legal.move mv in
-        printf "%s (%s): %s\n%!"
-          (Move.to_string m) (Position.San.of_legal mv)
-          (Position.Fen.to_string new_pos);
-        printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
-        printf "%d legal moves\n%!" @@ List.length legal;
-        printf "\n%!";
-        Some m
-      end else None in
+    if not @@ Position.same_hash pos new_pos then begin
+      let mv = Option.value_exn prev in
+      let m = Legal.move mv in
+      printf "%s (%s): %s\n%!"
+        (Move.to_string m) (Position.San.of_legal mv)
+        (Position.Fen.to_string new_pos);
+      printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
+      printf "%d legal moves\n%!" @@ List.length legal;
+      printf "\n%!";
+    end;
+    let prev = Option.map prev ~f:Legal.move in
     (* Get the valid squares for our selected piece to move to. *)
     State.(gets sel) >>= begin function
       | None -> State.return (Bb.(to_int64 empty), None)
