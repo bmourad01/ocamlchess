@@ -42,7 +42,7 @@ let mobility ?(swap = false) =
         let bonus = Map.find_exn mobility_bonus k in
         Bb.(Position.board_of_kind pos k & b) |>
         Bb.fold ~init:acc ~f:(fun acc sq ->
-            acc + (Bb.count (Bb.(f sq - b)) * bonus)))
+            acc + (Bb.(count (f sq - b)) * bonus)))
 
 (* Relative mobility advantage. *)
 let mobility pos = mobility pos - mobility pos ~swap:true
