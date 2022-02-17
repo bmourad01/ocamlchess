@@ -119,6 +119,11 @@ end
 
 open State.Syntax
 
+(* Important not to use `Int.min_value`, since negating it seems to give
+   us back a negative number.
+
+   See: https://ocaml.janestreet.com/ocaml-core/latest/doc/base/Base/Int/index.html#val-abs
+*)
 let inf = Int.max_value
 
 (* Avoid playing any repetition. *)

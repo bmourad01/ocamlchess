@@ -204,6 +204,8 @@ module Opposite_color = struct
 end
 
 module Pacifist = struct
+  let inf = Int.max_value
+
   let choice _ moves = Legal.best moves ~eval:(fun m ->
       let pos = Legal.new_position m in
       let in_check = Position.in_check pos in
@@ -213,8 +215,8 @@ module Pacifist = struct
          This works to prioritize moves where we avoid capturing any
          piece. *)
       let score = match Position.legal_moves pos with
-        | [] when in_check -> Int.min_value
-        | _ when in_check -> Int.min_value / 2
+        | [] when in_check -> -inf
+        | _ when in_check -> inf / -2
         | _ ->
           Position.collect_active pos |>
           List.fold ~init:0 ~f:(fun material (_, k) ->
