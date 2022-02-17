@@ -67,11 +67,13 @@ module Perft = struct
 
   let info =
     let doc = "Runs the performance test; enumerates move paths." in
-    Term.info "perft"
+    Cmd.info "perft"
       ~version:"%%VERSION%%"
       ~doc
-      ~exits:Term.default_exits
+      ~exits:Cmd.Exit.defaults
       ~man:[]
+
+  let cmd = Cmd.v info t
 end
 
 module Gui = struct
@@ -109,11 +111,13 @@ module Gui = struct
 
   let info =
     let doc = "Runs the testing GUI." in
-    Term.info "gui"
+    Cmd.info "gui"
       ~version:"%%VERSION%%"
       ~doc
-      ~exits:Term.default_exits
+      ~exits:Cmd.Exit.defaults
       ~man:[]
+
+  let cmd = Cmd.v info t
 end
 
 module Uci = struct
@@ -121,25 +125,24 @@ module Uci = struct
 
   let info =
     let doc = "Runs the UCI loop." in
-    Term.info "uci"
+    Cmd.info "uci"
       ~version:"%%VERSION%%"
       ~doc
-      ~exits:Term.default_exits
+      ~exits:Cmd.Exit.defaults
       ~man:[]
+
+  let cmd = Cmd.v info t
 end
 
-module Default = struct
-  let t = Term.(ret @@ const @@ `Help (`Pager, None))
+let default = Term.(ret @@ const @@ `Help (`Pager, None))
 
-  let info =
-    let man = man_players () in
-    let doc = "A UCI-compatible chess engine." in
-    Term.info "ocamlchess" ~doc ~exits:Term.default_exits ~man
-end
+let info =
+  let man = man_players () in
+  let doc = "A UCI-compatible chess engine." in
+  Cmd.info "ocamlchess" ~doc ~exits:Cmd.Exit.defaults ~man
 
-let () =
-  Term.exit @@ Term.eval_choice Default.(t, info) [
-    Perft.(t, info);
-    Gui.(t, info);
-    Uci.(t, info);
+let () = exit @@ Cmd.eval @@ Cmd.group ~default info [
+    Perft.cmd;
+    Gui.cmd;
+    Uci.cmd;
   ]
