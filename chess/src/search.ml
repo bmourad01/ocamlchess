@@ -11,7 +11,7 @@ module Limits = struct
   } [@@deriving fields]
 
   let create ?(nodes = None) ~depth () =
-    if depth < 0 then invalid_argf "Invalid depth limit %d" depth ()
+    if depth < 1 then invalid_argf "Invalid depth limit %d" depth ()
     else match nodes with
       | Some n when n < 1 -> invalid_argf "Invalid node limit %d" n ()
       | _ -> Fields.create ~depth ~nodes
