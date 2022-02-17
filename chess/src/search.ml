@@ -1,6 +1,7 @@
 open Core_kernel
 open Monads.Std
 
+module Bb = Bitboard
 module Legal = Position.Legal
 
 module Limits = struct
@@ -118,9 +119,12 @@ end
 
 open State.Syntax
 
-let check_threefold_repetition search pos =
+let inf = Int.max_value
+
+(* Avoid playing any repetition. *)
+let check_repetition search pos =
   Position.hash pos |> Map.find search.transpositions |>
-  Option.value_map ~default:false ~f:(fun n -> n >= 3)
+  Option.value_map ~default:false ~f:(fun n -> n > 0)
 
 (* Move ordering is critical for optimizing the performance of alpha-beta
    pruning. We use some heuristics to determine which moves are likely
@@ -129,6 +133,7 @@ let check_threefold_repetition search pos =
 module Ordering = struct
   let capture_bonus = 40
   let promote_bonus = 30
+  let pawn_control_penalty = -35
 
   let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen]
   let attackers = Piece.King :: List.rev victims
@@ -159,10 +164,12 @@ module Ordering = struct
         Position.same_hash (Legal.parent m) pos &&
         Position.same_hash (Legal.new_position m) (Legal.new_position best))
 
-  let sort ~pos ~tt =
-    let best = is_best pos tt in
+  let sort ?(quescience = false) ~pos ~tt =
+    let best = if quescience then fun _ -> false else is_best pos tt in
+    let inactive = Position.inactive pos in
+    let pawn_att = Position.Attacks.pawn pos inactive in
     Legal.sort ~eval:(fun m ->
-        if best m then Int.max_value
+        if best m then inf
         else
           let capture =
             Legal.capture m |> Option.value_map ~default:0 ~f:(fun k ->
@@ -177,10 +184,18 @@ module Ordering = struct
             Legal.move m |> Move.promote |>
             Option.value_map ~default:0 ~f:(fun k ->
                 promote_bonus + Piece.Kind.value k) in
-          capture + promote)
+          let pawn =
+            let src = Move.src @@ Legal.move m in
+            let parent = Legal.parent m in
+            match Position.piece_at_square_exn parent src with
+            | p when Piece.is_pawn p -> 0
+            | _ ->
+              let dst = Move.dst @@ Legal.move m in
+              if Bb.(dst @ pawn_att) then pawn_control_penalty else 0 in
+          capture + promote + pawn)
 end
 
-let neg = Fn.compose State.return Int.neg
+let negm = Fn.compose State.return Int.neg
 
 (* Quescience search is used when we reach our maximum depth for the main
    search. The goal is then to keep searching only "noisy" positions, until
@@ -194,7 +209,7 @@ let rec quescience pos ~alpha ~beta =
     let moves = Position.legal_moves pos in
     let in_check = Position.in_check pos in
     if List.is_empty moves
-    then State.return @@ if in_check then Int.min_value else 0
+    then State.return @@ if in_check then -inf else 0
     else quescience' pos moves ~alpha ~beta
 
 and quescience' pos moves ~alpha ~beta =
@@ -203,44 +218,48 @@ and quescience' pos moves ~alpha ~beta =
   let moves = List.filter moves ~f:(fun m ->
       Option.is_some @@ Legal.capture m ||
       Option.is_some @@ Move.promote @@ Legal.move m) in
-  if List.is_empty moves then State.return score
-  else
+  if score >= beta then State.return beta
+  else let open Continue_or_stop in
     let alpha = max score alpha in
-    if alpha >= beta then State.return score
-    else let open Continue_or_stop in
-      let init = score, alpha in
-      let finish = Fn.compose State.return fst in
-      State.(gets tt) >>= fun tt ->
-      Ordering.sort moves ~pos ~tt |>
-      State.List.fold_until ~init ~finish ~f:(fun acc m ->
-          let score, alpha = acc in
-          let pos' = Legal.new_position m in
-          quescience pos' ~alpha:(-beta) ~beta:(-alpha) >>= neg >>| fun s ->
-          let score = max score s in
-          let alpha = max alpha score in
-          if alpha >= beta then Stop score
-          else Continue (score, alpha))
+    let finish = State.return in
+    State.(gets tt) >>= fun tt ->
+    Ordering.sort moves ~pos ~tt ~quescience:true |>
+    State.List.fold_until ~init:alpha ~finish ~f:(fun alpha m ->
+        let pos' = Legal.new_position m in
+        quescience pos' ~alpha:(-beta) ~beta:(-alpha) >>=
+        negm >>| fun score -> if score >= beta then Stop beta
+        else Continue (max score alpha))
 
-type accum = {
-  best_move : Position.legal;
-  score : int;
-  alpha : int;
-  full_window : bool;
+(* Accumulates the results of searching one ply. *)
+type ply = {
+  mutable best : Position.legal;
+  mutable alpha : int;
+  mutable full_window : bool;
 }
+
+let new_ply ?(alpha = -inf) moves = {
+  best = List.hd_exn moves;
+  alpha;
+  full_window = true;
+}
+
+let better ply m score =
+  ply.best <- m;
+  ply.alpha <- score;
+  ply.full_window <- false
 
 (* Principal variation search can lead to more pruning if the move ordering
    was (more or less) correct.
 
    See: https://en.wikipedia.org/wiki/Principal_variation_search
 *)
-let rec pvs acc pos ~depth ~beta =
-  let alpha = if acc.full_window then -beta else (-acc.alpha) - 1 in
-  let f = negamax pos ~depth ~beta:(-acc.alpha) in
-  let finish s = State.return @@ max acc.score s in
-  f ~alpha >>= neg >>= function
-  | s when acc.full_window -> finish s
-  | s when s > acc.alpha && s < beta -> f ~alpha:(-beta) >>= finish
-  | s -> finish s
+let rec pvs pos ply ~depth ~beta =
+  let f alpha = negamax pos ~depth ~alpha ~beta:(-ply.alpha) >>= negm in
+  let alpha = if ply.full_window then -beta else (-ply.alpha) - 1 in
+  f alpha >>= function
+  | score when ply.full_window -> State.return score
+  | score when score > ply.alpha -> f (-beta)
+  | score -> State.return score
 
 (* Search from a new position. *)
 and negamax pos ~depth ~alpha ~beta =
@@ -249,7 +268,7 @@ and negamax pos ~depth ~alpha ~beta =
   (* Check if we reached the search limits, as well as for positions
      where a player may claim a draw. *)
   if Limits.is_max_nodes nodes search.limits
-  || check_threefold_repetition search pos
+  || check_repetition search pos
   || Position.halfmove pos >= 100 then State.return 0
   else 
     let alpha' = alpha in
@@ -261,74 +280,60 @@ and negamax pos ~depth ~alpha ~beta =
       let moves = Position.legal_moves pos in
       let in_check = Position.in_check pos in
       if List.is_empty moves
-      then State.return @@ if in_check then Int.min_value else 0
+      then State.return @@ if in_check then -inf else 0
       else
         (* Extend the depth limit if we're in check. *)
         let check_ext = Bool.to_int in_check in
         if depth + check_ext = 0 then quescience' pos moves ~alpha ~beta
-        else
-          negamax' moves ~pos ~depth ~check_ext ~alpha ~beta >>| fun acc ->
+        else let open Continue_or_stop in
+          let moves = Ordering.sort moves ~pos ~tt in
+          let depth' = depth - 1 + check_ext in
+          let ply = new_ply moves ~alpha in
+          let finish () = State.return (ply.alpha, false) in
+          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+              let pos' = Legal.new_position m in
+              pvs pos' ply ~depth:depth' ~beta >>| fun score ->
+              if score >= beta then begin
+                Tt.(set tt pos ~depth ~score ~best:m ~bound:Lower);
+                Stop (beta, true)
+              end else begin
+                if score > ply.alpha then better ply m score;
+                Continue ()
+              end) >>| fun (score, cutoff) ->
           (* Update the transposition table and return the score. *)
-          let bound = if acc.alpha <= alpha' then Tt.Upper else Tt.Exact in
-          let score, best = acc.score, acc.best_move in
-          Tt.(set tt pos ~depth ~score ~best ~bound);
+          if not cutoff then begin
+            let bound = if ply.alpha <= alpha' then Tt.Upper else Tt.Exact in
+            Tt.(set tt pos ~depth ~score ~best:ply.best ~bound);
+          end;
           score
-
-(* Search deeper into the game tree. *)
-and negamax' moves ~pos ~depth ~check_ext ~alpha ~beta =
-  let open Continue_or_stop in
-  State.(gets tt) >>= fun tt ->
-  let moves = Ordering.sort moves ~pos ~tt in
-  let init = {
-    best_move = List.hd_exn moves;
-    score = Int.min_value;
-    alpha;
-    full_window = true;
-  } in
-  let depth' = depth - 1 + check_ext in
-  State.List.fold_until moves ~init ~finish:State.return ~f:(fun acc m ->
-      let pos' = Legal.new_position m in
-      pvs acc pos' ~depth:depth' ~beta >>| fun score ->
-      let alpha = max alpha score in
-      if alpha >= beta then begin
-        Tt.(set tt pos ~depth ~score ~best:m ~bound:Lower);
-        Stop {acc with score; alpha}
-      end
-      else if score <= acc.alpha
-      then Continue {acc with score; alpha}
-      else Continue {
-          best_move = m;
-          score;
-          alpha;
-          full_window = false;
-        }) 
 
 (* The search we start from the root position. *)
 let rootmax moves depth =
   let open Continue_or_stop in
-  State.(gets search) >>= fun {root = pos; _} ->
+  State.(gets search) >>= fun search ->
   State.(gets tt) >>= fun tt ->
+  let pos = search.root in
   let moves = Ordering.sort moves ~pos ~tt in
-  let beta = Int.max_value in
-  let init = {
-    best_move = List.hd_exn moves;
-    score = Int.min_value;
-    alpha = Int.min_value;
-    full_window = true;
-  } in
-  let finish acc = State.return (acc.best_move, acc.score) in
-  State.List.fold_until moves ~init ~finish ~f:(fun acc m ->
+  let ply = new_ply moves in
+  let beta = inf in
+  let finish () = State.return ply.alpha in
+  let depth' = depth - 1 in
+  State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
       let pos' = Legal.new_position m in
-      pvs acc pos' ~depth:(depth - 1) ~beta >>| fun score ->
-      if score <= acc.alpha then Continue {acc with score}
-      else if score = Int.max_value then Stop (m, score)
-      else Continue {
-          best_move = m;
-          score;
-          alpha = score;
-          full_window = false;
-        }) >>| fun (best, score) ->
+      pvs pos' ply ~depth:depth' ~beta >>= fun score ->
+      if score >= beta then begin
+        (* If we hit beta cutoff at the root, then we've found a maximally
+           good move for us. *)
+        ply.best <- m;
+        State.return @@ Stop beta
+      end else State.(gets nodes) >>| fun nodes ->
+        if Limits.is_max_nodes nodes search.limits then Stop ply.alpha
+        else begin
+          if score > ply.alpha then better ply m score;
+          Continue ()
+        end) >>| fun score ->
   (* Update the transposition table and return the results. *)
+  let best = ply.best in
   Tt.(set tt pos ~depth ~score ~best ~bound:Exact);
   best, score
 
@@ -344,4 +349,4 @@ let rec iterdeep ?(i = 1) st ~moves =
 
 let go search = match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"
-  | moves ->  iterdeep ~moves @@ State.create search
+  | moves -> iterdeep ~moves @@ State.create search
