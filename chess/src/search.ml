@@ -258,7 +258,7 @@ let rec pvs pos ply ~depth ~beta =
   let alpha = if ply.full_window then -beta else (-ply.alpha) - 1 in
   f alpha >>= function
   | score when ply.full_window -> State.return score
-  | score when score > ply.alpha -> f (-beta)
+  | score when score > ply.alpha && score < beta -> f (-beta)
   | score -> State.return score
 
 (* Search from a new position. *)
