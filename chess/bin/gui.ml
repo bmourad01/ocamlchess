@@ -223,14 +223,12 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     else (delay (); main_loop ~delay ())
   else State.return ()
 
-let start_with_game_over_check delay = State.(gets game) >>= fun game ->
+let start_with_game_over_check delay =
+  State.(gets game) >>= fun game ->
+  State.(gets window) >>= fun window ->
+  display_board (Game.position game) window;
   if not @@ Game.is_over game then main_loop ~delay ()
-  else State.(gets window) >>| fun window ->
-    let pos = Game.position game in
-    if Window.is_open window then begin
-      display_board pos window;
-      prompt_end window
-    end
+  else State.return @@ if Window.is_open window then prompt_end window
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
