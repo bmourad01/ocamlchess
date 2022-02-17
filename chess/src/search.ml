@@ -165,9 +165,7 @@ module Ordering = struct
           match entry.bound with
           | Exact -> Some entry.best
           | _ -> None) in
-    fun m -> Option.exists best ~f:(fun best ->
-        Position.same_hash (Legal.parent m) pos &&
-        Position.same_hash (Legal.new_position m) (Legal.new_position best))
+    fun m -> Option.exists best ~f:(Legal.same m)
 
   let sort ?(quescience = false) ~pos ~tt =
     let best = if quescience then fun _ -> false else is_best pos tt in

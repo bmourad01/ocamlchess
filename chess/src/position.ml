@@ -1132,9 +1132,9 @@ module Makemove = struct
   (* Handle castling-related details. *)
   let[@inline] update_castle ctx src dst pos =
     begin match Piece.kind ctx.piece with
-    | Rook -> rook_moved src pos
-    | King -> king_moved_or_castled ctx.castle_side pos
-    | _ -> ()
+      | Rook -> rook_moved src pos
+      | King -> king_moved_or_castled ctx.castle_side pos
+      | _ -> ()
     end;
     rook_captured dst ctx.direct_capture pos
 
@@ -1209,6 +1209,10 @@ module Legal = struct
       is_en_passant : bool;
       castle_side : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
+
+    let same l1 l2 =
+      same_hash l1.parent l2.parent &&
+      same_hash l1.new_position l2.new_position
 
     let is_move legal m = Move.(m = legal.move)
     let capture legal = Uopt.to_option legal.capture
