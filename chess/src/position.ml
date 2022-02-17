@@ -1130,10 +1130,13 @@ module Makemove = struct
       if Piece.is_rook p then rook_moved_or_captured dst (Piece.color p) pos
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle ctx src dst pos = match Piece.kind ctx.piece with
-    | Rook -> rook_moved src pos; rook_captured dst ctx.direct_capture pos
+  let[@inline] update_castle ctx src dst pos =
+    begin match Piece.kind ctx.piece with
+    | Rook -> rook_moved src pos
     | King -> king_moved_or_castled ctx.castle_side pos
-    | _ -> rook_captured dst ctx.direct_capture pos
+    | _ -> ()
+    end;
+    rook_captured dst ctx.direct_capture pos
 
   (* Update the en passant square if a pawn double push occurred. *) 
   let[@inline] update_en_passant p src dst pos =
