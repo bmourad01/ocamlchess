@@ -156,7 +156,7 @@ let with_rank_exn sq rank =
 
 let with_rank sq rank =
   if rank land Bits.Rank.nmask <> 0 then None
-  else Some ((rank lsl bits lsr 1) lor Bits.file sq)
+  else Some ((rank lsl (bits lsr 1)) lor Bits.file sq)
 
 let[@inline] with_rank_unsafe sq rank =
   (rank lsl (bits lsr 1)) lor Bits.file sq
@@ -222,3 +222,8 @@ let chebyshev sq1 sq2 =
   let rank1, file1 = decomp sq1 in
   let rank2, file2 = decomp sq2 in
   max (abs (rank1 - rank2)) (abs (file1 - file2))
+
+let manhattan sq1 sq2 =
+  let rank1, file1 = decomp sq1 in
+  let rank2, file2 = decomp sq2 in
+  abs (rank1 - rank2) + abs (file1 - file2)

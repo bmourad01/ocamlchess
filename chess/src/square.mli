@@ -388,3 +388,7 @@ val last : int
     This is equivalent to the total number of moves needed to move a king from
     [sq1] to [sq2], or vice versa. *)
 val chebyshev : t -> t -> int
+
+(** [manhattan sq1 sq2] returns the Manhattan distance between [sq1] and
+    [sq2]. *)
+val manhattan : t -> t -> int
