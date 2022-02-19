@@ -230,9 +230,8 @@ module Quescience = struct
       Ordering.sort moves ~pos ~tt ~quescience:true |>
       State.List.fold_until ~init:alpha ~finish ~f:(fun alpha m ->
           let pos' = Legal.new_position m in
-          go pos' ~alpha:(-beta) ~beta:(-alpha) >>=
-          negm >>| fun score -> if score >= beta then Stop beta
-          else Continue (max score alpha))
+          go pos' ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
+          if score >= beta then Stop beta else Continue (max score alpha))
 end
 
 (* The search results for all the moves in one ply. *)
@@ -250,9 +249,11 @@ module Ply = struct
   }
 
   let better ply m score =
-    ply.best <- m;
-    ply.alpha <- score;
-    ply.full_window <- false
+    if score > ply.alpha then begin
+      ply.best <- m;
+      ply.alpha <- score;
+      ply.full_window <- false;
+    end
 end
 
 (* Principal variation search can lead to more pruning if the move ordering
@@ -305,10 +306,8 @@ and negamax pos ~depth ~alpha ~beta =
               if score >= beta then begin
                 Tt.(set tt pos ~depth ~score ~best:m ~bound:Lower);
                 Stop (beta, true)
-              end else begin
-                if score > ply.alpha then Ply.better ply m score;
-                Continue ()
-              end) >>| fun (score, cutoff) ->
+              end else Continue (Ply.better ply m score))
+          >>| fun (score, cutoff) ->
           (* Update the transposition table and return the score. *)
           if not cutoff then begin
             let bound = if ply.alpha <= alpha' then Tt.Upper else Tt.Exact in
