@@ -224,11 +224,11 @@ module Quescience = struct
         Option.is_some @@ Move.promote @@ Legal.move m) in
     if score >= beta then State.return beta
     else let open Continue_or_stop in
-      let alpha = max score alpha in
+      let init = max score alpha in
       let finish = State.return in
       State.(gets tt) >>= fun tt ->
       Ordering.sort moves ~pos ~tt ~quescience:true |>
-      State.List.fold_until ~init:alpha ~finish ~f:(fun alpha m ->
+      State.List.fold_until ~init ~finish ~f:(fun alpha m ->
           let pos' = Legal.new_position m in
           go pos' ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
           if score >= beta then Stop beta else Continue (max score alpha))
