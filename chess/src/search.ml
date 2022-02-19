@@ -261,8 +261,7 @@ end
 
    See: https://en.wikipedia.org/wiki/Principal_variation_search
 *)
-let rec pvs pos ply ~depth ~beta =
-  let open Ply in
+let rec pvs pos ply ~depth ~beta = let open Ply in
   let f alpha = negamax pos ~depth ~alpha ~beta:(-ply.alpha) >>= negm in
   let alpha = if ply.full_window then -beta else (-ply.alpha) - 1 in
   f alpha >>= function
@@ -306,14 +305,13 @@ and negamax pos ~depth ~alpha ~beta =
               if score >= beta then begin
                 Tt.(set tt pos ~depth ~score ~best:m ~bound:Lower);
                 Stop (beta, true)
-              end else Continue (Ply.better ply m score))
-          >>| fun (score, cutoff) ->
-          (* Update the transposition table and return the score. *)
-          if not cutoff then begin
+              end else Continue (Ply.better ply m score)) >>| function
+          | score, true -> score
+          | score, false ->
+            (* No beta cutoff, so update the transposition table. *)
             let bound = if ply.alpha <= alpha' then Tt.Upper else Tt.Exact in
-            Tt.(set tt pos ~depth ~score ~best:ply.best ~bound);
-          end;
-          score
+            Tt.set tt pos ~depth ~score ~best:ply.best ~bound;
+            score
 
 (* The search we start from the root position. *)
 let rootmax moves depth =
