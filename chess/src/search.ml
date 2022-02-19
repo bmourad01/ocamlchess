@@ -336,10 +336,7 @@ let rootmax moves depth =
         State.return @@ Stop beta
       end else State.(gets nodes) >>| fun nodes ->
         if Limits.is_max_nodes nodes search.limits then Stop ply.alpha
-        else begin
-          if score > ply.alpha then Ply.better ply m score;
-          Continue ()
-        end) >>| fun score ->
+        else Continue (Ply.better ply m score)) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
   Tt.(set tt pos ~depth ~score ~best ~bound:Exact);
