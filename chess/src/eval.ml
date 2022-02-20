@@ -49,10 +49,11 @@ let mobility =
     let them = Position.inactive_board pos in
     let occupied = Bb.(us + them) in
     let b = if swap then them else us in
+    let c = if swap then Position.inactive pos else Position.active pos in
     let pawn =
       (* For pawns, we not only want to evaluate attacked squares but
          also the ability to push to new ranks. *)
-      let pawn = Position.pawn pos in
+      let pawn = Bb.(b & Position.pawn pos) in
       let get f r fl fr =
         (* Check the next rank (shift by 8). *)
         let n = Bb.to_int64 pawn in
@@ -64,7 +65,7 @@ let mobility =
         let n = Bb.to_int64 pawn in
         let att = Bb.((of_int64 (f n 9) - fl) + (of_int64 (f n 7) - fr)) in
         single, double, att in
-      let single, double, att = match Position.active pos with
+      let single, double, att = match c with
         | Piece.White -> get Int64.(lsl) Bb.rank_3 Bb.file_a Bb.file_h
         | Piece.Black -> get Int64.(lsr) Bb.rank_6 Bb.file_h Bb.file_a in
       let attackable = Bb.(them - Position.king pos) in
@@ -98,25 +99,32 @@ let mobility =
 
 (* Relative mobility advantage. *)
 let mobility pos our_endgame their_endgame =
-  mobility pos our_endgame - mobility pos their_endgame ~swap:true
+  mobility pos their_endgame - mobility pos our_endgame ~swap:true
 
 (* Count the rooks on open files. This can also be measured by the mobility
    score, but we also give a bonus here. *)
-let rook_open_file ?(swap = false) pos =
-  let us = Position.active_board pos in
-  let them = Position.inactive_board pos in
-  let occupied = Bb.(us + them) in
-  let b = if swap then them else us in
-  let rook = Bb.(b & Position.rook pos) in
-  List.init Square.File.count ~f:ident |>
-  List.fold ~init:0 ~f:(fun acc i ->
-      let f = Bb.file_exn i in
-      let b = Bb.(f & rook) in
-      if Bb.(b <> empty && b = (f & occupied))
-      then acc + 1 else acc)
+let rook_open_file =
+  let start_bonus = 20 in
+  let end_bonus = 40 in
+  fun ?(swap = false) pos endgame ->
+    let us = Position.active_board pos in
+    let them = Position.inactive_board pos in
+    let occupied = Bb.(us + them) in
+    let b = if swap then them else us in
+    let rook = Bb.(b & Position.rook pos) in
+    let score =
+      List.init Square.File.count ~f:ident |>
+      List.fold ~init:0 ~f:(fun acc i ->
+          let f = Bb.file_exn i in
+          let b = Bb.(f & rook) in
+          if Bb.(b <> empty && b = (f & occupied))
+          then acc + 1 else acc) in
+    weigh_start (score * start_bonus) endgame +
+    weigh_end (score * end_bonus) endgame
 
 (* Relative advantage of rooks on open files. *)
-let rook_open_file pos = rook_open_file pos - rook_open_file pos ~swap:true
+let rook_open_file pos our_endgame their_endgame =
+  rook_open_file pos their_endgame - rook_open_file pos our_endgame ~swap:true
 
 (* Weighted sum of piece placement (using piece-square tables). *)
 let placement =
@@ -211,7 +219,7 @@ let placement =
 
 (* Relative placement advantage. *)
 let placement pos our_endgame their_endgame =
-  placement pos our_endgame - placement pos their_endgame ~swap:true
+  placement pos their_endgame - placement pos our_endgame ~swap:true
 
 (* Mop-up score (for endgames).
 
@@ -248,16 +256,12 @@ let go pos =
   let pawn_diff = Piece.Kind.value Pawn * 2 * material_weight in
   let our_mop_up =
     if our_material > their_material + pawn_diff
-    && Float.(our_endgame > 0.0)
-    then mop_up pos our_endgame
-    else 0 in
+    then mop_up pos their_endgame else 0 in
   let their_mop_up =
     if their_material > our_material + pawn_diff
-    && Float.(their_endgame > 0.0)
-    then mop_up pos their_endgame ~swap:true
-    else 0 in
+    then mop_up pos our_endgame ~swap:true else 0 in
   material +
   mobility pos our_endgame their_endgame +
-  rook_open_file pos +
+  rook_open_file pos our_endgame their_endgame +
   placement pos our_endgame their_endgame +
   (our_mop_up - their_mop_up)
