@@ -129,7 +129,7 @@ let inf = Int.max_value
 (* Avoid playing any repetition. *)
 let check_repetition search pos =
   Position.hash pos |> Map.find search.transpositions |>
-  Option.value_map ~default:false ~f:(fun n -> n > 0)
+  Option.value_map ~default:false ~f:(fun n -> n >= 2)
 
 (* Move ordering is critical for optimizing the performance of alpha-beta
    pruning. We use some heuristics to determine which moves are likely
