@@ -242,14 +242,17 @@ let go pos =
   let their_material = material pos ~swap:true in
   let our_endgame = endgame_weight our_material in
   let their_endgame = endgame_weight their_material in
-  let material = (our_material + our_pawns) - (their_material + their_pawns) in
+  let material =
+    (our_material + our_pawns) -
+    (their_material + their_pawns) in
+  let pawn_diff = Piece.Kind.value Pawn * 2 * material_weight in
   let our_mop_up =
-    if our_material > their_material + Piece.Kind.value Pawn * 2
+    if our_material > their_material + pawn_diff
     && Float.(our_endgame > 0.0)
     then mop_up pos our_endgame
     else 0 in
   let their_mop_up =
-    if their_material > our_material + Piece.Kind.value Pawn * 2
+    if their_material > our_material + pawn_diff
     && Float.(their_endgame > 0.0)
     then mop_up pos their_endgame ~swap:true
     else 0 in
