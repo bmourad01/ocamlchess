@@ -234,14 +234,12 @@ module Quescience = struct
   and with_moves pos moves ~alpha ~beta =
     State.(update inc_nodes) >>= fun () ->
     let score = Eval.go pos in
-    let moves = List.filter moves
-        ~f:(Fn.compose Option.is_some Legal.capture) in
     if score >= beta then State.return beta
     else let open Continue_or_stop in
       let init = max score alpha in
       let finish = State.return in
-      State.(gets tt) >>= fun tt ->
-      Ordering.qsort moves ~pos |>
+      List.filter moves ~f:(Fn.compose Option.is_some Legal.capture) |>
+      Ordering.qsort ~pos |>
       State.List.fold_until ~init ~finish ~f:(fun alpha m ->
           let pos' = Legal.new_position m in
           go pos' ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
