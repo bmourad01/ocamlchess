@@ -220,8 +220,7 @@ let placement pos our_endgame their_endgame =
 let mop_up ?(swap = false) pos endgame =
   let us = Position.active_board pos in
   let them = Position.inactive_board pos in
-  let b = if swap then them else us in
-  let b' = if swap then us else them in
+  let b, b' = if swap then them, us else us, them in
   let our_king = Bb.(first_set_exn (b & Position.king pos)) in
   let their_king = Bb.(first_set_exn (b' & Position.king pos)) in
   let n =
