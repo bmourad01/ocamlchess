@@ -126,7 +126,7 @@ open State.Syntax
 *)
 let inf = Int.max_value
 
-(* Avoid playing any repetition. *)
+(* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
   Position.hash pos |> Map.find search.transpositions |>
   Option.value_map ~default:false ~f:(fun n -> n >= 2)
