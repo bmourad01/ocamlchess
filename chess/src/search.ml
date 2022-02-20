@@ -42,6 +42,13 @@ type search = t
 
 let create = Fields.create
 
+(* Important not to use `Int.min_value`, since negating it seems to give
+   us back a negative number.
+
+   See: https://ocaml.janestreet.com/ocaml-core/latest/doc/base/Base/Int/index.html#val-abs
+*)
+let inf = Int.max_value
+
 (* Transposition table for caching search results. *)
 module Tt = struct
   type bound = Lower | Upper | Exact
@@ -62,23 +69,26 @@ module Tt = struct
     Hashtbl.set tt ~key:(Position.hash pos) ~data:entry
 
   (* Check for a previous evaluation of the position at a comparable depth.
-     We either have an exact evaluation, or we can reduce the search
-     window. *)
+
+     - Lower: the score is a lower bound, so only return it if it causes a
+              beta cutoff, which would prune the rest of the branch being
+              searched.
+
+     - Upper: the score is an upper bound, so if it doesn't improve alpha
+              we can use that score to prune the rest of the branch being
+              searched.
+
+     - Exact: the score is an exact evaluation for this position.
+  *)
   let lookup tt ~pos ~depth ~alpha ~beta =
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
         match bound with
-        | Lower ->
-          let beta = min beta score in
-          if alpha >= beta then First score
-          else Second (alpha, beta)
-        | Upper ->
-          let alpha = max alpha score in
-          if alpha >= beta then First score
-          else Second (alpha, beta)
-        | Exact -> First score
+        | Lower -> Option.some_if (score >= beta)  score
+        | Upper -> Option.some_if (score <= alpha) score
+        | Exact -> Some score
       end
-    | _ -> Second (alpha, beta)
+    | _ -> None
 end
 
 (* Our state for the entirety of the search. *)
@@ -118,13 +128,6 @@ module State = struct
 end
 
 open State.Syntax
-
-(* Important not to use `Int.min_value`, since negating it seems to give
-   us back a negative number.
-
-   See: https://ocaml.janestreet.com/ocaml-core/latest/doc/base/Base/Int/index.html#val-abs
-*)
-let inf = Int.max_value
 
 (* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
@@ -240,19 +243,28 @@ module Ply = struct
     mutable best : Position.legal;
     mutable alpha : int;
     mutable full_window : bool;
+    mutable bound : Tt.bound;
   }
 
   let create ?(alpha = -inf) moves = {
     best = List.hd_exn moves;
     alpha;
     full_window = true;
+    bound = Tt.Upper;
   }
 
+  (* Beta cutoff. *)
+  let cutoff ply m =
+    ply.best <- m;
+    ply.bound <- Tt.Lower
+
+  (* Alpha may have improved. *)
   let better ply m score =
     if score > ply.alpha then begin
       ply.best <- m;
       ply.alpha <- score;
       ply.full_window <- false;
+      ply.bound <- Tt.Exact;
     end
 end
 
@@ -279,12 +291,11 @@ and negamax pos ~depth ~alpha ~beta =
   || check_repetition search pos
   || Position.halfmove pos >= 100 then State.return 0
   else 
-    let alpha' = alpha in
     (* Find if we evaluated this position previously. *)
     State.(gets tt) >>= fun tt ->
     match Tt.lookup tt ~pos ~depth ~alpha ~beta with
-    | First score -> State.return score
-    | Second (alpha, beta) ->
+    | Some score -> State.return score
+    | None ->
       let moves = Position.legal_moves pos in
       let in_check = Position.in_check pos in
       if List.is_empty moves
@@ -298,20 +309,14 @@ and negamax pos ~depth ~alpha ~beta =
           let moves = Ordering.sort moves ~pos ~tt in
           let depth' = depth - 1 + check_ext in
           let ply = Ply.create moves ~alpha in
-          let finish () = State.return (ply.alpha, false) in
+          let finish () = State.return ply.alpha in
           State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
               let pos' = Legal.new_position m in
               pvs pos' ply ~depth:depth' ~beta >>| fun score ->
-              if score >= beta then begin
-                Tt.(set tt pos ~depth ~score ~best:m ~bound:Lower);
-                Stop (beta, true)
-              end else Continue (Ply.better ply m score)) >>| function
-          | score, true -> score
-          | score, false ->
-            (* No beta cutoff, so update the transposition table. *)
-            let bound = if ply.alpha <= alpha' then Tt.Upper else Tt.Exact in
-            Tt.set tt pos ~depth ~score ~best:ply.best ~bound;
-            score
+              if score >= beta then (Ply.cutoff ply m; Stop beta)
+              else Continue (Ply.better ply m score)) >>| fun score ->
+          Tt.set tt pos ~depth ~score ~best:ply.best ~bound:ply.bound;
+          score
 
 (* The search we start from the root position. *)
 let rootmax moves depth =
