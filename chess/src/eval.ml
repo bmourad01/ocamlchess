@@ -41,8 +41,8 @@ let material =
 (* Weighted sum of the "mobility" of the material. *)
 let mobility =
   (* In order: pawn, knight, bishop, rook, queen, king. *)
-  let start_bouns = [|0; 4; 3; 0; 0; 0|] in
-  let end_bonus    = [|1; 6; 2; 1; 1; 1|] in
+  let start_bonus = [|0; 4; 3; 0; 0; 0|] in
+  let end_bonus   = [|1; 6; 2; 1; 1; 1|] in
   let kinds = Piece.[Knight; Bishop; Rook; Queen; King] in
   fun ?(swap = false) pos endgame ->
     let us = Position.active_board pos in
@@ -70,7 +70,7 @@ let mobility =
       let attackable = Bb.(them - Position.king pos) in
       let n = Bb.(count (single + double + (att & attackable))) in
       let i = Piece.Kind.pawn in
-      let start_bonus = Array.unsafe_get start_bouns i in
+      let start_bonus = Array.unsafe_get start_bonus i in
       let end_bonus = Array.unsafe_get end_bonus i in
       let start = weigh_start (n * start_bonus) endgame in
       let end_ = weigh_end (n * end_bonus) endgame in
@@ -86,7 +86,7 @@ let mobility =
             | Queen  -> fun sq -> Pre.queen  sq occupied
             | King   -> Pre.king in
           let i = Piece.Kind.to_int k in
-          let start_bonus = Array.unsafe_get start_bouns i in
+          let start_bonus = Array.unsafe_get start_bonus i in
           let end_bonus = Array.unsafe_get end_bonus i in
           Bb.(Position.board_of_kind pos k & b) |>
           Bb.fold ~init:acc ~f:(fun acc sq ->
