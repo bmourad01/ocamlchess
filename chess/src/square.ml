@@ -227,3 +227,7 @@ let manhattan sq1 sq2 =
   let rank1, file1 = decomp sq1 in
   let rank2, file2 = decomp sq2 in
   abs (rank1 - rank2) + abs (file1 - file2)
+
+let manhattan_center sq =
+  let rank, file = decomp sq in
+  (max (3 - rank) (rank - 4)) + (max (3 - file) (file - 4))

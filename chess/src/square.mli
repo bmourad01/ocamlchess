@@ -392,3 +392,7 @@ val chebyshev : t -> t -> int
 (** [manhattan sq1 sq2] returns the Manhattan distance between [sq1] and
     [sq2]. *)
 val manhattan : t -> t -> int
+
+(** [manhattan_center sq] returns the Manhattan distance between [sq] and the
+    center of the board. *)
+val manhattan_center : t -> int
