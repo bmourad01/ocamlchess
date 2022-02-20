@@ -185,7 +185,7 @@ module Ordering = struct
   let promote m =
     Legal.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(fun k ->
-        promote_bonus + Piece.Kind.value k * 100)
+        promote_bonus + Piece.Kind.value k * Eval.material_weight)
 
   (* Penalize moving to squares that are attacked by the opponent (unless the
      move is made by a pawn). *)
@@ -342,15 +342,13 @@ let rootmax moves depth =
   State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
       let pos' = Legal.new_position m in
       pvs pos' ply ~depth:depth' ~beta >>= fun score ->
-      (* If we hit beta cutoff at the root, then we've found a maximally
-         good move for us. *)
-      if score >= beta then (Ply.cutoff ply m; State.return @@ Stop beta)
-      else State.(gets nodes) >>| fun nodes ->
-        if Limits.is_max_nodes nodes search.limits then Stop ply.alpha
-        else Continue (Ply.better ply m score)) >>| fun score ->
+      State.(gets nodes) >>| fun nodes ->
+      if Limits.is_max_nodes nodes search.limits
+      then Stop ply.alpha
+      else Continue (Ply.better ply m score)) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
-  Tt.(set tt pos ~depth ~score ~best ~bound:ply.bound);
+  Tt.(set tt pos ~depth ~score ~best ~bound:Tt.Exact);
   best, score
 
 (* Use iterative deepening to optimize the search. This relies on previous
