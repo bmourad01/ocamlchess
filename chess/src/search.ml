@@ -139,9 +139,9 @@ let check_repetition search pos =
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Ordering = struct
-  let capture_bonus = 40
-  let promote_bonus = 30
-  let pawn_control_penalty = -35
+  let capture_bonus = 4000
+  let promote_bonus = 3000
+  let control_penalty = -350
 
   let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen]
   let attackers = Piece.King :: List.rev victims
@@ -170,35 +170,47 @@ module Ordering = struct
           | _ -> None) in
     fun m -> Option.exists best ~f:(Legal.same m)
 
-  let sort ?(quescience = false) ~pos ~tt =
-    let best = if quescience then fun _ -> false else is_best pos tt in
-    let inactive = Position.inactive pos in
-    let pawn_att = Position.Attacks.pawn pos inactive in
-    Legal.sort ~eval:(fun m ->
-        if best m then inf
-        else
-          let capture =
-            Legal.capture m |> Option.value_map ~default:0 ~f:(fun k ->
-                let parent = Legal.parent m in
-                let src = Move.src @@ Legal.move m in
-                let i = Piece.Kind.to_int k in
-                let p = Position.piece_at_square_exn parent src in
-                let j = Piece.(Kind.to_int @@ kind p) in
-                let v = Array.unsafe_get mvv_lva (i + j * num_victims) in
-                capture_bonus + v) in
-          let promote =
-            Legal.move m |> Move.promote |>
-            Option.value_map ~default:0 ~f:(fun k ->
-                promote_bonus + Piece.Kind.value k) in
-          let pawn =
-            let src = Move.src @@ Legal.move m in
-            let parent = Legal.parent m in
-            match Position.piece_at_square_exn parent src with
-            | p when Piece.is_pawn p -> 0
-            | _ ->
-              let dst = Move.dst @@ Legal.move m in
-              if Bb.(dst @ pawn_att) then pawn_control_penalty else 0 in
-          capture + promote + pawn)
+  (* Prioritize captures according to the MVV/LVA table. *)
+  let capture m =
+    Legal.capture m |> Option.value_map ~default:0 ~f:(fun k ->
+        let parent = Legal.parent m in
+        let src = Move.src @@ Legal.move m in
+        let i = Piece.Kind.to_int k in
+        let p = Position.piece_at_square_exn parent src in
+        let j = Piece.(Kind.to_int @@ kind p) in
+        let v = Array.unsafe_get mvv_lva (i + j * num_victims) in
+        capture_bonus + v)
+
+  (* Prioritize promotions by the value of the piece *)
+  let promote m =
+    Legal.move m |> Move.promote |>
+    Option.value_map ~default:0 ~f:(fun k ->
+        promote_bonus + Piece.Kind.value k * 100)
+
+  (* Penalize moving to squares that are attacked by the opponent (unless the
+     move is made by a pawn). *)
+  let attacked att m =
+    let src = Move.src @@ Legal.move m in
+    let p = Position.piece_at_square_exn (Legal.parent m) src  in
+    if Piece.is_pawn p then 0
+    else
+      let dst = Move.dst @@ Legal.move m in
+      if Bb.(dst @ att) then control_penalty else 0
+
+  (* Overall score. *)
+  let score att m = capture m + promote m + attacked att m
+
+  (* Use the transposition table to favor moves that are in the principal
+     variation. *)
+  let sort ~pos ~tt =
+    let best = is_best pos tt in
+    let att = Position.(Attacks.all pos @@ inactive pos) in
+    Legal.sort ~eval:(fun m -> if best m then inf else score att m)
+
+  (* Sort for quescience search, ignoring PV nodes. *)
+  let qsort ~pos =
+    let att = Position.(Attacks.all pos @@ inactive pos) in
+    Legal.sort ~eval:(score att)
 end
 
 let negm = Fn.compose State.return Int.neg
@@ -222,15 +234,14 @@ module Quescience = struct
   and with_moves pos moves ~alpha ~beta =
     State.(update inc_nodes) >>= fun () ->
     let score = Eval.go pos in
-    let moves = List.filter moves ~f:(fun m ->
-        Option.is_some @@ Legal.capture m ||
-        Option.is_some @@ Move.promote @@ Legal.move m) in
+    let moves = List.filter moves
+        ~f:(Fn.compose Option.is_some Legal.capture) in
     if score >= beta then State.return beta
     else let open Continue_or_stop in
       let init = max score alpha in
       let finish = State.return in
       State.(gets tt) >>= fun tt ->
-      Ordering.sort moves ~pos ~tt ~quescience:true |>
+      Ordering.qsort moves ~pos |>
       State.List.fold_until ~init ~finish ~f:(fun alpha m ->
           let pos' = Legal.new_position m in
           go pos' ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
