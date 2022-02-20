@@ -341,17 +341,15 @@ let rootmax moves depth =
   State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
       let pos' = Legal.new_position m in
       pvs pos' ply ~depth:depth' ~beta >>= fun score ->
-      if score >= beta then begin
-        (* If we hit beta cutoff at the root, then we've found a maximally
-           good move for us. *)
-        ply.best <- m;
-        State.return @@ Stop beta
-      end else State.(gets nodes) >>| fun nodes ->
+      (* If we hit beta cutoff at the root, then we've found a maximally
+         good move for us. *)
+      if score >= beta then (Ply.cutoff ply m; State.return @@ Stop beta)
+      else State.(gets nodes) >>| fun nodes ->
         if Limits.is_max_nodes nodes search.limits then Stop ply.alpha
         else Continue (Ply.better ply m score)) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
-  Tt.(set tt pos ~depth ~score ~best ~bound:Exact);
+  Tt.(set tt pos ~depth ~score ~best ~bound:ply.bound);
   best, score
 
 (* Use iterative deepening to optimize the search. This relies on previous
