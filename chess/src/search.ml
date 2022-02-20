@@ -219,6 +219,8 @@ let negm = Fn.compose State.return Int.neg
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
 module Quescience = struct
+  let is_noisy = Fn.compose Option.is_some Legal.capture
+
   let rec go pos ~alpha ~beta =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
@@ -238,8 +240,7 @@ module Quescience = struct
     else let open Continue_or_stop in
       let init = max score alpha in
       let finish = State.return in
-      List.filter moves ~f:(Fn.compose Option.is_some Legal.capture) |>
-      Ordering.qsort ~pos |>
+      List.filter moves ~f:is_noisy |> Ordering.qsort ~pos |>
       State.List.fold_until ~init ~finish ~f:(fun alpha m ->
           let pos' = Legal.new_position m in
           go pos' ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
