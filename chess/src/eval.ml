@@ -259,8 +259,10 @@ let go pos =
   let their_mop_up =
     if their_material > our_material + pawn_diff
     then mop_up pos our_endgame ~swap:true else 0 in
-  material +
-  mobility pos our_endgame their_endgame +
-  rook_open_file pos our_endgame their_endgame +
-  placement pos our_endgame their_endgame +
-  (our_mop_up - their_mop_up)
+  let score =
+    material +
+    mobility pos our_endgame their_endgame +
+    rook_open_file pos our_endgame their_endgame +
+    placement pos our_endgame their_endgame +
+    (our_mop_up - their_mop_up) in
+  score, our_endgame

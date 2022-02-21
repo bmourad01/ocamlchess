@@ -355,6 +355,12 @@ module Legal : sig
   include Base.Comparable.S with type t := t
 end
 
+(** [legal_moves pos] returns a list of legal moves for the active color of
+    position [pos]. It is assumed that [pos] is reachable from the starting 
+    position. May raise if this assumption is violated. No particular order
+    is guaranteed for the resulting list. *)
+val legal_moves : t -> legal list
+
 (** [make_move pos m] applies move [m] to position [pos]. If [m] is not a
     legal move, then [Invalid_argument] is raised. Additionally, if [pos]
     is an illegal position, then either the result is undefined, or an
@@ -362,11 +368,9 @@ end
     the new position. *)
 val make_move : t -> Move.t -> legal
 
-(** [legal_moves pos] returns a list of legal moves for the active color of
-    position [pos]. It is assumed that [pos] is reachable from the starting 
-    position. May raise if this assumption is violated. No particular order
-    is guaranteed for the resulting list. *)
-val legal_moves : t -> legal list
+(** [null_move pos] switches the active player of [pos], pretending that
+    no move was played *)
+val null_move : t -> t
 
 (** Implements SAN (Standard Algebraic Notation). *)
 module San : sig

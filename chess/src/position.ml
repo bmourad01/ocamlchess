@@ -1476,6 +1476,12 @@ let make_move pos move =
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
   | Some legal -> legal
 
+let null_move pos =
+  let pos' = copy pos in
+  set_active pos' @@ inactive pos;
+  set_en_passant pos' Uopt.none;
+  pos'
+
 (* Standard Algebraic Notation (SAN). *)
 
 module San = struct

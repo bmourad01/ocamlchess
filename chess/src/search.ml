@@ -308,7 +308,7 @@ module Quiescence = struct
 
   and with_moves pos moves ~alpha ~beta =
     State.(update inc_nodes) >>= fun () ->
-    let score = Eval.go pos in
+    let score, _ = Eval.go pos in
     if score >= beta then State.return beta
     else let open Continue_or_stop in
       let init = max score alpha in
@@ -358,8 +358,8 @@ end
 
    See: https://en.wikipedia.org/wiki/Principal_variation_search
 *)
-let rec pvs pos ps ~ply ~depth ~beta = let open Plysearch in
-  let f alpha = negamax pos ~ply ~depth ~alpha ~beta:(-ps.alpha) >>= negm in
+let rec pvs pos ps ~null ~ply ~depth ~beta = let open Plysearch in
+  let f alpha = negamax pos ~null ~ply ~depth ~alpha ~beta:(-ps.alpha) >>= negm in
   let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
   f alpha >>= function
   | score when ps.full_window -> State.return score
@@ -367,7 +367,7 @@ let rec pvs pos ps ~ply ~depth ~beta = let open Plysearch in
   | score -> State.return score
 
 (* Search from a new position. *)
-and negamax pos ~ply ~depth ~alpha ~beta =
+and negamax pos ~null ~ply ~depth ~alpha ~beta =
   State.(gets nodes) >>= fun nodes ->
   State.(gets search) >>= fun search ->
   (* Check if we reached the search limits, as well as for positions
@@ -390,23 +390,52 @@ and negamax pos ~ply ~depth ~alpha ~beta =
            responses to a check is typically very low, the search should
            finish quickly.  *)
         let check_ext = Bool.to_int in_check in
-        if depth + check_ext = 0
-        then Quiescence.with_moves pos moves ~alpha ~beta
-        else let open Continue_or_stop in
-          Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-          let depth' = depth - 1 + check_ext in
-          let ply' = ply + 1 in
-          let ps = Plysearch.create moves ~alpha in
-          let finish () = State.return ps.alpha in
-          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-              let pos' = Legal.new_position m in
-              pvs pos' ps ~ply:ply' ~depth:depth' ~beta >>= fun score ->
-              if score >= beta
-              then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-              else State.return @@ Continue (Plysearch.better ps m score))
-          >>| fun score ->
-          Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
-          score
+        null_move pos ~null ~ply ~depth ~alpha ~beta ~check_ext >>= function
+        | Some beta -> State.return beta
+        | None ->
+          if depth + check_ext = 0
+          then Quiescence.with_moves pos moves ~alpha ~beta
+          else let open Continue_or_stop in
+            Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
+            let depth' = depth - 1 + check_ext in
+            let ply' = ply + 1 in
+            let ps = Plysearch.create moves ~alpha in
+            let finish () = State.return ps.alpha in
+            State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+                let pos' = Legal.new_position m in
+                pvs pos' ps ~null:true ~ply:ply' ~depth:depth' ~beta >>= fun score ->
+                if score >= beta
+                then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
+                else State.return @@ Continue (Plysearch.better ps m score))
+            >>| fun score ->
+            Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+            score
+
+(* Null move reduction, see:
+   https://www.chessprogramming.org/Null_Move_Pruning
+
+   The idea is that if we pretend that we pretend we didn't move on this
+   ply, and the opponent's responses still leave us with a good evaluation,
+   then we can conclude that this position should never arise from best
+   play on both sides.
+*)
+and null_move pos ~null ~ply ~depth ~alpha ~beta ~check_ext =
+  let score, endgame = Eval.go pos in
+  (* Perform some checks to see if pruning would lead to a blunder. *)
+  if null
+  && depth > 2
+  && check_ext = 0
+  && score > beta
+  && Float.(endgame < 0.75)
+  then
+    negamax (Position.null_move pos)
+      ~null:false
+      ~ply:(ply + 1)
+      ~depth:(depth - 2 - 1)
+      ~alpha:(-beta)
+      ~beta:((-beta) + 1) >>| fun score ->
+    Option.some_if (score >= beta) beta
+  else State.return None 
 
 (* The search we start from the root position. *)
 let rootmax moves depth =
@@ -420,7 +449,7 @@ let rootmax moves depth =
   let depth' = depth - 1 in
   State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
       let pos' = Legal.new_position m in
-      pvs pos' ps ~ply:1 ~depth:depth' ~beta:inf >>= fun score ->
+      pvs pos' ps ~null:true ~ply:1 ~depth:depth' ~beta:inf >>= fun score ->
       State.(gets nodes) >>| fun nodes ->
       if Limits.is_max_nodes nodes search.limits then Stop ps.alpha
       else begin
