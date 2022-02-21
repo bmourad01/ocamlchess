@@ -54,7 +54,7 @@ val root : t -> Position.t
 
 (** Creates the search information. [transpositions] is the history of
     positions, indexed by their Zobrist keys, coupled with the number
-    of times they have occurred so far in the game *)
+    of times they have occurred so far in the game. *)
 val create :
   limits:limits ->
   root:Position.t ->
