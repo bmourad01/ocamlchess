@@ -109,15 +109,13 @@ let is_noisy = Fn.compose Option.is_some Legal.capture
 (* Our state for the entirety of the search. *)
 module State = struct
   module T = struct
-    module History = Map.Make(Move)
-
     type t = {
       nodes : int;
       search : search;
       tt : Tt.t;
       killer1 : Position.legal Int.Map.t;
       killer2 : Position.legal Int.Map.t;
-      history : int History.t;
+      history : int array;
     } [@@deriving fields]
 
 
@@ -127,7 +125,7 @@ module State = struct
       tt;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
-      history = History.empty;
+      history = Array.create ~len:Square.(count * count) 0;
     }
 
     (* Start a new search while reusing the transposition table. *)
@@ -157,13 +155,12 @@ module State = struct
     (* Update the history score. *)
     let quiet m depth st =
       if is_quiet m then
-        let m = Move.forget_promote @@ Legal.move m in
-        let d = depth * depth in
-        let history = Map.update st.history m ~f:(function
-            | Some d' -> d' + d
-            | None -> d) in
-        {st with history}
-      else st
+        let m = Legal.move m in
+        let src = Square.to_int @@ Move.src m in
+        let dst = Square.to_int @@ Move.dst m in
+        let i = src + dst * Square.count in
+        let d = Array.unsafe_get st.history i + (depth * depth) in
+        Array.unsafe_set st.history i d
   end
 
   include T
@@ -278,10 +275,11 @@ module Ordering = struct
           let k1 = killer m killer1_bonus killer1 in
           let k2 = killer m killer2_bonus killer2 in
           let q =
-            Option.value ~default:0 @@
-            Map.find history @@
-            Move.forget_promote @@
-            Legal.move m in
+            let m = Legal.move m in
+            let src = Square.to_int @@ Move.src m in
+            let dst = Square.to_int @@ Move.dst m in
+            let i = src + dst * Square.count in
+            Array.unsafe_get history i in
           s + k1 + k2 + q)
 
   (* Sort for quiescence search, ignoring PV nodes. *)
@@ -341,7 +339,7 @@ module Plysearch = struct
   (* Beta cutoff. *)
   let cutoff ps ply depth m =
     State.(update @@ killer ply m) >>= fun () ->
-    State.(update @@ quiet m depth) >>| fun () ->
+    State.(gets @@ quiet m depth) >>| fun () ->
     ps.best <- m;
     ps.bound <- Tt.Lower
 
