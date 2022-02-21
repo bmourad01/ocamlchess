@@ -147,7 +147,6 @@ module Ordering = struct
   let promote_bonus = 3000
   let control_penalty = -350
 
-
   (* Most Valuable Victim/Least Valuable Attacker *)
   let mvv_lva =
     let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen] in
