@@ -18,7 +18,6 @@ module Window = struct
   external poll_event : t -> event option = "ml_window_poll_event"
   external close : t -> unit = "ml_window_close"
   external clear : t -> unit = "ml_window_clear"
-  external display : t -> unit = "ml_window_display"
 
   external paint_board :
     t -> Position.t -> int64 -> Square.t option -> Move.t option -> unit =
@@ -160,8 +159,7 @@ let human_or_ai_move c = function
 
 let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
   Window.clear window;
-  Window.paint_board window pos bb sq prev;
-  Window.display window
+  Window.paint_board window pos bb sq prev
 
 (* Prompt the user to quit when ready. *)
 let prompt_end window =

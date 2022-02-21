@@ -6,10 +6,9 @@
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_fields_conv))
  (foreign_stubs
-  (language cxx)
+  (language c)
   (names gui_stubs))
  (link_flags
-  ((-cclib -lstdc++)
-   (-cclib -lsfml-graphics)
-   (-cclib -lsfml-system)
-   (-cclib -lsfml-window))))
+  ((-cclib -lcsfml-graphics)
+   (-cclib -lcsfml-system)
+   (-cclib -lcsfml-window))))
