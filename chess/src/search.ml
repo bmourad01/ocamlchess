@@ -103,6 +103,9 @@ module Tt = struct
     | _ -> None
 end
 
+let is_quiet = Fn.compose Option.is_none Legal.capture
+let is_noisy = Fn.compose Option.is_some Legal.capture
+
 (* Our state for the entirety of the search. *)
 module State = struct
   module T = struct
@@ -138,7 +141,7 @@ module State = struct
 
     (* Update the killer move for a particular ply. *)
     let killer ply m st =
-      if ply > 0 then
+      if ply > 0 && is_quiet m then
         let killer2 = match Map.find st.killer1 ply with
           | Some data -> Map.set st.killer2 ~key:ply ~data
           | None -> st.killer2 in
@@ -271,8 +274,6 @@ let negm = Fn.compose State.return Int.neg
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
 module Quescience = struct
-  let is_noisy = Fn.compose Option.is_some Legal.capture
-
   let rec go pos ~alpha ~beta =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
