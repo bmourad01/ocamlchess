@@ -218,6 +218,9 @@ include Bits
 
 let first = a1 and last = h8
 
+let abs = Utils.fast_abs
+let max = Utils.fast_max
+
 let chebyshev sq1 sq2 =
   let rank1, file1 = decomp sq1 in
   let rank2, file2 = decomp sq2 in

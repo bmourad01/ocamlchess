@@ -13,3 +13,12 @@ module Prng : sig
       then [Invalid_argument] is raised. *)
   val create : int64 -> t
 end
+
+(** Branchless version of [Int.abs]. *)
+val fast_abs : int -> int
+
+(** Branchless version of [Int.min]. *)
+val fast_min : int -> int -> int
+
+(** Branchless version of [Int.max]. *)
+val fast_max : int -> int -> int
