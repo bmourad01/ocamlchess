@@ -70,8 +70,8 @@ module Tt = struct
 
      https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
 
-     For now, we will favor entries that prefer a higher depth, as a deeper
-     search should, intuitively, have the more accurate results.
+     For now, we will favor entries with a higher depth, as a deeper search 
+     should, intuitively, have the more accurate results.
   *)
   let store tt pos ~depth ~score ~best ~bound =
     let entry = {depth; score; best; bound} in
