@@ -366,7 +366,7 @@ let rootmax moves depth =
       end) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
-  Tt.(store tt pos ~depth ~score ~best ~bound:Tt.Exact);
+  Tt.store tt pos ~depth ~score ~best ~bound:Exact;
   best, score
 
 (* Use iterative deepening to optimize the search. This relies on previous
