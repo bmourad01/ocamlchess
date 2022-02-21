@@ -248,13 +248,15 @@ module Ordering = struct
     let att = Position.(Attacks.all pos @@ inactive pos) in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>| fun killer2 ->
-    let killer b = Option.value_map ~default:0 ~f:(const b) in
+    let killer m b =
+      Option.value_map ~default:0 ~f:(fun k ->
+          if Legal.same m k then b else 0) in
     Legal.sort moves ~eval:(fun m ->
         if best m then inf
         else
           let s = score att m in
-          let k1 = killer killer1_bonus killer1 in
-          let k2 = killer killer2_bonus killer2 in
+          let k1 = killer m killer1_bonus killer1 in
+          let k2 = killer m killer2_bonus killer2 in
           s + k1 + k2)
 
   (* Sort for quescience search, ignoring PV nodes. *)
