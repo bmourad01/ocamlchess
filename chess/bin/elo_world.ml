@@ -5,6 +5,19 @@ module Bb = Bitboard
 module Cr = Castling_rights
 module Legal = Position.Legal
 
+module Alphabetical = struct
+  let choice _ moves =
+    List.sort moves ~compare:(fun a b ->
+        let sa = Position.San.of_legal a in
+        let sb = Position.San.of_legal b in
+        String.compare sa sb) |> List.hd_exn, ()
+
+  let player = Player.create ~choice ~state:() ~name:"alphabetical"
+      ~desc:"The player that plays the alphabetically first move. The \
+             moves are ordered by their Standard Algebraic Notation (SAN) \
+             string (e.g. a3 < O-O < Qxg7)."
+end
+
 module Cccp = struct
   (* Try to checkmate the inactive king. *)
   let checkmate = List.filter ~f:(fun mv ->
@@ -146,6 +159,22 @@ module Equalizer = struct
              have been visited the least number of times. The behavior of \
              this player is undefined when not playing from the default \
              starting position."
+end
+
+module Generous = struct
+  let choice _ moves = Legal.best moves ~eval:(fun m ->
+      let pos = Legal.new_position m in
+      let captures =
+        Position.legal_moves pos |>
+        List.fold ~init:0 ~f:(fun acc m -> match Legal.capture m with
+            | Some k -> acc + Piece.Kind.value k
+            | None -> acc) in
+      Some captures) |> List.random_element_exn, ()
+
+  let player = Player.create ~choice ~state:() ~name:"generous"
+      ~desc:"The player that tries to maximize the number of opponent \
+             responses that will capture its pieces. Higher value pieces \
+             are favored."
 end
 
 module Huddle = struct
@@ -291,8 +320,10 @@ end
 let init =
   let once = ref false in
   fun () -> if !once then () else begin
+      Players.register Alphabetical.player;
       Players.register Cccp.player;
       Players.register Equalizer.player;
+      Players.register Generous.player;
       Players.register Huddle.player;
       Players.register Max_oppt_moves.player;
       Players.register Min_oppt_moves.player;
