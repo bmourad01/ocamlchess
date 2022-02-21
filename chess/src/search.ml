@@ -336,15 +336,13 @@ let rootmax moves depth =
   let pos = search.root in
   let moves = Ordering.sort moves ~pos ~tt in
   let ply = Ply.create moves in
-  let beta = inf in
   let finish () = State.return ply.alpha in
   let depth' = depth - 1 in
   State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
       let pos' = Legal.new_position m in
-      pvs pos' ply ~depth:depth' ~beta >>= fun score ->
+      pvs pos' ply ~depth:depth' ~beta:inf >>= fun score ->
       State.(gets nodes) >>| fun nodes ->
-      if Limits.is_max_nodes nodes search.limits
-      then Stop ply.alpha
+      if Limits.is_max_nodes nodes search.limits then Stop ply.alpha
       else Continue (Ply.better ply m score)) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
