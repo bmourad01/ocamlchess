@@ -34,6 +34,7 @@ module Result = struct
     best : Position.legal;
     score : int;
     evals : int;
+    depth : int;
   } [@@deriving fields]
 end
 
@@ -129,7 +130,10 @@ end
 
 open State.Syntax
 
-(* Will playing this position likely lead to a repetition draw? *)
+(* Will playing this position likely lead to a repetition draw?
+   We could reject any repeated position, but in practice we can
+   assume that the opponent will generally try to play for a win
+   instead of a draw. *)
 let check_repetition search pos =
   Position.hash pos |> Map.find search.transpositions |>
   Option.value_map ~default:false ~f:(fun n -> n >= 2)
@@ -143,13 +147,13 @@ module Ordering = struct
   let promote_bonus = 3000
   let control_penalty = -350
 
-  let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen]
-  let attackers = Piece.King :: List.rev victims
-  let num_attackers = List.length attackers
-  let num_victims = List.length victims
 
   (* Most Valuable Victim/Least Valuable Attacker *)
   let mvv_lva =
+    let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen] in
+    let attackers = Piece.King :: List.rev victims in
+    let num_attackers = List.length attackers in
+    let num_victims = List.length victims in
     let tbl = Array.create ~len:(num_victims * num_attackers) 0 in
     List.fold victims ~init:0 ~f:(fun acc victim ->
         let i = Piece.Kind.to_int victim in
@@ -157,7 +161,10 @@ module Ordering = struct
             let j = Piece.Kind.to_int attacker in
             tbl.(i + j * num_victims) <- acc;
             acc + 1)) |> ignore;
-    tbl
+    fun victim attacker ->
+      let i = Piece.Kind.to_int victim in
+      let j = Piece.Kind.to_int attacker in
+      Array.unsafe_get tbl (i + j * num_victims)
 
   (* Check if a particular move was part of the principal variation. *)
   let is_best pos tt =
@@ -172,14 +179,11 @@ module Ordering = struct
 
   (* Prioritize captures according to the MVV/LVA table. *)
   let capture m =
-    Legal.capture m |> Option.value_map ~default:0 ~f:(fun k ->
-        let parent = Legal.parent m in
+    Legal.capture m |> Option.value_map ~default:0 ~f:(fun victim ->
         let src = Move.src @@ Legal.move m in
-        let i = Piece.Kind.to_int k in
-        let p = Position.piece_at_square_exn parent src in
-        let j = Piece.(Kind.to_int @@ kind p) in
-        let v = Array.unsafe_get mvv_lva (i + j * num_victims) in
-        capture_bonus + v)
+        let p = Position.piece_at_square_exn (Legal.parent m) src in
+        let attacker = Piece.kind p in
+        capture_bonus + mvv_lva victim attacker)
 
   (* Prioritize promotions by the value of the piece *)
   let promote m =
@@ -311,7 +315,9 @@ and negamax pos ~depth ~alpha ~beta =
       if List.is_empty moves
       then State.return @@ if in_check then -inf else 0
       else
-        (* Extend the depth limit if we're in check. *)
+        (* Extend the depth limit if we're in check. Since the number of
+           responses to a check is typically very low, the search should
+           finish quickly.  *)
         let check_ext = Bool.to_int in_check in
         if depth + check_ext = 0
         then Quescience.with_moves pos moves ~alpha ~beta
@@ -361,7 +367,7 @@ let rec iterdeep ?(i = 1) st ~moves =
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   if score = inf || i >= st.search.limits.depth
-  then Result.Fields.create ~best ~score ~evals:st.nodes
+  then Result.Fields.create ~best ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 
 let go search = match Position.legal_moves search.root with

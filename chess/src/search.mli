@@ -38,6 +38,9 @@ module Result : sig
 
   (** The number of positions that were evaluated. *)
   val evals : t -> int
+
+  (** The depth that was searched to in order to obtain the result. *)
+  val depth : t -> int
 end
 
 (** The search result. *)
