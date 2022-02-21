@@ -27,23 +27,23 @@ module Bits = struct
 
   (* Valid encodings *)
   module Pieces = struct
-    let white_pawn = (white lsl kind_bits) lor pawn
+    let white_pawn   = (white lsl kind_bits) lor pawn
     let white_knight = (white lsl kind_bits) lor knight
     let white_bishop = (white lsl kind_bits) lor bishop
-    let white_rook = (white lsl kind_bits) lor rook
-    let white_queen = (white lsl kind_bits) lor queen
-    let white_king = (white lsl kind_bits) lor king
-    let black_pawn = (black lsl kind_bits) lor pawn
+    let white_rook   = (white lsl kind_bits) lor rook
+    let white_queen  = (white lsl kind_bits) lor queen
+    let white_king   = (white lsl kind_bits) lor king
+    let black_pawn   = (black lsl kind_bits) lor pawn
     let black_knight = (black lsl kind_bits) lor knight
     let black_bishop = (black lsl kind_bits) lor bishop
-    let black_rook = (black lsl kind_bits) lor rook
-    let black_queen = (black lsl kind_bits) lor queen
-    let black_king = (black lsl kind_bits) lor king
+    let black_rook   = (black lsl kind_bits) lor rook
+    let black_queen  = (black lsl kind_bits) lor queen
+    let black_king   = (black lsl kind_bits) lor king
   end
 
   (* Extract the bits *)
-  let[@inline] color p = p lsr kind_bits
-  let[@inline] kind p = p land kind_mask
+  let[@inline] color p = p lsr  kind_bits
+  let[@inline] kind p  = p land kind_mask
 end
 
 type color = White | Black [@@deriving compare, equal, hash, sexp]
@@ -149,12 +149,13 @@ let[@inline] with_kind p k = create (color p) k
 
 let[@inline] is_white p = p land Bits.color_mask = 0b0_000
 let[@inline] is_black p = p land Bits.color_mask = 0b1_000
-let[@inline] is_pawn p = Bits.(kind p = pawn)
+
+let[@inline] is_pawn   p = Bits.(kind p = pawn)
 let[@inline] is_knight p = Bits.(kind p = knight)
 let[@inline] is_bishop p = Bits.(kind p = bishop)
-let[@inline] is_rook p = Bits.(kind p = rook)
-let[@inline] is_queen p = Bits.(kind p = queen)
-let[@inline] is_king p = Bits.(kind p = king)
+let[@inline] is_rook   p = Bits.(kind p = rook)
+let[@inline] is_queen  p = Bits.(kind p = queen)
+let[@inline] is_king   p = Bits.(kind p = king)
 
 let[@inline] is_sliding p = Kind.is_sliding @@ kind p
 
