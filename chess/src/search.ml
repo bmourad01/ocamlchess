@@ -343,7 +343,11 @@ let rootmax moves depth =
       pvs pos' ply ~depth:depth' ~beta:inf >>= fun score ->
       State.(gets nodes) >>| fun nodes ->
       if Limits.is_max_nodes nodes search.limits then Stop ply.alpha
-      else Continue (Ply.better ply m score)) >>| fun score ->
+      else begin
+        (* Stop if we've found a mating sequence. *)
+        Ply.better ply m score;
+        if score = inf then Stop score else Continue ()
+      end) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
   Tt.(set tt pos ~depth ~score ~best ~bound:Tt.Exact);
