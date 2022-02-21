@@ -163,13 +163,12 @@ end
 
 module Generous = struct
   let choice _ moves = Legal.best moves ~eval:(fun m ->
-      let pos = Legal.new_position m in
-      let captures =
-        Position.legal_moves pos |>
-        List.fold ~init:0 ~f:(fun acc m -> match Legal.capture m with
-            | Some k -> acc + Piece.Kind.value k
-            | None -> acc) in
-      Some captures) |> List.random_element_exn, ()
+      Legal.new_position m |>
+      Position.legal_moves |>
+      List.fold ~init:0 ~f:(fun acc m -> match Legal.capture m with
+          | Some k -> acc + Piece.Kind.value k
+          | None -> acc) |>
+      Option.some) |> List.random_element_exn, ()
 
   let player = Player.create ~choice ~state:() ~name:"generous"
       ~desc:"The player that tries to maximize the number of opponent \
