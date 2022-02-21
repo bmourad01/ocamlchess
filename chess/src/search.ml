@@ -284,7 +284,7 @@ module Ordering = struct
             Legal.move m in
           s + k1 + k2 + q)
 
-  (* Sort for quescience search, ignoring PV nodes. *)
+  (* Sort for quiescence search, ignoring PV nodes. *)
   let qsort ~pos =
     let att = Position.(Attacks.all pos @@ inactive pos) in
     Legal.sort ~eval:(score att)
@@ -292,10 +292,10 @@ end
 
 let negm = Fn.compose State.return Int.neg
 
-(* Quescience search is used when we reach our maximum depth for the main
+(* Quoescence search is used when we reach our maximum depth for the main
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
-module Quescience = struct
+module Quiescence = struct
   let rec go pos ~alpha ~beta =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
@@ -393,7 +393,7 @@ and negamax pos ~ply ~depth ~alpha ~beta =
            finish quickly.  *)
         let check_ext = Bool.to_int in_check in
         if depth + check_ext = 0
-        then Quescience.with_moves pos moves ~alpha ~beta
+        then Quiescence.with_moves pos moves ~alpha ~beta
         else let open Continue_or_stop in
           Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
           let depth' = depth - 1 + check_ext in
