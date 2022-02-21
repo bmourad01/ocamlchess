@@ -31,9 +31,9 @@ type t = {
 
 module Result = struct
   type t = {
-    best_move : Position.legal;
+    best : Position.legal;
     score : int;
-    nodes_searched : int;
+    evals : int;
   } [@@deriving fields]
 end
 
@@ -357,11 +357,12 @@ let rootmax moves depth =
    evaluations stored in the transposition table to prune more nodes with
    each successive iteration. *)
 let rec iterdeep ?(i = 1) st ~moves =
-  let (best_move, score), st = Monad.State.run (rootmax moves i) st in
-  let i = i + 1 in
-  if i > st.search.limits.depth
-  then Result.Fields.create ~best_move ~score ~nodes_searched:st.nodes
-  else iterdeep ~i ~moves @@ State.new_iter st
+  let (best, score), st = Monad.State.run (rootmax moves i) st in
+  (* If we found a mating sequence, then there's no reason to iterate
+     again since it will most likely return the same result. *)
+  if score = inf || i >= st.search.limits.depth
+  then Result.Fields.create ~best ~score ~evals:st.nodes
+  else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 
 let go search = match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"

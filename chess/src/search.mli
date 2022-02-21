@@ -31,13 +31,13 @@ module Result : sig
   type t
 
   (** The best move to play. *)
-  val best_move : t -> Position.legal
+  val best : t -> Position.legal
 
   (** The score that was given to the best move. *)
   val score : t -> int
 
-  (** The number of nodes that were searched. *)
-  val nodes_searched : t -> int
+  (** The number of positions that were evaluated. *)
+  val evals : t -> int
 end
 
 (** The search result. *)
