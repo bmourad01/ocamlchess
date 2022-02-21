@@ -216,7 +216,6 @@ module Ordering = struct
     Legal.sort ~eval:(score att)
 end
 
-let max = Utils.fast_max
 let negm = Fn.compose State.return Int.neg
 
 (* Quescience search is used when we reach our maximum depth for the main

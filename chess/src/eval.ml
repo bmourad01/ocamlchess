@@ -17,8 +17,7 @@ let weigh_start n endgame = Float.(to_int (of_int n * (1.0 - endgame)))
 let weigh_end n endgame = Float.(to_int (of_int n * endgame))
 
 (* Weighted sum of pawns. *)
-let pawns =
-  fun ?(swap = false) pos ->
+let pawns ?(swap = false) pos =
   let us = Position.active_board pos in
   let them = Position.inactive_board pos in
   let b = if swap then them else us in
