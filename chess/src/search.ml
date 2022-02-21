@@ -62,7 +62,7 @@ module Tt = struct
 
   type t = (int64, entry) Hashtbl.t
 
-  let create () = Hashtbl.create (module Int64)
+  let create () = Hashtbl.create ~size:0x40000 (module Int64)
 
   let set tt pos ~depth ~score ~best ~bound =
     let entry = {depth; score; best; bound} in

@@ -4,7 +4,7 @@ module Default_player = struct
   open Chess
   open Core_kernel
 
-  let limits = Search.Limits.create ~depth:6 ~nodes:(Some 1_000_000) ()
+  let limits = Search.Limits.create ~depth:6 ~nodes:(Some 666_666) ()
   let update_transp m pos =
     Position.hash pos |> Map.update m ~f:(function
         | Some n -> n + 1
