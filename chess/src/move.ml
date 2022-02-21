@@ -22,6 +22,7 @@ let create_with_promote src dst promote =
   let promote = Piece.Kind.to_int promote in
   (promote lsl (Square.bits * 2)) lor (dst lsl Square.bits) lor src
 
+let forget_promote m = ((-1) lsl (Square.bits * 2)) lor m
 let square_mask = (1 lsl Square.bits) - 1
 
 let[@inline] src m = Square.of_int_unsafe @@ m land square_mask

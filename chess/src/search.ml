@@ -109,13 +109,17 @@ let is_noisy = Fn.compose Option.is_some Legal.capture
 (* Our state for the entirety of the search. *)
 module State = struct
   module T = struct
+    module History = Map.Make(Move)
+
     type t = {
       nodes : int;
       search : search;
       tt : Tt.t;
       killer1 : Position.legal Int.Map.t;
       killer2 : Position.legal Int.Map.t;
+      history : int History.t;
     } [@@deriving fields]
+
 
     let create ?(tt = Tt.create ()) search = {
       nodes = 0;
@@ -123,6 +127,7 @@ module State = struct
       tt;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
+      history = History.empty;
     }
 
     (* Start a new search while reusing the transposition table. *)
@@ -141,12 +146,23 @@ module State = struct
 
     (* Update the killer move for a particular ply. *)
     let killer ply m st =
-      if ply > 0 && is_quiet m then
+      if ply > 0 then
         let killer2 = match Map.find st.killer1 ply with
           | Some data -> Map.set st.killer2 ~key:ply ~data
           | None -> st.killer2 in
         let killer1 = Map.set st.killer1 ~key:ply ~data:m in
         {st with killer1; killer2}
+      else st
+
+    (* Update the history score. *)
+    let quiet m depth st =
+      if is_quiet m then
+        let m = Move.forget_promote @@ Legal.move m in
+        let d = depth * depth in
+        let history = Map.update st.history m ~f:(function
+            | Some d' -> d' + d
+            | None -> d) in
+        {st with history}
       else st
   end
 
@@ -245,12 +261,13 @@ module Ordering = struct
   let score att m = capture m + promote m + attacked att m
 
   (* Use the transposition table to favor moves that are in the principal
-     variation. Also, apply the killer move heuristic. *)
+     variation. Also, apply the killer move and history heuristics. *)
   let sort moves ~ply ~pos ~tt =
     let best = is_best pos tt in
     let att = Position.(Attacks.all pos @@ inactive pos) in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
-    State.(gets @@ killer2 ply) >>| fun killer2 ->
+    State.(gets @@ killer2 ply) >>= fun killer2 ->
+    State.(gets history) >>| fun history ->
     let killer m b =
       Option.value_map ~default:0 ~f:(fun k ->
           if Legal.same m k then b else 0) in
@@ -260,7 +277,12 @@ module Ordering = struct
           let s = score att m in
           let k1 = killer m killer1_bonus killer1 in
           let k2 = killer m killer2_bonus killer2 in
-          s + k1 + k2)
+          let q =
+            Option.value ~default:0 @@
+            Map.find history @@
+            Move.forget_promote @@
+            Legal.move m in
+          s + k1 + k2 + q)
 
   (* Sort for quescience search, ignoring PV nodes. *)
   let qsort ~pos =
@@ -317,8 +339,9 @@ module Plysearch = struct
   }
 
   (* Beta cutoff. *)
-  let cutoff ps ply m =
-    State.(update @@ killer ply m) >>| fun () ->
+  let cutoff ps ply depth m =
+    State.(update @@ killer ply m) >>= fun () ->
+    State.(update @@ quiet m depth) >>| fun () ->
     ps.best <- m;
     ps.bound <- Tt.Lower
 
@@ -381,7 +404,7 @@ and negamax pos ~ply ~depth ~alpha ~beta =
               let pos' = Legal.new_position m in
               pvs pos' ps ~ply:ply' ~depth:depth' ~beta >>= fun score ->
               if score >= beta
-              then Plysearch.cutoff ps ply m >>| fun () -> Stop beta
+              then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
               else State.return @@ Continue (Plysearch.better ps m score))
           >>| fun score ->
           Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;

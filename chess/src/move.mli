@@ -16,6 +16,9 @@ val create : ?promote:Piece.kind option -> Square.t -> Square.t -> t
     square [dst], with an explicit promotion [promote]. *)
 val create_with_promote : Square.t -> Square.t -> Piece.kind -> t
 
+(** Removes the promotion information. The resulting move is invalid. *)
+val forget_promote : t -> t
+
 (** [src m] returns the source square of move [m]. *)
 val src : t -> Square.t
 
