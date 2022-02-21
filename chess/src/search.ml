@@ -414,8 +414,8 @@ and negamax pos ~null ~ply ~depth ~alpha ~beta =
 (* Null move reduction, see:
    https://www.chessprogramming.org/Null_Move_Pruning
 
-   The idea is that if we pretend that we pretend we didn't move on this
-   ply, and the opponent's responses still leave us with a good evaluation,
+   The idea is that if we pretend that we didn't move on this ply, and
+   all of the opponent's responses still leave us with an advantage,
    then we can conclude that this position should never arise from best
    play on both sides.
 *)
@@ -426,7 +426,7 @@ and null_move pos ~null ~ply ~depth ~alpha ~beta ~check_ext =
   && depth > 2
   && check_ext = 0
   && score > beta
-  && Float.(endgame < 0.75)
+  && Float.(endgame < 0.6)
   then
     negamax (Position.null_move pos)
       ~null:false
