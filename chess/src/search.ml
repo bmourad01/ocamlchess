@@ -65,9 +65,20 @@ module Tt = struct
 
   let create () = Hashtbl.create ~size:0x40000 (module Int64)
 
-  let set tt pos ~depth ~score ~best ~bound =
+  (* Store the evaluation results for the position. There is consideration to
+     be made for the replacement strategy:
+
+     https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
+
+     For now, we will favor entries that prefer a higher depth, as a deeper
+     search should, intuitively, have the more accurate results.
+  *)
+  let store tt pos ~depth ~score ~best ~bound =
     let entry = {depth; score; best; bound} in
-    Hashtbl.set tt ~key:(Position.hash pos) ~data:entry
+    Position.hash pos |> Hashtbl.update tt ~f:(function
+        | Some old when depth > old.depth -> entry
+        | Some old -> old
+        | None -> entry)
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
@@ -330,7 +341,7 @@ and negamax pos ~depth ~alpha ~beta =
               pvs pos' ply ~depth:depth' ~beta >>| fun score ->
               if score >= beta then (Ply.cutoff ply m; Stop beta)
               else Continue (Ply.better ply m score)) >>| fun score ->
-          Tt.set tt pos ~depth ~score ~best:ply.best ~bound:ply.bound;
+          Tt.store tt pos ~depth ~score ~best:ply.best ~bound:ply.bound;
           score
 
 (* The search we start from the root position. *)
@@ -355,7 +366,7 @@ let rootmax moves depth =
       end) >>| fun score ->
   (* Update the transposition table and return the results. *)
   let best = ply.best in
-  Tt.(set tt pos ~depth ~score ~best ~bound:Tt.Exact);
+  Tt.(store tt pos ~depth ~score ~best ~bound:Tt.Exact);
   best, score
 
 (* Use iterative deepening to optimize the search. This relies on previous
