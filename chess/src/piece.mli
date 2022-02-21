@@ -1,13 +1,10 @@
 (** Number of bits needed to store the color. *)
-
 val color_bits : int
 
 (** Number of bits needed to store the kind. *)
-
 val kind_bits : int
 
 (** Number of bits to store the entire piece. *)
-
 val bits : int
 
 (** The color of a piece. *)
