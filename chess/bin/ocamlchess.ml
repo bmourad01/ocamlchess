@@ -5,6 +5,7 @@ module Default_player = struct
   open Core_kernel
 
   let limits = Search.Limits.create ~depth:7 ~nodes:(Some 500_000) ()
+
   let update_transp m pos =
     Position.hash pos |> Map.update m ~f:(function
         | Some n -> n + 1
