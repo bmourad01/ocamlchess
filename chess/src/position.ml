@@ -1478,7 +1478,8 @@ let make_move pos move =
 
 let null_move pos =
   let pos' = copy pos in
-  set_active pos' @@ inactive pos;
+  Makemove.flip_active pos';
+  Makemove.update_hash pos' ~f:(Hash.Update.en_passant pos'.en_passant);
   set_en_passant pos' Uopt.none;
   pos'
 
