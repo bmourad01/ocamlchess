@@ -1,6 +1,6 @@
 open Cmdliner
 
-module Default_player = struct
+module Caml_player = struct
   open Chess
   open Core_kernel
 
@@ -26,7 +26,7 @@ module Default_player = struct
 end
 
 let man_players () =
-  Players.register Default_player.player;
+  Players.register Caml_player.player;
   Elo_world.init ();  
   `S "PLAYER" ::
   `Pre "Predefined algorithms for the computer." :: begin
