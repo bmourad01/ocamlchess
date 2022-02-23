@@ -6,19 +6,19 @@ module Caml_player = struct
 
   let limits = Search.Limits.create ~depth:7 ~nodes:(Some 500_000) ()
 
-  let update_transp m pos =
+  let update_history m pos =
     Position.hash pos |> Map.update m ~f:(function
         | Some n -> n + 1
         | None -> 1)
 
-  let choice (transpositions, tt) moves =
+  let choice (history, tt) moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
-    let transpositions = update_transp transpositions root in
-    let search = Search.create ~limits ~root ~transpositions ~tt () in
+    let history = update_history history root in
+    let search = Search.create ~limits ~root ~history ~tt () in
     let m = Search.(Result.best @@ go search) in
     let new_pos = Position.Legal.new_position m in
-    let transpositions = update_transp transpositions new_pos in
-    m, (transpositions, tt)
+    let history = update_history history new_pos in
+    m, (history, tt)
 
   let name = "caml"
   let create () =

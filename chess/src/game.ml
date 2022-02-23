@@ -69,7 +69,7 @@ module T = struct
     result : result;
     start : Position.t;
     moves : Position.legal list;
-    transpositions : int Int64.Map.t;
+    history : int Int64.Map.t;
   } [@@deriving compare, equal, sexp, fields]
 end
 
@@ -85,7 +85,7 @@ let is_over game = match game.result with
   | Ongoing -> false
   | _ -> true
 
-let result_of pos transpositions =
+let result_of pos history =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
   let hash = Position.hash pos in
@@ -95,7 +95,7 @@ let result_of pos transpositions =
   then Draw `Seventy_five_move_rule
   else if List.is_empty @@ Position.legal_moves pos
   then if in_check then Checkmate c else Draw `Stalemate
-  else if Map.find_exn transpositions hash >= 5 then Draw `Fivefold_repetition
+  else if Map.find_exn history hash >= 5 then Draw `Fivefold_repetition
   else Ongoing 
 
 let create
@@ -107,10 +107,10 @@ let create
     ?(black =  None)
     ?(start = Position.start)
     () =
-  let transpositions = Int64.Map.singleton (Position.hash start) 1 in
-  let result = result_of start transpositions in
+  let history = Int64.Map.singleton (Position.hash start) 1 in
+  let result = result_of start history in
   Fields.create ~event ~site ~date ~round ~white ~black
-    ~result ~start ~moves:[] ~transpositions
+    ~result ~start ~moves:[] ~history
 
 exception Game_over
 exception Invalid_parent
@@ -128,8 +128,8 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
       else legal :: game.moves in
     let pos = Legal.new_position legal in
     let hash = Position.hash pos in
-    let transpositions =
-      Map.update game.transpositions hash ~f:(function
+    let history =
+      Map.update game.history hash ~f:(function
           | Some n -> n + 1
           | None -> 1) in
     (* In the following order, we check:
@@ -137,7 +137,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
        2. Resignation
        3. Declared draw (must be validated). *)
     let result = 
-      let result = result_of pos transpositions in
+      let result = result_of pos history in
       match result with
       | Ongoing -> begin
           match resigned with
@@ -147,14 +147,14 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
             | Some draw -> match draw with
               | `Mutual_agreement -> Draw (draw :> draw)
               | `Threefold_repetition ->
-                if Map.find_exn transpositions hash >= 3
+                if Map.find_exn history hash >= 3
                 then Draw (draw :> draw) else raise Invalid_threefold
               | `Fifty_move_rule ->
                 if Position.halfmove pos >= 100
                 then Draw (draw :> draw) else raise Invalid_fifty_move
         end
       | _ -> result in
-    {game with moves; result; transpositions}
+    {game with moves; result; history}
   else raise Game_over
 
 let to_string game =

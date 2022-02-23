@@ -89,7 +89,7 @@ end
 type t = {
   limits : limits;
   root : Position.t;
-  transpositions : int Int64.Map.t;
+  history : int Int64.Map.t;
   tt : Tt.t;
 } [@@deriving fields]
 
@@ -105,8 +105,8 @@ end
 type result = Result.t
 type search = t
 
-let create ?(tt = Tt.create ()) ~limits ~root ~transpositions () =
-  Fields.create ~limits ~root ~transpositions ~tt
+let create ?(tt = Tt.create ()) ~limits ~root ~history () =
+  Fields.create ~limits ~root ~history ~tt
 
 (* Important not to use `Int.min_value`, since negating it seems to give
    us back a negative number.
@@ -198,7 +198,7 @@ open State.Syntax
    assume that the opponent will generally try to play for a win
    instead of a draw. *)
 let check_repetition search pos =
-  Position.hash pos |> Map.find search.transpositions |>
+  Position.hash pos |> Map.find search.history |>
   Option.value_map ~default:false ~f:(fun n -> n >= 2)
 
 (* Move ordering is critical for optimizing the performance of alpha-beta

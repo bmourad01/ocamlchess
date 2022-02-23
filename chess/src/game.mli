@@ -81,7 +81,7 @@ val moves : t -> Position.legal list
 
 (** The map from position hashes to the number of times they have occurred in
     the game. *)
-val transpositions : t -> int Core_kernel.Int64.Map.t
+val history : t -> int Core_kernel.Int64.Map.t
 
 (** Returns the current position of the game. *)
 val position : t -> Position.t
