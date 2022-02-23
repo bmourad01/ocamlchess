@@ -40,13 +40,11 @@ module Tt = struct
   let clear tt = Hashtbl.clear tt
 
   (* Once the search has decided on a move, the depth values for the entries
-     need to be decremented by two ply. If they reach a negative depth, then
-     they should be evicted from the table as they will never be used in
-     a lookup. *)
-  let decrement tt =
-    Hashtbl.filter_map_inplace tt ~f:(fun entry ->
-        let depth = entry.depth - 2 in
-        if depth < 0 then None else Some {entry with depth})
+     need to be "aged" (decremented by two ply). The older entries will
+     eventually get evicted by future calls to `store`. *)
+  let age tt =
+    Hashtbl.map_inplace tt ~f:(fun entry ->
+        {entry with depth = entry.depth - 2})
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
@@ -488,5 +486,5 @@ let go search = match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"
   | moves ->
     let res = iterdeep ~moves @@ State.create search in
-    Tt.decrement search.tt;
+    Tt.age search.tt;
     res
