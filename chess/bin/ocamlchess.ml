@@ -11,30 +11,36 @@ module Caml_player = struct
         | Some n -> n + 1
         | None -> 1)
 
-  let choice transpositions moves =
+  let choice (transpositions, tt) moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
     let transpositions = update_transp transpositions root in
-    let search = Search.create ~limits ~root ~transpositions in
+    let search = Search.create ~limits ~root ~transpositions ~tt () in
     let m = Search.(Result.best @@ go search) in
     let new_pos = Position.Legal.new_position m in
     let transpositions = update_transp transpositions new_pos in
-    m, transpositions
+    m, (transpositions, tt)
 
-  let player = Player.create ~choice ~state:Int64.Map.empty ~name:"caml"
-      ~desc:"The flagship player, based on traditional game tree search and \
-             evaluation."
+  let name = "caml"
+  let create () =
+    let player =
+      let state = Int64.Map.empty, Search.Tt.create () in
+      Player.create ~choice ~state ~name
+        ~desc:"The flagship player, based on traditional game tree search and \
+               evaluation." in
+    Player.T player
 end
 
 let man_players () =
-  Players.register Caml_player.player;
+  Players.register Caml_player.name Caml_player.create;
   Elo_world.init ();  
   `S "PLAYER" ::
   `Pre "Predefined algorithms for the computer." :: begin
-    Players.enumerate () |> Base.List.map
+    Players.enumerate () |> Core_kernel.Sequence.map
       ~f:(fun Chess.Player.(T player) ->
           `P (Format.sprintf "%s: %s"
                 (Chess.Player.name player)
-                (Chess.Player.desc player)))
+                (Chess.Player.desc player))) |>
+    Core_kernel.Sequence.to_list
   end
 
 let choose_player ?(none_ok = true) = function

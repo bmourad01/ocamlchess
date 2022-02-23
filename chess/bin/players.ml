@@ -5,11 +5,15 @@ open Chess
    displaying the available players. *)
 let players = ref @@ Map.empty (module String)
 
-let register player =
-  let key = Player.name player in
-  match Map.add !players ~key ~data:Player.(T player) with
-  | `Duplicate -> invalid_argf "Player %s is already registered" key ()
+let register name player =
+  match Map.add !players ~key:name ~data:player with
+  | `Duplicate -> invalid_argf "Player %s is already registered" name ()
   | `Ok m -> players := m
 
-let lookup name = Map.find !players name
-let enumerate () = Map.data !players
+let lookup name =
+  Map.find !players name |>
+  Option.map ~f:(fun create -> create ())
+
+let enumerate () =
+  Map.data !players |> Sequence.of_list |>
+  Sequence.map ~f:(fun create -> create ())

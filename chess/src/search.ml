@@ -23,33 +23,6 @@ end
 
 type limits = Limits.t
 
-type t = {
-  limits : limits;
-  root : Position.t;
-  transpositions : int Int64.Map.t;
-} [@@deriving fields]
-
-module Result = struct
-  type t = {
-    best : Position.legal;
-    score : int;
-    evals : int;
-    depth : int;
-  } [@@deriving fields]
-end
-
-type result = Result.t
-type search = t
-
-let create = Fields.create
-
-(* Important not to use `Int.min_value`, since negating it seems to give
-   us back a negative number.
-
-   See: https://ocaml.janestreet.com/ocaml-core/latest/doc/base/Base/Int/index.html#val-abs
-*)
-let inf = Int.max_value
-
 (* Transposition table for caching search results. *)
 module Tt = struct
   type bound = Lower | Upper | Exact
@@ -64,6 +37,16 @@ module Tt = struct
   type t = (int64, entry) Hashtbl.t
 
   let create () = Hashtbl.create ~size:0x40000 (module Int64)
+  let clear tt = Hashtbl.clear tt
+
+  (* Once the search has decided on a move, the depth values for the entries
+     need to be decremented by two ply. If they reach a negative depth, then
+     they should be evicted from the table as they will never be used in
+     a lookup. *)
+  let decrement tt =
+    Hashtbl.filter_map_inplace tt ~f:(fun entry ->
+        let depth = entry.depth - 2 in
+        if depth < 0 then None else Some {entry with depth})
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
@@ -103,6 +86,35 @@ module Tt = struct
     | _ -> None
 end
 
+type t = {
+  limits : limits;
+  root : Position.t;
+  transpositions : int Int64.Map.t;
+  tt : Tt.t;
+} [@@deriving fields]
+
+module Result = struct
+  type t = {
+    best : Position.legal;
+    score : int;
+    evals : int;
+    depth : int;
+  } [@@deriving fields]
+end
+
+type result = Result.t
+type search = t
+
+let create ?(tt = Tt.create ()) ~limits ~root ~transpositions () =
+  Fields.create ~limits ~root ~transpositions ~tt
+
+(* Important not to use `Int.min_value`, since negating it seems to give
+   us back a negative number.
+
+   See: https://ocaml.janestreet.com/ocaml-core/latest/doc/base/Base/Int/index.html#val-abs
+*)
+let inf = Int.max_value
+
 let is_quiet = Fn.compose Option.is_none Legal.capture
 let is_noisy = Fn.compose Option.is_some Legal.capture
 
@@ -118,11 +130,10 @@ module State = struct
       history : int array;
     } [@@deriving fields]
 
-
-    let create ?(tt = Tt.create ()) search = {
+    let create search = {
       nodes = 0;
       search;
-      tt;
+      tt = search.tt;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
       history = Array.create ~len:Square.(count * count) 0;
@@ -475,4 +486,7 @@ let rec iterdeep ?(i = 1) st ~moves =
 
 let go search = match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"
-  | moves -> iterdeep ~moves @@ State.create search
+  | moves ->
+    let res = iterdeep ~moves @@ State.create search in
+    Tt.decrement search.tt;
+    res

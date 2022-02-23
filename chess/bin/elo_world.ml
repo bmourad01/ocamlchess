@@ -5,6 +5,8 @@ module Bb = Bitboard
 module Cr = Castling_rights
 module Legal = Position.Legal
 
+let thunk player = fun () -> Player.T player
+
 module Alphabetical = struct
   let choice _ moves =
     List.sort moves ~compare:(fun a b ->
@@ -12,7 +14,8 @@ module Alphabetical = struct
         let sb = Position.San.of_legal b in
         String.compare sa sb) |> List.hd_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"alphabetical"
+  let name = "alphabetical"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that plays the alphabetically first move. The \
              moves are ordered by their Standard Algebraic Notation (SAN) \
              string (e.g. a3 < O-O < Qxg7)."
@@ -51,7 +54,8 @@ module Cccp = struct
           | [] -> push moves in
     List.random_element_exn moves, ()
 
-  let player = Player.create ~choice ~state:() ~name:"cccp"
+  let name = "cccp"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that plays the \"checkmate, check, capture, \
              push strategy\" (in that order)."
 end
@@ -153,7 +157,8 @@ module Equalizer = struct
       ] in
     {moved; visited_white; visited_black}
 
-  let player = Player.create ~choice ~state ~name:"equalizer"
+  let name = "equalizer"
+  let create = thunk @@ Player.create ~choice ~state ~name
       ~desc:"The player that prefers to move pieces that have been moved the \
              fewest number of times, then prefers to move to squares that \
              have been visited the least number of times. The behavior of \
@@ -170,7 +175,8 @@ module Generous = struct
           | None -> acc) |>
       Option.some) |> List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"generous"
+  let name = "generous"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that tries to maximize the number of opponent \
              responses that will capture its pieces. Higher value pieces \
              are favored."
@@ -188,7 +194,8 @@ module Huddle = struct
           acc - Square.chebyshev king_sq sq) |>
       Option.return) |> List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"huddle"
+  let name = "huddle"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that tries to minimize the distance between its \
              pieces and its king."
 end
@@ -199,7 +206,8 @@ module Max_oppt_moves = struct
       Some (List.length @@ Position.legal_moves pos)) |>
                        List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"max-oppt-moves"
+  let name = "max-oppt-moves"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that attempts to maximize the number of \
              moves the opponent can make."
 end
@@ -210,7 +218,8 @@ module Min_oppt_moves = struct
       Some (-(List.length @@ Position.legal_moves pos))) |>
                        List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"min-oppt-moves"
+  let name = "min-oppt-moves"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that attempts to minimize the number of \
              moves the opponent can make."
 end
@@ -226,7 +235,8 @@ module Opposite_color = struct
       Bb.filter ~f:(opposite_color active) @@
       Position.board_of_color pos active) |> List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"opposite-color"
+  let name = "opposite-color"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that tries to maximize the number of pieces \
              that are on squares that are opposite of its color."
 end
@@ -251,8 +261,8 @@ module Pacifist = struct
               material + Piece.Kind.value k) in
       Some score) |> List.random_element_exn, ()
 
-
-  let player = Player.create ~choice ~state:() ~name:"pacifist"
+  let name = "pacifist"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that avoids, in the following priority, \
              checkmating the opponent, checking the opponent, and \
              capturing pieces. Failing that, it will capture the \
@@ -261,7 +271,8 @@ end
 
 module Random = struct
   let choice _ moves = List.random_element_exn moves, ()
-  let player = Player.create ~choice ~state:() ~name:"random"
+  let name = "random"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that makes moves randomly."
 end
 
@@ -275,7 +286,8 @@ module Same_color = struct
       Bb.filter ~f:(same_color active) @@
       Position.board_of_color pos active) |> List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"same-color"
+  let name = "same-color"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that tries to maximize the number of pieces \
              that are on squares of its color."
 end
@@ -291,7 +303,8 @@ module Suicide_king = struct
       let k2 = Bb.(first_set_exn (king & inactive_board)) in
       Some (-(Square.chebyshev k1 k2))) |> List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"suicide-king"
+  let name = "suicide-king"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that attempts to minimize the distance between \
              both kings."
 end
@@ -311,7 +324,8 @@ module Swarm = struct
             acc - Square.chebyshev king_sq sq) |>
         Option.return) |> List.random_element_exn, ()
 
-  let player = Player.create ~choice ~state:() ~name:"swarm"
+  let name = "swarm"
+  let create = thunk @@ Player.create ~choice ~state:() ~name
       ~desc:"The player that tries to minimize the distance between its \
              pieces and the inactive king."
 end
@@ -319,18 +333,18 @@ end
 let init =
   let once = ref false in
   fun () -> if !once then () else begin
-      Players.register Alphabetical.player;
-      Players.register Cccp.player;
-      Players.register Equalizer.player;
-      Players.register Generous.player;
-      Players.register Huddle.player;
-      Players.register Max_oppt_moves.player;
-      Players.register Min_oppt_moves.player;
-      Players.register Opposite_color.player;
-      Players.register Pacifist.player;
-      Players.register Random.player;
-      Players.register Same_color.player;
-      Players.register Suicide_king.player;
-      Players.register Swarm.player;
+      Players.register Alphabetical.name Alphabetical.create;
+      Players.register Cccp.name Cccp.create;
+      Players.register Equalizer.name Equalizer.create;
+      Players.register Generous.name Generous.create;
+      Players.register Huddle.name Huddle.create;
+      Players.register Max_oppt_moves.name Max_oppt_moves.create;
+      Players.register Min_oppt_moves.name Min_oppt_moves.create;
+      Players.register Opposite_color.name Opposite_color.create;
+      Players.register Pacifist.name Pacifist.create;
+      Players.register Random.name Random.create;
+      Players.register Same_color.name Same_color.create;
+      Players.register Suicide_king.name Suicide_king.create;
+      Players.register Swarm.name Swarm.create;
       once := true;
     end

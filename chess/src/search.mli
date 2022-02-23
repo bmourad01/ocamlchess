@@ -25,6 +25,18 @@ type limits = Limits.t
 (** The search information. *)
 type t
 
+(** The transposition table. *)
+module Tt : sig
+  (** The transposition table. *)
+  type t
+
+  (** Creates the table. *)
+  val create : unit -> t
+
+  (** Clears the table. *)
+  val clear : t -> unit
+end
+
 (** The search result. *)
 module Result : sig
   (** The search result. *)
@@ -52,15 +64,22 @@ val limits : t -> limits
 (** Returns the position to begin searching from. *)
 val root : t -> Position.t
 
-(** Creates the search information. [transpositions] is the history of
-    positions, indexed by their Zobrist keys, coupled with the number
-    of times they have occurred so far in the game. *)
+(** Creates the search information.
+
+    [transpositions] is the history of positions, indexed by their
+    Zobrist keys, coupled with the number of times they have occurred
+    so far in the game.
+
+    [tt] is the transposition table, used to cache search results.
+*)
 val create :
+  ?tt:Tt.t ->
   limits:limits ->
   root:Position.t ->
   transpositions:int Core_kernel.Int64.Map.t ->
+  unit ->
   t
 
-(** [go search] runs the game tree search and returns the search result.
-    Raises [Invalid_argument] if there are no legal moves. *)
+(** [go search ~clear] runs the game tree search and returns the search
+    result. Raises [Invalid_argument] if there are no legal moves. *)
 val go : t -> result
