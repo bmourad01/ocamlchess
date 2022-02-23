@@ -18,7 +18,7 @@ module Caml_player = struct
     let m = Search.(Result.best @@ go search) in
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
-    m, (history, tt)
+    m, (history, Search.tt search)
 
   let name = "caml"
   let create () =

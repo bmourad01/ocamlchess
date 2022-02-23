@@ -64,6 +64,9 @@ val limits : t -> limits
 (** Returns the position to begin searching from. *)
 val root : t -> Position.t
 
+(** Returns the transposition table. *)
+val tt : t -> Tt.t
+
 (** Creates the search information.
 
     [history] is the history of positions, indexed by their
