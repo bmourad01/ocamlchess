@@ -214,22 +214,22 @@ module Hash = struct
       (* Pieces *)
       for k = 0; to Piece.Kind.count - 1 do
         for sq = 0 to Square.count - 1 do
-          piece_keys.(piece_key_idx Piece.Color.white k sq) <- rng#rand;
-          piece_keys.(piece_key_idx Piece.Color.black k sq) <- rng#rand;
+          piece_keys.(piece_key_idx Piece.Color.white k sq) <- rng ();
+          piece_keys.(piece_key_idx Piece.Color.black k sq) <- rng ();
         done
       done;
       (* En passant file *)
       for file = 0 to Square.File.count - 1 do
-        en_passant_keys.(file) <- rng#rand
+        en_passant_keys.(file) <- rng ();
       done;
       (* Castling rights *)
       for c = 0 to Piece.Color.count - 1 do
         for s = 0 to Cr.Side.count - 1 do
-          castle_keys.(castle_key_idx c s) <- rng#rand
+          castle_keys.(castle_key_idx c s) <- rng ();
         done
       done;
       (* White to move *)
-      rng#rand
+      rng ()
   end
 
   module Update = struct
