@@ -373,9 +373,9 @@ end
 
    See: https://en.wikipedia.org/wiki/Principal_variation_search
 *)
-let rec pvs ?(null = false) pos ps ~beta ~ply ~depth = let open Plysearch in
+let rec pvs ps pos ~beta ~ply ~depth = let open Plysearch in
   let f alpha =
-    negamax pos ~null ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
+    negamax pos ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
   let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
   f alpha >>= function
   | score when ps.full_window -> State.return score
@@ -383,7 +383,7 @@ let rec pvs ?(null = false) pos ps ~beta ~ply ~depth = let open Plysearch in
   | score -> State.return score
 
 (* Search from a new position. *)
-and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
+and negamax pos ~alpha ~beta ~ply ~depth =
   State.(gets nodes) >>= fun nodes ->
   State.(gets search) >>= fun search ->
   (* Check if we reached the search limits, as well as for positions
@@ -413,8 +413,8 @@ and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
           let ps = Plysearch.create moves ~alpha in
           let finish () = State.return ps.alpha in
           State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-              let pos' = Legal.new_position m in
-              pvs pos' ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
+              Legal.new_position m |>
+              pvs ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
               >>= fun score -> if score >= beta
               then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
               else State.return @@ Continue (Plysearch.better ps m score))
@@ -431,10 +431,9 @@ let rootmax moves depth =
   Ordering.sort moves ~ply:0 ~pos ~tt >>= fun moves ->
   let ps = Plysearch.create moves in
   let finish () = State.return ps.alpha in
-  let depth' = depth - 1 in
   State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-      let pos' = Legal.new_position m in
-      pvs pos' ps ~null:true ~ply:1 ~depth:depth' ~beta:inf >>= fun score ->
+      Legal.new_position m |>
+      pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
       State.(gets nodes) >>| fun nodes ->
       if Limits.is_max_nodes nodes search.limits then Stop ps.alpha
       else begin
