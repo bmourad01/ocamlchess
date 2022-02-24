@@ -113,7 +113,10 @@ let create ?(tt = Tt.create ()) ~limits ~root ~history () =
 *)
 let inf = Int.max_value
 
-let is_quiet = Fn.compose Option.is_none Legal.capture
+let is_quiet m =
+  Option.is_none @@ Legal.capture m &&
+  Option.is_none @@ Move.promote @@ Legal.move m
+
 let is_noisy = Fn.compose Option.is_some Legal.capture
 
 (* Our state for the entirety of the search. *)
@@ -367,8 +370,9 @@ end
 
    See: https://en.wikipedia.org/wiki/Principal_variation_search
 *)
-let rec pvs pos ps ~null ~ply ~depth ~beta = let open Plysearch in
-  let f alpha = negamax pos ~null ~ply ~depth ~alpha ~beta:(-ps.alpha) >>= negm in
+let rec pvs ?(null = false) pos ps ~beta ~ply ~depth = let open Plysearch in
+  let f alpha =
+    negamax pos ~null ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
   let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
   f alpha >>= function
   | score when ps.full_window -> State.return score
@@ -376,7 +380,7 @@ let rec pvs pos ps ~null ~ply ~depth ~beta = let open Plysearch in
   | score -> State.return score
 
 (* Search from a new position. *)
-and negamax pos ~null ~ply ~depth ~alpha ~beta =
+and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
   State.(gets nodes) >>= fun nodes ->
   State.(gets search) >>= fun search ->
   (* Check if we reached the search limits, as well as for positions
@@ -395,30 +399,85 @@ and negamax pos ~null ~ply ~depth ~alpha ~beta =
       if List.is_empty moves
       then State.return @@ if in_check then -inf else 0
       else
-        (* Extend the depth limit if we're in check. Since the number of
-           responses to a check is typically very low, the search should
-           finish quickly.  *)
-        let check_ext = Bool.to_int in_check in
-        null_move pos ~null ~ply ~depth ~alpha ~beta ~check_ext >>= function
-        | Some beta -> State.return beta
+        let score, endgame = Eval.go pos in
+        pre pos moves
+          ~alpha
+          ~beta
+          ~ply
+          ~depth
+          ~in_check
+          ~null
+          ~score
+          ~endgame >>= function
+        | Some score -> State.return score
         | None ->
-          if depth + check_ext = 0
+          (* Extend the depth limit if we're in check. Since the number of
+             responses to a check is typically very low, the search should
+             finish quickly. *)
+          let check = Bool.to_int in_check in
+          if depth + check <= 0
           then Quiescence.with_moves pos moves ~alpha ~beta
           else let open Continue_or_stop in
             Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-            let depth' = depth - 1 + check_ext in
-            let ply' = ply + 1 in
             let ps = Plysearch.create moves ~alpha in
             let finish () = State.return ps.alpha in
+            (* PV node. *)
+            let pv = beta - alpha > 1 in
+            (* Futility pruning. *)
+            let moves =
+              if not pv &&
+                 let margin = Piece.Kind.value Rook * Eval.material_weight in
+                 depth = 1 && not in_check && score + margin <= alpha
+              then List.filter moves ~f:is_quiet else moves in
             State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
                 let pos' = Legal.new_position m in
-                pvs pos' ps ~null:true ~ply:ply' ~depth:depth' ~beta >>= fun score ->
-                if score >= beta
+                pvs pos' ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
+                >>= fun score -> if score >= beta
                 then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
                 else State.return @@ Continue (Plysearch.better ps m score))
             >>| fun score ->
             Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
             score
+
+(* Try to prune this branch before doing the search. *)
+and pre pos moves ~alpha ~beta ~ply ~depth ~in_check ~null ~score ~endgame =
+  begin if in_check then State.return None
+    else razor pos moves ~depth ~alpha ~beta ~score ~endgame end >>= function
+  | Some _ as cut -> State.return cut
+  | None -> match rfp pos ~depth ~beta ~score with
+    | Some _ as cut -> State.return cut
+    | None -> if null || in_check
+      then State.return None
+      else nmr pos ~ply ~depth ~alpha ~beta ~score ~endgame
+
+(* Razoring, see: https://www.chessprogramming.org/Razoring
+
+   If we're on the horizon and we are unlikely to improve alpha,
+   then drop into a quiescence search.
+*)
+and razor pos moves ~depth ~alpha ~beta ~score ~endgame =
+  let margin = Piece.Kind.value Rook * Eval.material_weight in
+  if Float.(endgame < 0.7) && depth = 1 && score + margin <= alpha
+  then Quiescence.with_moves pos moves ~alpha ~beta >>| Option.some
+  else State.return None
+
+(* Reverse futility pruning, see:
+   https://www.chessprogramming.org/Reverse_Futility_Pruning 
+*)
+and rfp pos ~depth ~beta ~score =
+  if depth >= 1 && depth <= Array.length rfp_margin then
+    let margin =
+      Array.unsafe_get rfp_margin (depth - 1) * Eval.material_weight in
+    let s = score - margin in
+    Option.some_if (s >= beta) s
+  else None
+
+and rfp_margin = Piece.Kind.[|
+    value Pawn;
+    value Knight;
+    value Bishop;
+    value Rook
+  |]
 
 (* Null move reduction, see:
    https://www.chessprogramming.org/Null_Move_Pruning
@@ -428,19 +487,13 @@ and negamax pos ~null ~ply ~depth ~alpha ~beta =
    then we can conclude that this position should never arise from best
    play on both sides.
 *)
-and null_move pos ~null ~ply ~depth ~alpha ~beta ~check_ext =
-  let score, endgame = Eval.go pos in
-  (* Perform some checks to see if pruning would lead to a blunder. *)
-  if null
-  && depth > 2
-  && check_ext = 0
-  && score > beta
-  && Float.(endgame < 0.6)
-  then
-    negamax (Position.null_move pos)
-      ~null:false
+and nmr pos ~ply ~depth ~alpha ~beta ~score ~endgame =
+  let r = 3 in
+  if Float.(endgame < 0.7) && depth >= r && score >= beta then
+    Position.null_move pos |> negamax
+      ~null:true
       ~ply:(ply + 1)
-      ~depth:(depth - 2 - 1)
+      ~depth:(depth - r - 1)
       ~alpha:(-beta)
       ~beta:((-beta) + 1) >>| fun score ->
     Option.some_if (score >= beta) beta

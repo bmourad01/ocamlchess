@@ -4,13 +4,14 @@ module Bb = Bitboard
 module Pre = Precalculated
 
 let material_weight = 100
+let razor_margin = material_weight * Piece.Kind.value Rook
 
 let endgame_material =
-  Float.of_int (material_weight * begin
-      Piece.Kind.value Rook * 2 +
-      Piece.Kind.value Bishop +
-      Piece.Kind.value Knight
-    end)
+  let material =
+    Piece.Kind.value Rook * 2 +
+    Piece.Kind.value Bishop +
+    Piece.Kind.value Knight in
+  Float.of_int (material_weight * material)
 
 (* Weigh a score based on whether we're in endgame phase or not. *)
 let weigh_start n endgame = Float.(to_int (of_int n * (1.0 - endgame)))
