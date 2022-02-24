@@ -40,12 +40,12 @@ module Tt = struct
   let clear tt = Hashtbl.clear tt
 
   (* Once the search has decided on a move, the depth values for the entries
-     need to be "aged" (decremented by two ply). The older entries will
-     eventually get evicted by future calls to `store`. *)
+     need to be "aged" (decremented by two ply). Entries that reach the root
+     should be evicted. *)
   let age tt =
     Hashtbl.filter_map_inplace tt ~f:(fun entry ->
         let depth = entry.depth - 2 in
-        if depth < 0 then None else Some {entry with depth})
+        if depth <= 0 then None else Some {entry with depth})
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
