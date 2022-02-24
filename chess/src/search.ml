@@ -43,8 +43,9 @@ module Tt = struct
      need to be "aged" (decremented by two ply). The older entries will
      eventually get evicted by future calls to `store`. *)
   let age tt =
-    Hashtbl.map_inplace tt ~f:(fun entry ->
-        {entry with depth = entry.depth - 2})
+    Hashtbl.filter_map_inplace tt ~f:(fun entry ->
+        let depth = entry.depth - 2 in
+        if depth < 0 then None else Some {entry with depth})
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
@@ -77,14 +78,10 @@ module Tt = struct
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
         match bound with
-        | Lower ->
-          let alpha = max alpha score in
-          if alpha >= beta then First score
-          else Second (alpha, beta)
-        | Upper ->
-          let beta = min beta score in
-          if alpha >= beta then First score
-          else Second (alpha, beta)
+        | Lower when score >= beta -> First score
+        | Lower -> Second (max alpha score, beta)
+        | Upper when score <= alpha -> First score
+        | Upper -> Second (alpha, min beta score)
         | Exact -> First score
       end
     | _ -> Second (alpha, beta)
@@ -405,115 +402,25 @@ and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
       if List.is_empty moves
       then State.return @@ if in_check then -inf else 0
       else
-        let score, endgame = Eval.go pos in
-        pre pos moves
-          ~alpha
-          ~beta
-          ~ply
-          ~depth
-          ~in_check
-          ~null
-          ~score
-          ~endgame >>= function
-        | Some score -> State.return score
-        | None ->
-          (* Extend the depth limit if we're in check. Since the number of
-             responses to a check is typically very low, the search should
-             finish quickly. *)
-          let check = Bool.to_int in_check in
-          if depth + check <= 0
-          then Quiescence.with_moves pos moves ~alpha ~beta
-          else let open Continue_or_stop in
-            Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-            let ps = Plysearch.create moves ~alpha in
-            let finish () = State.return ps.alpha in
-            (* PV node. *)
-            let pv = beta - alpha > 1 in
-            (* Futility pruning. *)
-            let moves =
-              if pv || in_check then moves
-              else if depth >= 1 && depth <= Array.length fp_margin then
-                let margin =
-                  Array.unsafe_get fp_margin (depth - 1) * Eval.material_weight in
-                if score + margin > alpha then moves
-                else List.filter moves ~f:is_quiet
-              else moves in
-            State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-                let pos' = Legal.new_position m in
-                pvs pos' ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
-                >>= fun score -> if score >= beta
-                then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-                else State.return @@ Continue (Plysearch.better ps m score))
-            >>| fun score ->
-            Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
-            score
-
-and fp_margin = Piece.Kind.[|
-    0;
-    value Pawn * 2;
-    value Bishop;
-    value Rook;
-  |]
-
-(* Try to prune this branch before doing the search. *)
-and pre pos moves ~alpha ~beta ~ply ~depth ~in_check ~null ~score ~endgame =
-  begin if in_check then State.return None
-    else razor pos moves ~depth ~alpha ~beta ~score ~endgame end >>= function
-  | Some _ as cut -> State.return cut
-  | None -> match rfp pos ~depth ~beta ~score with
-    | Some _ as cut -> State.return cut
-    | None -> if null || in_check
-      then State.return None
-      else nmr pos ~ply ~depth ~alpha ~beta ~score ~endgame
-
-(* Razoring, see: https://www.chessprogramming.org/Razoring
-
-   If we're on the horizon and we are unlikely to improve alpha,
-   then drop into a quiescence search.
-*)
-and razor pos moves ~depth ~alpha ~beta ~score ~endgame =
-  let margin = Piece.Kind.value Rook * Eval.material_weight in
-  if Float.(endgame < 0.7) && depth = 1 && score + margin <= alpha
-  then Quiescence.with_moves pos moves ~alpha ~beta >>| Option.some
-  else State.return None
-
-(* Reverse futility pruning, see:
-   https://www.chessprogramming.org/Reverse_Futility_Pruning 
-*)
-and rfp pos ~depth ~beta ~score =
-  if depth >= 1 && depth <= Array.length rfp_margin then
-    let margin =
-      Array.unsafe_get rfp_margin (depth - 1) * Eval.material_weight in
-    let s = score - margin in
-    Option.some_if (s >= beta) s
-  else None
-
-and rfp_margin = Piece.Kind.[|
-    value Pawn;
-    value Knight;
-    value Bishop;
-    value Rook
-  |]
-
-(* Null move reduction, see:
-   https://www.chessprogramming.org/Null_Move_Pruning
-
-   The idea is that if we pretend that we didn't move on this ply, and
-   all of the opponent's responses still leave us with an advantage,
-   then we can conclude that this position should never arise from best
-   play on both sides.
-*)
-and nmr pos ~ply ~depth ~alpha ~beta ~score ~endgame =
-  let r = 3 in
-  if Float.(endgame < 0.7) && depth >= r && score >= beta then
-    Position.null_move pos |> negamax
-      ~null:true
-      ~ply:(ply + 1)
-      ~depth:(depth - r - 1)
-      ~alpha:(-beta)
-      ~beta:((-beta) + 1) >>| fun score ->
-    Option.some_if (score >= beta) beta
-  else State.return None 
+        (* Extend the depth limit if we're in check. Since the number of
+           responses to a check is typically very low, the search should
+           finish quickly. *)
+        let check = Bool.to_int in_check in
+        if depth + check <= 0
+        then Quiescence.with_moves pos moves ~alpha ~beta
+        else let open Continue_or_stop in
+          Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
+          let ps = Plysearch.create moves ~alpha in
+          let finish () = State.return ps.alpha in
+          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+              let pos' = Legal.new_position m in
+              pvs pos' ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
+              >>= fun score -> if score >= beta
+              then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
+              else State.return @@ Continue (Plysearch.better ps m score))
+          >>| fun score ->
+          Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+          score
 
 (* The search we start from the root position. *)
 let rootmax moves depth =
