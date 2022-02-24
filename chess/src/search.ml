@@ -77,11 +77,17 @@ module Tt = struct
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
         match bound with
-        | Lower -> Option.some_if (score >= beta)  score
-        | Upper -> Option.some_if (score <= alpha) score
-        | Exact -> Some score
+        | Lower ->
+          let alpha = max alpha score in
+          if alpha >= beta then First score
+          else Second (alpha, beta)
+        | Upper ->
+          let beta = min beta score in
+          if alpha >= beta then First score
+          else Second (alpha, beta)
+        | Exact -> First score
       end
-    | _ -> None
+    | _ -> Second (alpha, beta)
 end
 
 type t = {
@@ -392,8 +398,8 @@ and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
     (* Find if we evaluated this position previously. *)
     State.(gets tt) >>= fun tt ->
     match Tt.lookup tt ~pos ~depth ~alpha ~beta with
-    | Some score -> State.return score
-    | None ->
+    | First score -> State.return score
+    | Second (alpha, beta) ->
       let moves = Position.legal_moves pos in
       let in_check = Position.in_check pos in
       if List.is_empty moves

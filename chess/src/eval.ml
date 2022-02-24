@@ -4,7 +4,6 @@ module Bb = Bitboard
 module Pre = Precalculated
 
 let material_weight = 100
-let razor_margin = material_weight * Piece.Kind.value Rook
 
 let endgame_material =
   let material =
