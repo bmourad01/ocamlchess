@@ -425,10 +425,13 @@ and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
             let pv = beta - alpha > 1 in
             (* Futility pruning. *)
             let moves =
-              if not pv &&
-                 let margin = Piece.Kind.value Rook * Eval.material_weight in
-                 depth = 1 && not in_check && score + margin <= alpha
-              then List.filter moves ~f:is_quiet else moves in
+              if pv || in_check then moves
+              else if depth >= 1 && depth <= Array.length fp_margin then
+                let margin =
+                  Array.unsafe_get fp_margin (depth - 1) * Eval.material_weight in
+                if score + margin > alpha then moves
+                else List.filter moves ~f:is_quiet
+              else moves in
             State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
                 let pos' = Legal.new_position m in
                 pvs pos' ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
@@ -438,6 +441,13 @@ and negamax ?(null = false) pos ~alpha ~beta ~ply ~depth =
             >>| fun score ->
             Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
             score
+
+and fp_margin = Piece.Kind.[|
+    0;
+    value Pawn * 2;
+    value Bishop;
+    value Rook;
+  |]
 
 (* Try to prune this branch before doing the search. *)
 and pre pos moves ~alpha ~beta ~ply ~depth ~in_check ~null ~score ~endgame =
