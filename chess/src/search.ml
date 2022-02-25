@@ -368,89 +368,94 @@ module Plysearch = struct
     end
 end
 
-(* Principal variation search can lead to more pruning if the move ordering
-   was (more or less) correct.
+module Main = struct
+  (* Search from a new position. *)
+  let rec go pos ~alpha ~beta ~ply ~depth =
+    State.(gets nodes) >>= fun nodes ->
+    State.(gets search) >>= fun search ->
+    (* Check if we reached the search limits, as well as for positions
+       where a player may claim a draw. *)
+    if Limits.is_max_nodes nodes search.limits
+    || check_repetition search pos
+    || Position.halfmove pos >= 100 then State.return 0
+    else 
+      (* Find if we evaluated this position previously. *)
+      State.(gets tt) >>= fun tt ->
+      match Tt.lookup tt ~pos ~depth ~alpha ~beta with
+      | First score -> State.return score
+      | Second (alpha, beta) ->
+        let moves = Position.legal_moves pos in
+        let in_check = Position.in_check pos in
+        if List.is_empty moves
+        then State.return @@ if in_check then -inf else 0
+        else with_moves pos moves ~alpha ~beta ~ply ~depth ~in_check
 
-   See: https://en.wikipedia.org/wiki/Principal_variation_search
-*)
-let rec pvs ps pos ~beta ~ply ~depth = let open Plysearch in
-  let f alpha =
-    negamax pos ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
-  let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
-  f alpha >>= function
-  | score when ps.full_window -> State.return score
-  | score when score > ps.alpha && score < beta -> f (-beta)
-  | score -> State.return score
+  (* Principal variation search can lead to more pruning if the move ordering
+     was (more or less) correct.
 
-(* Search from a new position. *)
-and negamax pos ~alpha ~beta ~ply ~depth =
-  State.(gets nodes) >>= fun nodes ->
-  State.(gets search) >>= fun search ->
-  (* Check if we reached the search limits, as well as for positions
-     where a player may claim a draw. *)
-  if Limits.is_max_nodes nodes search.limits
-  || check_repetition search pos
-  || Position.halfmove pos >= 100 then State.return 0
-  else 
-    (* Find if we evaluated this position previously. *)
+     See: https://en.wikipedia.org/wiki/Principal_variation_search
+  *)
+  and pvs ps pos ~beta ~ply ~depth = let open Plysearch in
+    let f alpha = go pos ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
+    let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
+    f alpha >>= function
+    | score when ps.full_window -> State.return score
+    | score when score > ps.alpha && score < beta -> f (-beta)
+    | score -> State.return score
+
+  (* The meat of the search. *)
+  and with_moves pos moves ~alpha ~beta ~ply ~depth ~in_check =
+    (* Extend the depth limit if we're in check. Since the number of
+       responses to a check is typically very low, the search should
+       finish quickly. *)
+    let check = Bool.to_int in_check in
+    if depth + check <= 0
+    then Quiescence.with_moves pos moves ~alpha ~beta
+    else let open Continue_or_stop in
+      State.(gets tt) >>= fun tt ->
+      Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
+      let ps = Plysearch.create moves ~alpha in
+      let finish () = State.return ps.alpha in
+      State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+          Legal.new_position m |>
+          pvs ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
+          >>= fun score -> if score >= beta
+          then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
+          else State.return @@ Continue (Plysearch.better ps m score))
+      >>| fun score ->
+      Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+      score
+
+  (* The search we start from the root position. *)
+  and root moves depth =
+    let open Continue_or_stop in
+    State.(gets search) >>= fun search ->
     State.(gets tt) >>= fun tt ->
-    match Tt.lookup tt ~pos ~depth ~alpha ~beta with
-    | First score -> State.return score
-    | Second (alpha, beta) ->
-      let moves = Position.legal_moves pos in
-      let in_check = Position.in_check pos in
-      if List.is_empty moves
-      then State.return @@ if in_check then -inf else 0
-      else
-        (* Extend the depth limit if we're in check. Since the number of
-           responses to a check is typically very low, the search should
-           finish quickly. *)
-        let check = Bool.to_int in_check in
-        if depth + check <= 0
-        then Quiescence.with_moves pos moves ~alpha ~beta
-        else let open Continue_or_stop in
-          Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-          let ps = Plysearch.create moves ~alpha in
-          let finish () = State.return ps.alpha in
-          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-              Legal.new_position m |>
-              pvs ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
-              >>= fun score -> if score >= beta
-              then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-              else State.return @@ Continue (Plysearch.better ps m score))
-          >>| fun score ->
-          Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
-          score
-
-(* The search we start from the root position. *)
-let rootmax moves depth =
-  let open Continue_or_stop in
-  State.(gets search) >>= fun search ->
-  State.(gets tt) >>= fun tt ->
-  let pos = search.root in
-  Ordering.sort moves ~ply:0 ~pos ~tt >>= fun moves ->
-  let ps = Plysearch.create moves in
-  let finish () = State.return ps.alpha in
-  State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-      Legal.new_position m |>
-      pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
-      State.(gets nodes) >>| fun nodes ->
-      if Limits.is_max_nodes nodes search.limits then Stop ps.alpha
-      else begin
-        (* Stop if we've found a mating sequence. *)
-        Plysearch.better ps m score;
-        if score = inf then Stop score else Continue ()
-      end) >>| fun score ->
-  (* Update the transposition table and return the results. *)
-  let best = ps.best in
-  Tt.store tt pos ~depth ~score ~best ~bound:Exact;
-  best, score
+    let pos = search.root in
+    Ordering.sort moves ~ply:0 ~pos ~tt >>= fun moves ->
+    let ps = Plysearch.create moves in
+    let finish () = State.return ps.alpha in
+    State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+        Legal.new_position m |>
+        pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
+        State.(gets nodes) >>| fun nodes ->
+        if Limits.is_max_nodes nodes search.limits then Stop ps.alpha
+        else begin
+          (* Stop if we've found a mating sequence. *)
+          Plysearch.better ps m score;
+          if score = inf then Stop score else Continue ()
+        end) >>| fun score ->
+    (* Update the transposition table and return the results. *)
+    let best = ps.best in
+    Tt.store tt pos ~depth ~score ~best ~bound:Exact;
+    best, score
+end
 
 (* Use iterative deepening to optimize the search. This relies on previous
    evaluations stored in the transposition table to prune more nodes with
    each successive iteration. *)
 let rec iterdeep ?(i = 1) st ~moves =
-  let (best, score), st = Monad.State.run (rootmax moves i) st in
+  let (best, score), st = Monad.State.run (Main.root moves i) st in
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   if score = inf || i >= st.search.limits.depth
