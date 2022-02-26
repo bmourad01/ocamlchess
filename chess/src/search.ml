@@ -129,7 +129,7 @@ let is_quiet m =
   Option.is_none @@ Legal.capture m &&
   Option.is_none @@ Move.promote @@ Legal.move m
 
-let is_noisy = Fn.compose Option.is_some Legal.capture
+let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
