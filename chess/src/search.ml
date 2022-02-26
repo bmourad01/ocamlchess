@@ -429,7 +429,6 @@ module Main = struct
         score
 
   (* Try to reduce the depth. *)
-  and reduction_factor = 2
   and reduce pos ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     (* 1. PV nodes shall be wholly considered.
        2. If we're in check, then a null move would be illegal.
@@ -441,6 +440,9 @@ module Main = struct
       nmr pos ~score ~beta ~ply ~depth >>= function
       | Some beta -> State.return @@ Some beta
       | None -> razor pos ~score ~alpha ~beta ~depth
+
+  (* Amount to reduce the depth by. *)
+  and reduction_factor = 2
 
   (* Null move reduction. *)
   and nmr pos ~score ~beta ~ply ~depth =
