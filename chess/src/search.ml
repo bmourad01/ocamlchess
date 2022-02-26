@@ -316,9 +316,9 @@ module Quiescence = struct
     then State.return 0
     else
       let moves = Position.legal_moves pos in
-      let in_check = Position.in_check pos in
+      let check = Position.in_check pos in
       if List.is_empty moves
-      then State.return @@ if in_check then -inf else 0
+      then State.return @@ if check then -inf else 0
       else with_moves pos moves ~alpha ~beta
 
   and with_moves pos moves ~alpha ~beta =
@@ -371,9 +371,6 @@ end
 (* The main search of the position. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
-  (* Reduction factor. *)
-  let reduce = 2
-
   (* Search from a new position. *)
   let rec go ?(null = true) pos ~alpha ~beta ~ply ~depth =
     State.(gets nodes) >>= fun nodes ->
@@ -389,10 +386,10 @@ module Main = struct
       | First score -> State.return score
       | Second (alpha, beta) ->
         let moves = Position.legal_moves pos in
-        let in_check = Position.in_check pos in
+        let check = Position.in_check pos in
         if List.is_empty moves
-        then State.return @@ if in_check then -inf else 0
-        else with_moves pos moves ~alpha ~beta ~ply ~depth ~in_check ~null
+        then State.return @@ if check then -inf else 0
+        else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
 
   (* Principal variation search can lead to more pruning if the move ordering
      was (more or less) correct.
@@ -408,13 +405,13 @@ module Main = struct
     | score -> State.return score
 
   (* The actual search, given all the legal moves. *)
-  and with_moves ?(null = true) pos moves ~alpha ~beta ~ply ~depth ~in_check =
+  and with_moves ?(null = true) pos moves ~alpha ~beta ~ply ~depth ~check =
     (* Extend the depth limit if we're in check. Since the number of
        responses to a check is typically very low, the search should
        finish quickly. *)
-    let depth = depth + Bool.to_int in_check in
+    let depth = depth + Bool.to_int check in
     if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta
-    else prune pos ~alpha ~beta ~ply ~depth ~in_check ~depth ~null >>= function
+    else reduce pos ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
@@ -431,44 +428,48 @@ module Main = struct
         Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
 
-  (* Try to prune this node before we search its children. *)
-  and prune pos ~alpha ~beta ~ply ~depth ~in_check ~depth ~null =
+  (* Try to reduce the depth. *)
+  and reduction_factor = 2
+  and reduce pos ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     (* 1. PV nodes shall be wholly considered.
        2. If we're in check, then a null move would be illegal.
        3. Two null moves in a row would produce no meaningful results. *)
-    if beta - alpha > 1 || in_check || not null
+    if beta - alpha > 1 || check || not null
     then State.return None
     else
       let score, _ = Eval.go pos in
       nmr pos ~score ~beta ~ply ~depth >>= function
       | Some beta -> State.return @@ Some beta
-      | None -> (* Razoring. *)
-        let margin = Piece.Kind.value Pawn in
-        let score = score + margin in
-        if score < beta && depth = 1 then
-          Quiescence.go pos ~alpha ~beta >>| fun score' ->
-          Some (max score score')
-        else
-          let score = score + margin in
-          if score < beta && depth < reduce * 2 then
-            Quiescence.go pos ~alpha ~beta >>| fun score' ->
-            Option.some_if (score' < beta) (max score score')
-          else State.return None
+      | None -> razor pos ~score ~alpha ~beta ~depth
 
   (* Null move reduction. *)
   and nmr pos ~score ~beta ~ply ~depth =
-    if score >= beta && depth > reduce then
+    if score >= beta && depth > reduction_factor then
       (* Forfeit our right to play a move. *)
       Position.null_move pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)
-        ~depth:(depth - 1 - reduce)
+        ~depth:(depth - 1 - reduction_factor)
         ~null:false >>| fun score ->
       (* Opponent's best response still produces a beta cutoff, so we know
          this position is unlikely. *)
       Option.some_if (score >= beta) beta
     else State.return None
+
+  (* Razoring. *)
+  and razor pos ~score ~alpha ~beta ~depth =
+    let margin = Piece.Kind.value Pawn in
+    let score = score + margin in
+    if score < beta && depth = 1 then
+      Quiescence.go pos ~alpha ~beta >>| fun score' ->
+      Some (max score score')
+    else
+      let score = score + margin in
+      if score < beta && depth < reduction_factor * 2 then
+        Quiescence.go pos ~alpha ~beta >>| fun score' ->
+        Option.some_if (score' < beta) (max score score')
+      else State.return None
 
   (* The search we start from the root position. *)
   and root moves depth =
