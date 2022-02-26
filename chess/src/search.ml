@@ -424,6 +424,12 @@ module Main = struct
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
+        let moves =
+          if futile pos ~alpha ~beta ~depth ~check ~null
+          then List.filter moves ~f:(fun m ->
+              Position.in_check @@ Legal.new_position m ||
+              is_noisy m)
+          else moves in
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
         let ps = Plysearch.create moves ~alpha in
         let finish () = State.return ps.alpha in
@@ -437,11 +443,25 @@ module Main = struct
         Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
 
+  (* Futility pruning. *)
+  and futile pos ~alpha ~beta ~depth ~check ~null =
+    beta - alpha <= 1 &&
+    not check &&
+    null &&
+    depth < Array.length futility_margin &&
+    let score, _ = Eval.go pos in
+    let margin = Array.unsafe_get futility_margin depth in
+    score + margin <= alpha
+
+  and futility_margin = Piece.Kind.[|
+      0;
+      value Pawn * Eval.material_weight;
+      value Knight * Eval.material_weight;
+      value Rook * Eval.material_weight;
+    |]
+
   (* Try to reduce the depth. *)
   and reduce pos ~alpha ~beta ~ply ~depth ~check ~depth ~null =
-    (* 1. PV nodes shall be wholly considered.
-       2. If we're in check, then a null move would be illegal.
-       3. Two null moves in a row would produce no meaningful results. *)
     if beta - alpha > 1 || check || not null
     then State.return None
     else
