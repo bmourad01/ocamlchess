@@ -1481,6 +1481,7 @@ let null_move pos =
   Makemove.flip_active pos';
   Makemove.update_hash pos' ~f:(Hash.Update.en_passant pos'.en_passant);
   set_en_passant pos' Uopt.none;
+  set_halfmove pos' 0;
   pos'
 
 (* Standard Algebraic Notation (SAN). *)

@@ -305,7 +305,7 @@ end
 
 let negm = Fn.compose State.return Int.neg
 
-(* Quoescence search is used when we reach our maximum depth for the main
+(* Quiescence search is used when we reach our maximum depth for the main
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
 module Quiescence = struct
@@ -368,9 +368,11 @@ module Plysearch = struct
     end
 end
 
+(* The main search of the position. The core of it is the negamax algorithm
+   with alpha-beta pruning (and other enhancements). *)
 module Main = struct
   (* Search from a new position. *)
-  let rec go pos ~alpha ~beta ~ply ~depth =
+  let rec go ?(null = true) pos ~alpha ~beta ~ply ~depth =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
     (* Check if we reached the search limits, as well as for positions
@@ -378,8 +380,7 @@ module Main = struct
     if Limits.is_max_nodes nodes search.limits
     || check_repetition search pos
     || Position.halfmove pos >= 100 then State.return 0
-    else 
-      (* Find if we evaluated this position previously. *)
+    else (* Find if we evaluated this position previously. *)
       State.(gets tt) >>= fun tt ->
       match Tt.lookup tt ~pos ~depth ~alpha ~beta with
       | First score -> State.return score
@@ -388,14 +389,14 @@ module Main = struct
         let in_check = Position.in_check pos in
         if List.is_empty moves
         then State.return @@ if in_check then -inf else 0
-        else with_moves pos moves ~alpha ~beta ~ply ~depth ~in_check
+        else with_moves pos moves ~alpha ~beta ~ply ~depth ~in_check ~null
 
   (* Principal variation search can lead to more pruning if the move ordering
      was (more or less) correct.
 
      See: https://en.wikipedia.org/wiki/Principal_variation_search
   *)
-  and pvs ps pos ~beta ~ply ~depth = let open Plysearch in
+  and pvs ?(null = true) ps pos ~beta ~ply ~depth = let open Plysearch in
     let f alpha = go pos ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
     let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
     f alpha >>= function
@@ -403,28 +404,53 @@ module Main = struct
     | score when score > ps.alpha && score < beta -> f (-beta)
     | score -> State.return score
 
-  (* The meat of the search. *)
-  and with_moves pos moves ~alpha ~beta ~ply ~depth ~in_check =
-    (* Extend the depth limit if we're in check. Since the number of
-       responses to a check is typically very low, the search should
-       finish quickly. *)
-    let check = Bool.to_int in_check in
-    if depth + check <= 0
-    then Quiescence.with_moves pos moves ~alpha ~beta
-    else let open Continue_or_stop in
-      State.(gets tt) >>= fun tt ->
-      Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-      let ps = Plysearch.create moves ~alpha in
-      let finish () = State.return ps.alpha in
-      State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-          Legal.new_position m |>
-          pvs ps ~beta ~ply:(ply + 1) ~depth:(depth - 1 + check)
-          >>= fun score -> if score >= beta
-          then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-          else State.return @@ Continue (Plysearch.better ps m score))
-      >>| fun score ->
-      Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
-      score
+  (* The actual search, given all the legal moves. *)
+  and with_moves ?(null = true) pos moves ~alpha ~beta ~ply ~depth ~in_check =
+    if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta
+    else nmr pos ~beta ~ply ~depth ~in_check ~depth ~null >>= function
+      | Some beta -> State.return beta
+      | None -> let open Continue_or_stop in
+        (* Extend the depth limit if we're in check. Since the number of
+           responses to a check is typically very low, the search should
+           finish quickly. *)
+        let depth = depth + Bool.to_int in_check in
+        State.(gets tt) >>= fun tt ->
+        Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
+        let ps = Plysearch.create moves ~alpha in
+        let finish () = State.return ps.alpha in
+        State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+            Legal.new_position m |>
+            pvs ps ~beta ~ply:(ply + 1) ~depth:(depth - 1) >>= fun score ->
+            if score >= beta
+            then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
+            else State.return @@ Continue (Plysearch.better ps m score))
+        >>| fun score ->
+        Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+        score
+
+  (* Null move reduction, see:
+     https://www.chessprogramming.org/Null_Move_Pruning 
+  *)
+  and nmr pos ~beta ~ply ~depth ~in_check ~depth ~null =
+    (* R is the depth reduction factor. *)
+    let r = 2 in
+    (* 1. If we're in check, then a null move would be illegal.
+       2. Two null moves in a row would produce no meaningful results.
+       3. We must be at least depth R in order to reduce. *)
+    if in_check || not null || depth <= r then State.return None
+    else
+      let score, _ = Eval.go pos in
+      if score < beta then State.return None
+      else (* Forfeit our right to play a move. *)
+        Position.null_move pos |> go
+          ~alpha:(-beta)
+          ~beta:((-beta) + 1)
+          ~ply:(ply + 1)
+          ~depth:(depth - 1 - r)
+          ~null:false >>| fun score ->
+        (* Opponent's best response still produces a beta cutoff, so we know
+           this position is unlikely. *)
+        Option.some_if (score >= beta) beta
 
   (* The search we start from the root position. *)
   and root moves depth =
