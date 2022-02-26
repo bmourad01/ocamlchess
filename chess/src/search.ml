@@ -445,12 +445,13 @@ module Main = struct
         else State.return None end >>= function
       | Some beta -> State.return @@ Some beta
       | None -> (* Razoring. *)
-        let score = score + Piece.Kind.value Pawn in
+        let margin = Piece.Kind.value Pawn in
+        let score = score + margin in
         if score < beta && depth = 1 then
           Quiescence.go pos ~alpha ~beta >>| fun score' ->
           Some (max score score')
         else
-          let score = score + Piece.Kind.value Pawn in
+          let score = score + margin in
           if score < beta && depth < reduce * 2 then
             Quiescence.go pos ~alpha ~beta >>| fun score' ->
             Option.some_if (score' < beta) (max score score')
