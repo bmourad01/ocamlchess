@@ -12,9 +12,8 @@ module Caml_player = struct
         | None -> 1)
 
   let print_pv res =
-    let pv = Search.Result.pv res in
-    List.map pv ~f:(fun m ->
-        Position.San.of_legal m) |>
+    Search.Result.pv res |>
+    List.map ~f:(fun m -> Position.San.of_legal m) |>
     String.concat ~sep:" " |>
     printf "Principal variation: %s\n\n%!"
 
