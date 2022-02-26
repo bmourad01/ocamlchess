@@ -11,11 +11,20 @@ module Caml_player = struct
         | Some n -> n + 1
         | None -> 1)
 
+  let print_pv res =
+    let pv = Search.Result.pv res in
+    List.map pv ~f:(fun m ->
+        Position.San.of_legal m) |>
+    String.concat ~sep:" " |>
+    printf "Principal variation: %s\n\n%!"
+
   let choice (history, tt) moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
     let history = update_history history root in
     let search = Search.create ~limits ~root ~history ~tt () in
-    let m = Search.(Result.best @@ go search) in
+    let res = Search.go search in
+    let m = Search.Result.best res in
+    print_pv res;
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
     m, (history, Search.tt search)

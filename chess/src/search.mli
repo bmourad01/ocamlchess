@@ -45,6 +45,9 @@ module Result : sig
   (** The best move to play. *)
   val best : t -> Position.legal
 
+  (** The principal variation. *)
+  val pv : t -> Position.legal list
+
   (** The score that was given to the best move. *)
   val score : t -> int
 

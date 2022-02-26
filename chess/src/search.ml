@@ -85,6 +85,15 @@ module Tt = struct
         | Exact -> First score
       end
     | _ -> Second (alpha, beta)
+
+  (* Extract the principal variation from the table. *)
+  let pv tt m =
+    let rec aux acc k = match Hashtbl.find tt k with
+      | Some {best; _} ->
+        let k = Position.hash @@ Legal.new_position best in
+        aux (best :: acc) k
+      | _ -> List.rev acc in
+    aux [m] @@ Position.hash @@ Legal.new_position m
 end
 
 type t = {
@@ -97,6 +106,7 @@ type t = {
 module Result = struct
   type t = {
     best : Position.legal;
+    pv : Position.legal list;
     score : int;
     evals : int;
     depth : int;
@@ -505,8 +515,9 @@ let rec iterdeep ?(i = 1) st ~moves =
   let (best, score), st = Monad.State.run (Main.root moves i) st in
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  if score = inf || i >= st.search.limits.depth
-  then Result.Fields.create ~best ~score ~evals:st.nodes ~depth:i
+  if score = inf || i >= st.search.limits.depth then
+    let pv = Tt.pv st.tt best in
+    Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 
 let go search = match Position.legal_moves search.root with
