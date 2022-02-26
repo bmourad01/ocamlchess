@@ -88,12 +88,11 @@ module Tt = struct
 
   (* Extract the principal variation from the table. *)
   let pv tt m =
+    let h m = Position.hash @@ Legal.new_position m in
     let rec aux acc k = match Hashtbl.find tt k with
-      | Some {best; _} ->
-        let k = Position.hash @@ Legal.new_position best in
-        aux (best :: acc) k
-      | _ -> List.rev acc in
-    aux [m] @@ Position.hash @@ Legal.new_position m
+      | Some {best; _} -> aux (best :: acc) @@ h best
+      | None -> List.rev acc in
+    aux [m] @@ h m
 end
 
 type t = {
