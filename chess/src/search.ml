@@ -36,6 +36,7 @@ module Tt = struct
 
   type t = (int64, entry) Hashtbl.t
 
+  (* We would expect that the table will grow rapidly. *)
   let create () = Hashtbl.create ~size:0x40000 (module Int64)
   let clear tt = Hashtbl.clear tt
 
@@ -405,7 +406,7 @@ module Main = struct
 
      See: https://en.wikipedia.org/wiki/Principal_variation_search
   *)
-  and pvs ?(null = true) ps pos ~beta ~ply ~depth = let open Plysearch in
+  and pvs ps pos ~beta ~ply ~depth = let open Plysearch in
     let f alpha = go pos ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
     let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
     f alpha >>= function
@@ -467,7 +468,7 @@ module Main = struct
     else
       let score, _ = Eval.go pos in
       nmr pos ~score ~beta ~ply ~depth >>= function
-      | Some beta -> State.return @@ Some beta
+      | Some _ as beta -> State.return beta
       | None -> razor pos ~score ~alpha ~beta ~depth
 
   (* Amount to reduce the depth by. *)
@@ -475,17 +476,18 @@ module Main = struct
 
   (* Null move reduction. *)
   and nmr pos ~score ~beta ~ply ~depth =
-    if score >= beta && depth > reduction_factor then
+    if score >= beta && depth > reduction_factor then begin
       (* Forfeit our right to play a move. *)
       Position.null_move pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)
         ~depth:(depth - 1 - reduction_factor)
-        ~null:false >>| fun score ->
+        ~null:false >>= negm >>| fun score ->
       (* Opponent's best response still produces a beta cutoff, so we know
          this position is unlikely. *)
       Option.some_if (score >= beta) beta
+    end
     else State.return None
 
   (* Razoring. *)
