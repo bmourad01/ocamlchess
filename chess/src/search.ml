@@ -476,7 +476,7 @@ module Main = struct
 
   (* Null move reduction. *)
   and nmr pos ~score ~beta ~ply ~depth =
-    if score >= beta && depth > reduction_factor then begin
+    if score >= beta && depth > reduction_factor then
       (* Forfeit our right to play a move. *)
       Position.null_move pos |> go
         ~alpha:(-beta)
@@ -487,7 +487,6 @@ module Main = struct
       (* Opponent's best response still produces a beta cutoff, so we know
          this position is unlikely. *)
       Option.some_if (score >= beta) beta
-    end
     else State.return None
 
   (* Razoring. *)
