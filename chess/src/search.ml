@@ -78,9 +78,9 @@ module Tt = struct
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
         match bound with
-        | Lower when score >= beta -> First score
+        | Lower when score >= beta -> First beta
         | Lower -> Second (max alpha score, beta)
-        | Upper when score <= alpha -> First score
+        | Upper when score <= alpha -> First alpha
         | Upper -> Second (alpha, min beta score)
         | Exact -> First score
       end
@@ -373,7 +373,7 @@ end
 module Main = struct
   (* Reduction factor. *)
   let reduce = 2
-  
+
   (* Search from a new position. *)
   let rec go ?(null = true) pos ~alpha ~beta ~ply ~depth =
     State.(gets nodes) >>= fun nodes ->
@@ -409,14 +409,14 @@ module Main = struct
 
   (* The actual search, given all the legal moves. *)
   and with_moves ?(null = true) pos moves ~alpha ~beta ~ply ~depth ~in_check =
+    (* Extend the depth limit if we're in check. Since the number of
+       responses to a check is typically very low, the search should
+       finish quickly. *)
+    let depth = depth + Bool.to_int in_check in
     if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta
     else prune pos ~alpha ~beta ~ply ~depth ~in_check ~depth ~null >>= function
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
-        (* Extend the depth limit if we're in check. Since the number of
-           responses to a check is typically very low, the search should
-           finish quickly. *)
-        let depth = depth + Bool.to_int in_check in
         State.(gets tt) >>= fun tt ->
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
         let ps = Plysearch.create moves ~alpha in
@@ -440,9 +440,7 @@ module Main = struct
     then State.return None
     else
       let score, _ = Eval.go pos in
-      begin if score >= beta && depth > reduce
-        then nmr pos ~beta ~ply ~depth
-        else State.return None end >>= function
+      nmr pos ~score ~beta ~ply ~depth >>= function
       | Some beta -> State.return @@ Some beta
       | None -> (* Razoring. *)
         let margin = Piece.Kind.value Pawn in
@@ -458,17 +456,19 @@ module Main = struct
           else State.return None
 
   (* Null move reduction. *)
-  and nmr pos ~beta ~ply ~depth =
-    (* Forfeit our right to play a move. *)
-    Position.null_move pos |> go
-      ~alpha:(-beta)
-      ~beta:((-beta) + 1)
-      ~ply:(ply + 1)
-      ~depth:(depth - 1 - reduce)
-      ~null:false >>| fun score ->
-    (* Opponent's best response still produces a beta cutoff, so we know
-       this position is unlikely. *)
-    Option.some_if (score >= beta) beta
+  and nmr pos ~score ~beta ~ply ~depth =
+    if score >= beta && depth > reduce then
+      (* Forfeit our right to play a move. *)
+      Position.null_move pos |> go
+        ~alpha:(-beta)
+        ~beta:((-beta) + 1)
+        ~ply:(ply + 1)
+        ~depth:(depth - 1 - reduce)
+        ~null:false >>| fun score ->
+      (* Opponent's best response still produces a beta cutoff, so we know
+         this position is unlikely. *)
+      Option.some_if (score >= beta) beta
+    else State.return None
 
   (* The search we start from the root position. *)
   and root moves depth =
