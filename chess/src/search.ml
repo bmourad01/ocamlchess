@@ -425,6 +425,7 @@ module Main = struct
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
+        let ps = Plysearch.create moves ~alpha in
         let moves =
           if futile pos ~alpha ~beta ~depth ~check ~null
           then List.filter moves ~f:(fun m ->
@@ -432,7 +433,6 @@ module Main = struct
               is_noisy m)
           else moves in
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-        let ps = Plysearch.create moves ~alpha in
         let finish () = State.return ps.alpha in
         State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
             Legal.new_position m |>
