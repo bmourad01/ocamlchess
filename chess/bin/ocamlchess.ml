@@ -26,7 +26,7 @@ module Caml_player = struct
     print_pv res;
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
-    m, (history, Search.tt search)
+    m, (history, tt)
 
   let name = "caml"
   let create () =

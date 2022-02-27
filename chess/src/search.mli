@@ -79,10 +79,10 @@ val tt : t -> Tt.t
     [tt] is the transposition table, used to cache search results.
 *)
 val create :
-  ?tt:Tt.t ->
   limits:limits ->
   root:Position.t ->
   history:int Core_kernel.Int64.Map.t ->
+  tt:Tt.t ->
   unit ->
   t
 

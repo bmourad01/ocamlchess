@@ -36,9 +36,8 @@ module Tt = struct
 
   type t = (int64, entry) Hashtbl.t
 
-  (* We would expect that the table will grow rapidly. *)
   let create () = Hashtbl.create ~size:0x40000 (module Int64)
-  let clear tt = Hashtbl.clear tt
+  let clear = Hashtbl.clear
 
   (* Once the search has decided on a move, the depth values for the entries
      need to be "aged" (decremented by two ply). Entries that reach the root
@@ -50,9 +49,7 @@ module Tt = struct
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
-
      https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
-
      For now, we will favor entries with a higher depth, as a deeper search 
      should, intuitively, have the more accurate results.
   *)
@@ -64,15 +61,12 @@ module Tt = struct
         | None -> entry)
 
   (* Check for a previous evaluation of the position at a comparable depth.
-
      - Lower: the score is a lower bound, so only return it if it causes a
               beta cutoff, which would prune the rest of the branch being
               searched.
-
      - Upper: the score is an upper bound, so if it doesn't improve alpha
               we can use that score to prune the rest of the branch being
               searched.
-
      - Exact: the score is an exact evaluation for this position.
   *)
   let lookup tt ~pos ~depth ~alpha ~beta =
@@ -88,12 +82,14 @@ module Tt = struct
     | _ -> Second (alpha, beta)
 
   (* Extract the principal variation from the table. *)
-  let pv tt m =
-    let h m = Position.hash @@ Legal.new_position m in
-    let rec aux acc k = match Hashtbl.find tt k with
-      | Some {best; _} -> aux (best :: acc) @@ h best
-      | None -> List.rev acc in
-    aux [m] @@ h m
+  let pv tt m n =
+    let rec aux i acc pos =
+      if i >= n then List.rev acc
+      else match Hashtbl.find tt @@ Position.hash pos with
+        | Some entry ->
+          aux (i + 1) (entry.best :: acc) @@ Legal.new_position entry.best
+        | None -> List.rev acc in
+    aux 0 [m] @@ Legal.new_position m
 end
 
 type t = {
@@ -116,7 +112,7 @@ end
 type result = Result.t
 type search = t
 
-let create ?(tt = Tt.create ()) ~limits ~root ~history () =
+let create ~limits ~root ~history ~tt () =
   Fields.create ~limits ~root ~history ~tt
 
 (* Important not to use `Int.min_value`, since negating it seems to give
@@ -166,6 +162,13 @@ module State = struct
     (* Get the second killer move. *)
     let killer2 ply st =
       if ply > 0 then Map.find st.killer2 ply else None
+
+    (* Is `m` a killer move? *)
+    let is_killer m ply st =
+      Map.find st.killer1 ply |>
+      Option.exists ~f:(Legal.same m) ||
+      Map.find st.killer2 ply |>
+      Option.exists ~f:(Legal.same m)
 
     (* Update the killer move for a particular ply. *)
     let killer ply m st =
@@ -248,10 +251,9 @@ module Ordering = struct
   let is_best pos tt =
     let best =
       Position.hash pos |> Hashtbl.find tt |>
-      Option.bind ~f:(fun (entry : Tt.entry) ->
-          (* Only allow exact scores. *)
-          match entry.bound with
-          | Exact -> Some entry.best
+      Option.bind ~f:(fun entry ->
+          match entry.Tt.bound with
+          | Exact -> Some entry.Tt.best
           | _ -> None) in
     fun m -> Option.exists best ~f:(Legal.same m)
 
@@ -407,12 +409,49 @@ module Main = struct
      See: https://en.wikipedia.org/wiki/Principal_variation_search
   *)
   and pvs ps pos ~beta ~ply ~depth = let open Plysearch in
-    let f alpha = go pos ~alpha ~beta:(-ps.alpha) ~ply ~depth >>= negm in
+    let f alpha =
+      go pos
+        ~alpha
+        ~beta:(-ps.alpha)
+        ~ply:(ply + 1)
+        ~depth:(depth - 1) >>= negm in
     let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
     f alpha >>= function
     | score when ps.full_window -> State.return score
     | score when score > ps.alpha && score < beta -> f (-beta)
     | score -> State.return score
+
+  (* Amount to reduce the depth by. *)
+  and reduction_factor = 2
+
+  (* Late move reduction. *)
+  and lmr ps pos m ~beta ~ply ~depth ~check =
+    let open Plysearch in
+    let pos' = Legal.new_position m in
+    if beta - ps.alpha <= 1
+    && not ps.full_window
+    && depth > reduction_factor
+    && not check
+    && is_quiet m
+    && not @@ Position.in_check pos'
+    then State.(gets @@ is_killer m ply) >>= function
+      | true -> State.return None
+      | false ->
+        Legal.new_position m |> go
+          ~alpha:((-ps.alpha) - 1)
+          ~beta:(-ps.alpha)
+          ~ply:(ply + 1)
+          ~depth:(depth - reduction_factor) >>= negm >>| Option.some
+    else State.return None
+
+  (* Combine LMR and PVS. *)
+  and lmr_pvs ps pos m ~beta ~ply ~depth ~check ~i =
+    let pvs () =
+      Legal.new_position m |> pvs ps ~beta ~ply:(ply + 1) ~depth in
+    lmr ps pos m ~beta ~ply ~depth ~check >>= function
+    | Some score when score > ps.alpha -> pvs ()
+    | Some score -> State.return score
+    | None -> pvs ()
 
   (* The actual search, given all the legal moves. *)
   and with_moves ?(null = true) pos moves ~alpha ~beta ~ply ~depth ~check =
@@ -421,7 +460,8 @@ module Main = struct
        finish quickly. *)
     let depth = depth + Bool.to_int check in
     if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta
-    else reduce pos ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
+    else reduce pos moves
+        ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
@@ -433,13 +473,13 @@ module Main = struct
               is_noisy m)
           else moves in
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-        let finish () = State.return ps.alpha in
-        State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-            Legal.new_position m |>
-            pvs ps ~beta ~ply:(ply + 1) ~depth:(depth - 1) >>= fun score ->
-            if score >= beta
+        let finish _ = State.return ps.alpha in
+        State.List.fold_until moves ~init:0 ~finish ~f:(fun i m ->
+            lmr_pvs ps pos m ~beta ~ply ~depth ~check ~i
+            >>= fun score -> if score >= beta
             then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-            else State.return @@ Continue (Plysearch.better ps m score))
+            else State.return @@
+              Continue (Plysearch.better ps m score; i + 1))
         >>| fun score ->
         Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
@@ -462,17 +502,14 @@ module Main = struct
     |]
 
   (* Try to reduce the depth. *)
-  and reduce pos ~alpha ~beta ~ply ~depth ~check ~depth ~null =
+  and reduce pos moves ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     if beta - alpha > 1 || check || not null
     then State.return None
     else
       let score, _ = Eval.go pos in
       nmr pos ~score ~beta ~ply ~depth >>= function
       | Some _ as beta -> State.return beta
-      | None -> razor pos ~score ~alpha ~beta ~depth
-
-  (* Amount to reduce the depth by. *)
-  and reduction_factor = 2
+      | None -> razor pos moves ~score ~alpha ~beta ~depth
 
   (* Null move reduction. *)
   and nmr pos ~score ~beta ~ply ~depth =
@@ -490,16 +527,16 @@ module Main = struct
     else State.return None
 
   (* Razoring. *)
-  and razor pos ~score ~alpha ~beta ~depth =
+  and razor pos moves ~score ~alpha ~beta ~depth =
     let margin = Piece.Kind.value Pawn in
     let score = score + margin in
     if score < beta && depth = 1 then
-      Quiescence.go pos ~alpha ~beta >>| fun score' ->
+      Quiescence.with_moves pos moves ~alpha ~beta >>| fun score' ->
       Some (max score score')
     else
       let score = score + margin in
       if score < beta && depth < reduction_factor * 2 then
-        Quiescence.go pos ~alpha ~beta >>| fun score' ->
+        Quiescence.with_moves pos moves ~alpha ~beta >>| fun score' ->
         Option.some_if (score' < beta) (max score score')
       else State.return None
 
@@ -536,7 +573,7 @@ let rec iterdeep ?(i = 1) st ~moves =
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   if score = inf || i >= st.search.limits.depth then
-    let pv = Tt.pv st.tt best in
+    let pv = Tt.pv st.tt best st.search.limits.depth in
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 
