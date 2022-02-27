@@ -72,11 +72,10 @@ module Tt = struct
   let lookup tt ~pos ~depth ~alpha ~beta =
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
-        let pv' = beta - alpha <= 1 in
         match bound with
-        | Lower when pv' && score >= beta -> First beta
+        | Lower when score >= beta -> First beta
         | Lower -> Second (max alpha score, beta)
-        | Upper when pv' && score <= alpha -> First alpha
+        | Upper when score <= alpha -> First alpha
         | Upper -> Second (alpha, min beta score)
         | Exact -> First score
       end
@@ -404,11 +403,7 @@ module Main = struct
         then State.return @@ if check then -inf else 0
         else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
 
-  (* Principal variation search can lead to more pruning if the move ordering
-     was (more or less) correct.
-
-     See: https://en.wikipedia.org/wiki/Principal_variation_search
-  *)
+  (* Principal variation search. *)
   and pvs ps pos ~beta ~ply ~depth = let open Plysearch in
     let f alpha =
       go pos
@@ -447,8 +442,7 @@ module Main = struct
 
   (* Combine LMR and PVS. *)
   and lmr_pvs ps pos m ~beta ~ply ~depth ~check ~i =
-    let pvs () =
-      Legal.new_position m |> pvs ps ~beta ~ply:(ply + 1) ~depth in
+    let pvs () = Legal.new_position m |> pvs ps ~beta ~ply ~depth in
     lmr ps pos m ~beta ~ply ~depth ~check >>= function
     | Some score when score > ps.alpha -> pvs ()
     | Some score -> State.return score
