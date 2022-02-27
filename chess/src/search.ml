@@ -72,10 +72,11 @@ module Tt = struct
   let lookup tt ~pos ~depth ~alpha ~beta =
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
+        let pv' = beta - alpha <= 1 in
         match bound with
-        | Lower when score >= beta -> First beta
+        | Lower when pv' && score >= beta -> First beta
         | Lower -> Second (max alpha score, beta)
-        | Upper when score <= alpha -> First alpha
+        | Upper when pv' && score <= alpha -> First alpha
         | Upper -> Second (alpha, min beta score)
         | Exact -> First score
       end
