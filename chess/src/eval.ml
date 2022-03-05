@@ -14,6 +14,9 @@ let endgame_scale =
     Piece.Kind.value Knight in
   Float.(1.0 / of_int Int.(material_weight * material))
 
+(* Margin to measure whether a mop-up evaluation matters. *)
+let pawn_margin = Piece.Kind.value Pawn * 2 * material_weight
+
 (* Weigh a score based on whether we're in endgame phase or not. *)
 let weigh_start n endgame = Float.(to_int (of_int n * (1.0 - endgame)))
 let weigh_end n endgame = Float.(to_int (of_int n * endgame))
@@ -253,12 +256,11 @@ let go pos =
   let material =
     (our_material + our_pawns) -
     (their_material + their_pawns) in
-  let pawn_diff = Piece.Kind.value Pawn * 2 * material_weight in
   let our_mop_up =
-    if our_material > their_material + pawn_diff
+    if our_material > their_material + pawn_margin
     then mop_up pos their_endgame else 0 in
   let their_mop_up =
-    if their_material > our_material + pawn_diff
+    if their_material > our_material + pawn_margin
     then mop_up pos our_endgame ~swap:true else 0 in
   let score =
     material +
