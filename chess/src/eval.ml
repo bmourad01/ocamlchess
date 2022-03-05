@@ -5,12 +5,14 @@ module Pre = Precalculated
 
 let material_weight = 100
 
-let endgame_material =
+(* Threshold value that will keep the endgame weight very low
+   until some significant amount material is lost. *)
+let endgame_scale =
   let material =
     Piece.Kind.value Rook * 2 +
     Piece.Kind.value Bishop +
     Piece.Kind.value Knight in
-  Float.of_int (material_weight * material)
+  Float.(1.0 / of_int Int.(material_weight * material))
 
 (* Weigh a score based on whether we're in endgame phase or not. *)
 let weigh_start n endgame = Float.(to_int (of_int n * (1.0 - endgame)))
@@ -235,11 +237,10 @@ let mop_up ?(swap = false) pos endgame =
     (14 - Square.manhattan our_king their_king) * 4 in
   weigh_end n endgame
 
-(* Calculate the endgame weight based on the amount of material on the
-   board. *)
+(* Calculate the endgame weight based on the amount of material on
+   the board. *)
 let endgame_weight material =
-  let m = 1.0 /. endgame_material in
-  1.0 -. Float.(min 1.0 (of_int material * m))
+  Float.(1.0 - (min 1.0 (of_int material * endgame_scale)))
 
 (* Overall evaluation. *)
 let go pos =
