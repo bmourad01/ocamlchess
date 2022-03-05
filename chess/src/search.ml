@@ -81,14 +81,15 @@ module Tt = struct
       end
     | _ -> Second (alpha, beta)
 
-  (* Extract the principal variation from the table. *)
-  let pv tt m n =
+  (* Extract the principal variation from the table. It's important to
+     track the depth we're currently at, and compare it against the entry.
+     Otherwise, there are situations where it can loop infinitely. *)
+  let pv tt m =
     let rec aux i acc pos =
-      if i >= n then List.rev acc
-      else match Hashtbl.find tt @@ Position.hash pos with
-        | Some entry ->
-          aux (i + 1) (entry.best :: acc) @@ Legal.new_position entry.best
-        | None -> List.rev acc in
+      match Hashtbl.find tt @@ Position.hash pos with
+      | Some entry when entry.depth >= i ->
+        aux (i + 1) (entry.best :: acc) @@ Legal.new_position entry.best
+      | _ -> List.rev acc in
     aux 0 [m] @@ Legal.new_position m
 end
 
@@ -568,7 +569,7 @@ let rec iterdeep ?(i = 1) st ~moves =
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   if score = inf || i >= st.search.limits.depth then
-    let pv = Tt.pv st.tt best st.search.limits.depth in
+    let pv = Tt.pv st.tt best in
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 
