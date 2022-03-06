@@ -161,6 +161,53 @@ module Bishop_pair = struct
     go pos their_endgame - go pos our_endgame ~swap:true
 end
 
+module King_pawn_shield = struct
+  let bonus = 10
+
+  (* Given the king's square for a particular side, calculate the mask
+     for pawns that can shield it (left, right, and center) from their
+     starting ranks. *)
+  let masks =
+    let wf, wfl, wfr, wr = Int64.(lsl), Bb.file_a, Bb.file_h, Bb.rank_2 in
+    let bf, bfl, bfr, br = Int64.(lsr), Bb.file_h, Bb.file_a, Bb.rank_7 in
+    let tbl = Array.create ~len:(Piece.Color.count * Square.count) Bb.empty in
+    for i = 0 to Piece.Color.count - 1 do
+      for j = 0 to Square.count - 1 do
+        let sq = Int64.(1L lsl j) in
+        tbl.(Piece.Color.white + j * Piece.Color.count) <-
+          Bb.(((of_int64 (wf sq 8)) +
+               (of_int64 (wf sq 7) - wfr) +
+               (of_int64 (wf sq 9) - wfl)) & wr);
+        tbl.(Piece.Color.black + j * Piece.Color.count) <-
+          Bb.(((of_int64 (bf sq 8)) +
+               (of_int64 (bf sq 7) - bfr) +
+               (of_int64 (bf sq 9) - bfl)) & br);
+      done;
+    done;
+    tbl
+
+  (* In the opening phase, the king should be protected behind a group
+     of pawns. *)
+  let go ?(swap = false) pos endgame =
+    let us = Position.active pos in
+    let them = Position.inactive pos in
+    let c = if swap then them else us in
+    let b = Position.board_of_color pos c in
+    let king = Bb.(b & Position.king pos) in
+    let pawn = Bb.(b & Position.pawn pos) in
+    let king_sq = Bb.first_set_exn king in
+    let m =
+      Array.unsafe_get masks
+        (Piece.Color.to_int c +
+         Square.to_int king_sq *
+         Piece.Color.count) in
+    let score = Bb.(count (m & pawn)) in
+    weigh_start (score * bonus) endgame
+
+  let advantage pos our_endgame their_endgame =
+    go pos their_endgame - go pos our_endgame ~swap:true
+end
+
 module Placement = struct
   (* Piece-square tables. *)
   module Tables = struct
@@ -364,6 +411,7 @@ let go pos =
     Mobility.advantage pos our_endgame their_endgame +
     Rook_open_file.advantage pos our_endgame their_endgame +
     Bishop_pair.advantage pos our_endgame their_endgame +
+    King_pawn_shield.advantage pos our_endgame their_endgame +
     Placement.advantage pos our_endgame their_endgame +
     Mop_up.advantage pos
       our_endgame our_material

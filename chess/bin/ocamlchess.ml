@@ -4,7 +4,7 @@ module Caml_player = struct
   open Chess
   open Core_kernel
 
-  let limits = Search.Limits.create ~depth:8 ~nodes:(Some 500_000) ()
+  let limits = Search.Limits.create ~depth:9 ~nodes:(Some 500_000) ()
 
   let update_history m pos =
     Position.hash pos |> Map.update m ~f:(function
