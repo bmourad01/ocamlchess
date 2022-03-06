@@ -145,26 +145,37 @@ module Mask = struct
     Simple.make @@ fun rank file -> List.init ((Square.count lsr 3) - 1)
       ~f:(fun i -> r rank (i + 1), f file (i + 1))
 
-  (* All 8 directions. *)
-  let east  = dir const (+)
-  and west  = dir const (-)
-  and north = dir (+) const
-  and south = dir (-) const
-  and neast = dir (+) (+)
-  and nwest = dir (+) (-)
-  and seast = dir (-) (+)
-  and swest = dir (-) (-)
+  module Tbl = struct
+    (* All 8 directions. *)
+    let east  = dir const (+)
+    and west  = dir const (-)
+    and north = dir (+) const
+    and south = dir (-) const
+    and neast = dir (+) (+)
+    and nwest = dir (+) (-)
+    and seast = dir (-) (+)
+    and swest = dir (-) (-)
 
-  (* Combine all diagonal directions, minus the edges. *)
-  let diagonal = Array.init Square.count ~f:(fun i -> Bb.(
-      neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges))
+    (* Combine all diagonal directions, minus the edges. *)
+    let diagonal = Array.init Square.count ~f:(fun i -> Bb.(
+        neast.(i) + nwest.(i) + seast.(i) + swest.(i) - edges))
 
-  (* Combine all orthogonal directions, minus the edges. *)
-  let orthogonal = Array.init Square.count ~f:(fun i -> Bb.(
-      (east.(i)  - file_h) +
-      (west.(i)  - file_a) +
-      (north.(i) - rank_8) +
-      (south.(i) - rank_1)))
+    (* Combine all orthogonal directions, minus the edges. *)
+    let orthogonal = Array.init Square.count ~f:(fun i -> Bb.(
+        (east.(i)  - file_h) +
+        (west.(i)  - file_a) +
+        (north.(i) - rank_8) +
+        (south.(i) - rank_1)))
+  end
+
+  let east  sq = Array.unsafe_get Tbl.east  @@ Square.to_int sq
+  let west  sq = Array.unsafe_get Tbl.west  @@ Square.to_int sq
+  let north sq = Array.unsafe_get Tbl.north @@ Square.to_int sq
+  let south sq = Array.unsafe_get Tbl.south @@ Square.to_int sq
+  let neast sq = Array.unsafe_get Tbl.neast @@ Square.to_int sq
+  let nwest sq = Array.unsafe_get Tbl.nwest @@ Square.to_int sq
+  let seast sq = Array.unsafe_get Tbl.seast @@ Square.to_int sq
+  let swest sq = Array.unsafe_get Tbl.swest @@ Square.to_int sq
 end
 
 (* Generation of sliding attack patterns. *)
@@ -184,8 +195,8 @@ module Sliding = struct
           | ray' -> acc - tbl.(f ray')) in
     let l b = Square.last - Int64.clz b in
     let r = Int64.ctz in
-    Mask.(gen [(neast, r); (nwest, r); (seast, l); (swest, l)],
-          gen [(east,  r); (west,  l); (north, r); (south, l)])
+    Mask.Tbl.(gen [(neast, r); (nwest, r); (seast, l); (swest, l)],
+              gen [(east,  r); (west,  l); (north, r); (south, l)])
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
@@ -219,8 +230,8 @@ module Sliding = struct
         done
       done;
       tbl in
-    go 1024 Shift.diagonal Mask.diagonal Magic.bishop diagonal,
-    go 4096 Shift.orthogonal Mask.orthogonal Magic.rook orthogonal
+    go 1024 Shift.diagonal Mask.Tbl.diagonal Magic.bishop diagonal,
+    go 4096 Shift.orthogonal Mask.Tbl.orthogonal Magic.rook orthogonal
 end
 
 (* The actual API for accessing precalculated move patterns. *)
@@ -241,7 +252,7 @@ let[@inline] knight sq = Array.unsafe_get Simple.knight @@ Square.to_int sq
 
 let[@inline] bishop sq occupied =
   let i = Square.to_int sq in
-  let mask = Array.unsafe_get Mask.diagonal i in
+  let mask = Array.unsafe_get Mask.Tbl.diagonal i in
   let shift = Array.unsafe_get Shift.diagonal i in
   let magic = Array.unsafe_get Magic.bishop i in
   let occupied = Bb.(to_int64 (occupied & mask)) in
@@ -250,7 +261,7 @@ let[@inline] bishop sq occupied =
 
 let[@inline] rook sq occupied =
   let i = Square.to_int sq in
-  let mask = Array.unsafe_get Mask.orthogonal i in
+  let mask = Array.unsafe_get Mask.Tbl.orthogonal i in
   let shift = Array.unsafe_get Shift.orthogonal i in
   let magic = Array.unsafe_get Magic.rook i in
   let occupied = Bb.(to_int64 (occupied & mask)) in
@@ -297,14 +308,14 @@ let between_tbl =
         let b = bishop sq s & m in
         if (b & s) <> empty then b - s else empty in
       (* Use the pre-generated directional masks. *)
-      let east  = orthogonal Mask.east.(i)  in
-      let west  = orthogonal Mask.west.(i)  in
-      let north = orthogonal Mask.north.(i) in
-      let south = orthogonal Mask.south.(i) in
-      let neast = diagonal   Mask.neast.(i) in
-      let nwest = diagonal   Mask.nwest.(i) in
-      let seast = diagonal   Mask.seast.(i) in
-      let swest = diagonal   Mask.swest.(i) in
+      let east  = orthogonal Mask.Tbl.east.(i)  in
+      let west  = orthogonal Mask.Tbl.west.(i)  in
+      let north = orthogonal Mask.Tbl.north.(i) in
+      let south = orthogonal Mask.Tbl.south.(i) in
+      let neast = diagonal   Mask.Tbl.neast.(i) in
+      let nwest = diagonal   Mask.Tbl.nwest.(i) in
+      let seast = diagonal   Mask.Tbl.seast.(i) in
+      let swest = diagonal   Mask.Tbl.swest.(i) in
       (* We're getting the union of all directions, even though only
          one of them will be valid. *)
       tbl.(Int.(i + j * Square.count)) <-

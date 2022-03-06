@@ -1,3 +1,30 @@
+(** Directional masks, from white's pespective. *)
+module Mask : sig
+  (** [east sq] returns the mask of all squares east of [sq]. *)
+  val east : Square.t -> Bitboard.t
+
+  (** [west sq] returns the mask of all squares west of [sq]. *)
+  val west : Square.t -> Bitboard.t
+
+  (** [north sq] returns the mask of all squares north of [sq]. *)
+  val north : Square.t -> Bitboard.t
+
+  (** [south sq] returns the mask of all squares south of [sq]. *)
+  val south : Square.t -> Bitboard.t
+
+  (** [neast sq] returns the mask of all squares northeast of [sq]. *)
+  val neast : Square.t -> Bitboard.t
+
+  (** [nwest sq] returns the mask of all squares northwest of [sq]. *)
+  val nwest : Square.t -> Bitboard.t
+
+  (** [seast sq] returns the mask of all squares southeast of [sq]. *)
+  val seast : Square.t -> Bitboard.t
+
+  (** [swest sq] returns the mask of all squares southwest of [sq]. *)
+  val swest : Square.t -> Bitboard.t
+end
+
 (** [pawn_advance sq color] returns a bitboard of potentially valid squares
     for a pawn of color [color] at square [sq] to advance without capturing a
     piece.. *)
