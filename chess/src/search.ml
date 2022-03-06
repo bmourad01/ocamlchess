@@ -442,7 +442,7 @@ module Main = struct
     else State.return None
 
   (* Combine LMR and PVS. *)
-  and lmr_pvs ps pos m ~beta ~ply ~depth ~check ~i =
+  and lmr_pvs ps pos m ~beta ~ply ~depth ~check =
     let pvs () = Legal.new_position m |> pvs ps ~beta ~ply ~depth in
     lmr ps pos m ~beta ~ply ~depth ~check >>= function
     | Some score when score > ps.alpha -> pvs ()
@@ -459,7 +459,8 @@ module Main = struct
     else reduce pos moves
         ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
       | Some score -> State.return score
-      | None -> let open Continue_or_stop in
+      | None -> iid pos ~alpha ~beta ~ply ~depth ~null >>= fun () ->
+        let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
         let ps = Plysearch.create moves ~alpha in
         let moves =
@@ -469,13 +470,12 @@ module Main = struct
               is_noisy m)
           else moves in
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
-        let finish _ = State.return ps.alpha in
-        State.List.fold_until moves ~init:0 ~finish ~f:(fun i m ->
-            lmr_pvs ps pos m ~beta ~ply ~depth ~check ~i
+        let finish () = State.return ps.alpha in
+        State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+            lmr_pvs ps pos m ~beta ~ply ~depth ~check
             >>= fun score -> if score >= beta
             then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-            else State.return @@
-              Continue (Plysearch.better ps m score; i + 1))
+            else State.return @@ Continue (Plysearch.better ps m score))
         >>| fun score ->
         Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
@@ -535,6 +535,14 @@ module Main = struct
         Quiescence.with_moves pos moves ~alpha ~beta >>| fun score' ->
         Option.some_if (score' < beta) (max score score')
       else State.return None
+
+  (* Internal iterative deepening. *)
+  and iid pos ~alpha ~beta ~ply ~depth ~null =
+    if depth > iid_limit && beta - alpha > 1
+    then go pos ~alpha ~beta ~ply ~depth:(depth - 2) ~null >>| ignore
+    else State.return ()
+
+  and iid_limit = 5
 
   (* The search we start from the root position. *)
   and root moves depth =
