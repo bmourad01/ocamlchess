@@ -98,6 +98,7 @@ type t = {
   root : Position.t;
   history : int Int64.Map.t;
   tt : Tt.t;
+  pst : Eval.Pst.t;
 } [@@deriving fields]
 
 module Result = struct
@@ -113,8 +114,7 @@ end
 type result = Result.t
 type search = t
 
-let create ~limits ~root ~history ~tt () =
-  Fields.create ~limits ~root ~history ~tt
+let create = Fields.create
 
 (* Important not to use `Int.min_value`, since negating it seems to give
    us back a negative number.
@@ -136,6 +136,7 @@ module State = struct
       nodes : int;
       search : search;
       tt : Tt.t;
+      pst : Eval.Pst.t;
       killer1 : Position.legal Int.Map.t;
       killer2 : Position.legal Int.Map.t;
       history : int array;
@@ -145,6 +146,7 @@ module State = struct
       nodes = 0;
       search;
       tt = search.tt;
+      pst = search.pst;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
       history = Array.create ~len:Square.(count * count) 0;
@@ -336,7 +338,8 @@ module Quiescence = struct
 
   and with_moves pos moves ~alpha ~beta =
     State.(update inc_nodes) >>= fun () ->
-    let score = Eval.go pos in
+    State.(gets pst) >>= fun pst ->
+    let score = Eval.go pos pst in
     if score >= beta then State.return beta
     else let open Continue_or_stop in
       let init = max score alpha in
@@ -462,9 +465,10 @@ module Main = struct
       | None -> iid pos ~alpha ~beta ~ply ~depth ~null >>= fun () ->
         let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
+        State.(gets pst) >>= fun pst ->
         let ps = Plysearch.create moves ~alpha in
         let moves =
-          if futile pos ~alpha ~beta ~depth ~check ~null
+          if futile pos pst ~alpha ~beta ~depth ~check ~null
           then List.filter moves ~f:(fun m ->
               Position.in_check @@ Legal.new_position m ||
               is_noisy m)
@@ -481,12 +485,12 @@ module Main = struct
         score
 
   (* Futility pruning. *)
-  and futile pos ~alpha ~beta ~depth ~check ~null =
+  and futile pos pst ~alpha ~beta ~depth ~check ~null =
     beta - alpha <= 1 &&
     not check &&
     null &&
     depth < Array.length futility_margin &&
-    let score = Eval.go pos in
+    let score = Eval.go pos pst in
     let margin = Array.unsafe_get futility_margin depth in
     score + margin <= alpha
 
@@ -501,8 +505,8 @@ module Main = struct
   and reduce pos moves ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     if beta - alpha > 1 || check || not null
     then State.return None
-    else
-      let score = Eval.go pos in
+    else State.(gets pst) >>= fun pst ->
+      let score = Eval.go pos pst in
       nmr pos ~score ~beta ~ply ~depth >>= function
       | Some _ as beta -> State.return beta
       | None -> razor pos moves ~score ~alpha ~beta ~depth

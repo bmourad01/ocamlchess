@@ -3,6 +3,12 @@ open Core_kernel
 module Bb = Bitboard
 module Pre = Precalculated
 
+module Pst = struct
+  type t = (int64, int) Hashtbl.t
+
+  let create () = Hashtbl.create (module Int64)
+end
+
 let material_weight = 100
 
 (* Threshold value that will keep the endgame weight very low
@@ -206,114 +212,135 @@ module King_pawn_shield = struct
     go pos their_endgame - go pos our_endgame ~swap:true
 end
 
-(* Give a bonus to having passed pawns, especially in endgame positions. *)
-module Passed_pawns = struct
-  let start_bonus = 10
-  let end_bonus = 70
+(* Pawn structure. *)
+module Pawns = struct
+  (* Give a bonus to having passed pawns, especially in endgame positions. *)
+  module Passed = struct
+    let start_bonus = 10
+    let end_bonus = 70
 
-  let masks =
-    let east b =
-      let b' = Bb.to_int64 b in
-      Bb.(of_int64 Int64.(b' lsl 1) - file_a) in
-    let west b =
-      let b' = Bb.to_int64 b in
-      Bb.(of_int64 Int64.(b' lsr 1) - file_h) in
-    let wf, wl, wr = Precalculated.Mask.north, east, west in
-    let bf, bl, br = Precalculated.Mask.south, west, east in
-    let tbl = Array.create ~len:(Piece.Color.count * Square.count) Bb.empty in
-    for i = 0 to Piece.Color.count - 1 do
-      for j = 0 to Square.count - 1 do
-        let sq = Square.of_int_exn j in
-        let w = wf sq in
-        let b = bf sq in
-        tbl.(Piece.Color.white + j * Piece.Color.count) <- Bb.(w + wl w + wr w);
-        tbl.(Piece.Color.black + j * Piece.Color.count) <- Bb.(w + bl b + br b);
+    let masks =
+      let east b =
+        let b' = Bb.to_int64 b in
+        Bb.(of_int64 Int64.(b' lsl 1) - file_a) in
+      let west b =
+        let b' = Bb.to_int64 b in
+        Bb.(of_int64 Int64.(b' lsr 1) - file_h) in
+      let wf, wl, wr = Precalculated.Mask.north, east, west in
+      let bf, bl, br = Precalculated.Mask.south, west, east in
+      let tbl = Array.create
+          ~len:(Piece.Color.count * Square.count) Bb.empty in
+      for i = 0 to Piece.Color.count - 1 do
+        for j = 0 to Square.count - 1 do
+          let sq = Square.of_int_exn j in
+          let w = wf sq in
+          let b = bf sq in
+          tbl.(Piece.Color.white + j * Piece.Color.count) <-
+            Bb.(w + wl w + wr w);
+          tbl.(Piece.Color.black + j * Piece.Color.count) <-
+            Bb.(w + bl b + br b);
+        done;
       done;
-    done;
-    tbl
+      tbl
 
-  let go ?(swap = false) pos endgame =
-    let us = Position.active pos in
-    let them = Position.inactive pos in
-    let c = if swap then them else us in
-    let c' = Piece.Color.opposite c in
-    let b = Position.board_of_color pos c in
-    let b' = Position.board_of_color pos c' in
-    let pawn = Bb.(b & Position.pawn pos) in
-    let pawn' = Bb.(b' & Position.pawn pos) in
-    let rec loop acc b =
-      if Bb.(b = empty) then acc
-      else
-        let sq = Bb.first_set_exn b in
-        let m =
-          Array.unsafe_get masks
-            Piece.Color.(to_int c + Square.to_int sq * count) in
-        let acc = acc + Bool.to_int Bb.((m & pawn') = empty) in
-        loop acc @@ Bb.(b - (file_exn @@ Square.file sq)) in
-    let score = loop 0 pawn in
-    weigh_start (score * start_bonus) endgame +
-    weigh_end   (score * end_bonus)   endgame
+    let go ?(swap = false) pos endgame =
+      let us = Position.active pos in
+      let them = Position.inactive pos in
+      let c = if swap then them else us in
+      let c' = Piece.Color.opposite c in
+      let b = Position.board_of_color pos c in
+      let b' = Position.board_of_color pos c' in
+      let pawn = Bb.(b & Position.pawn pos) in
+      let pawn' = Bb.(b' & Position.pawn pos) in
+      let rec loop acc b =
+        if Bb.(b = empty) then acc
+        else
+          let sq = Bb.first_set_exn b in
+          let m =
+            Array.unsafe_get masks
+              Piece.Color.(to_int c + Square.to_int sq * count) in
+          let acc = acc + Bool.to_int Bb.((m & pawn') = empty) in
+          loop acc @@ Bb.(b - (file_exn @@ Square.file sq)) in
+      let score = loop 0 pawn in
+      weigh_start (score * start_bonus) endgame +
+      weigh_end   (score * end_bonus)   endgame
 
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
-end
+    let advantage pos our_endgame their_endgame =
+      go pos their_endgame - go pos our_endgame ~swap:true
+  end
 
-(* Penalize having more than one pawn of the same color on the same file. *)
-module Doubled_pawns = struct
-  let start_penalty = -20
-  let end_penalty = -30
+  (* Penalize having more than one pawn of the same color on the same file. *)
+  module Doubled = struct
+    let start_penalty = -20
+    let end_penalty = -30
 
-  let go ?(swap = false) pos endgame =
-    let us = Position.active pos in
-    let them = Position.inactive pos in
-    let c = if swap then them else us in
-    let b = Position.board_of_color pos c in
-    let pawn = Bb.(b & Position.pawn pos) in
-    let score =
-      List.init Square.File.count ~f:ident |>
-      List.fold ~init:0 ~f:(fun acc i ->
-          let n = Bb.(count (file_exn i & pawn)) in
-          acc + max 0 (n - 1)) in
-    weigh_start (score * start_penalty) endgame +
-    weigh_end   (score * end_penalty)   endgame
+    let go ?(swap = false) pos endgame =
+      let us = Position.active pos in
+      let them = Position.inactive pos in
+      let c = if swap then them else us in
+      let b = Position.board_of_color pos c in
+      let pawn = Bb.(b & Position.pawn pos) in
+      let score =
+        List.init Square.File.count ~f:ident |>
+        List.fold ~init:0 ~f:(fun acc i ->
+            let n = Bb.(count (file_exn i & pawn)) in
+            acc + max 0 (n - 1)) in
+      weigh_start (score * start_penalty) endgame +
+      weigh_end   (score * end_penalty)   endgame
 
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
-end
+    let advantage pos our_endgame their_endgame =
+      go pos their_endgame - go pos our_endgame ~swap:true
+  end
 
-module Isolated_pawns = struct
-  let start_penalty = -15
-  let end_penalty = -30
+  module Isolated = struct
+    let start_penalty = -15
+    let end_penalty = -30
 
-  let neighbor_files = Bb.[|
-      file_b;
-      file_a + file_c;
-      file_b + file_d;
-      file_c + file_e;
-      file_d + file_f;
-      file_e + file_g;
-      file_f + file_h;
-      file_g;
-    |]
+    let neighbor_files = Bb.[|
+        file_b;
+        file_a + file_c;
+        file_b + file_d;
+        file_c + file_e;
+        file_d + file_f;
+        file_e + file_g;
+        file_f + file_h;
+        file_g;
+      |]
 
-  let go ?(swap = false) pos endgame =
-    let us = Position.active pos in
-    let them = Position.inactive pos in
-    let c = if swap then them else us in
-    let b = Position.board_of_color pos c in
-    let pawn = Bb.(b & Position.pawn pos) in
-    let score =
-      List.init Square.File.count ~f:ident |>
-      List.fold ~init:0 ~f:(fun acc i ->
-          let f = Bb.file_exn i in
-          let nf = Array.unsafe_get neighbor_files i in
-          let isolated = Bb.(((f & pawn) <> empty) && ((nf & pawn) = empty)) in
-          acc + Bool.to_int isolated) in
-    weigh_start (score * start_penalty) endgame +
-    weigh_end   (score * end_penalty)   endgame
+    let go ?(swap = false) pos endgame =
+      let us = Position.active pos in
+      let them = Position.inactive pos in
+      let c = if swap then them else us in
+      let b = Position.board_of_color pos c in
+      let pawn = Bb.(b & Position.pawn pos) in
+      let score =
+        List.init Square.File.count ~f:ident |>
+        List.fold ~init:0 ~f:(fun acc i ->
+            let f = Bb.file_exn i in
+            let nf = Array.unsafe_get neighbor_files i in
+            let isolated =
+              Bb.(((f & pawn) <> empty) && ((nf & pawn) = empty)) in
+            acc + Bool.to_int isolated) in
+      weigh_start (score * start_penalty) endgame +
+      weigh_end   (score * end_penalty)   endgame
 
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
+    let advantage pos our_endgame their_endgame =
+      go pos their_endgame - go pos our_endgame ~swap:true
+  end
+
+  (* Evaluate the pawn structure. At the same time, see if we cached the
+     result of a previous evaluation. *)
+  let go pos pst our_endgame their_endgame =
+    let key = Position.hash pos in
+    match Hashtbl.find pst key with
+    | Some score -> score
+    | None ->
+      let passed = Passed.advantage pos our_endgame their_endgame in
+      let doubled = Doubled.advantage pos our_endgame their_endgame in
+      let isolated = Isolated.advantage pos our_endgame their_endgame in
+      let data = passed + doubled + isolated in
+      Hashtbl.set pst ~key ~data;
+      data
 end
 
 module Placement = struct
@@ -506,7 +533,7 @@ module Mop_up = struct
 end
 
 (* Overall evaluation. *)
-let go pos =
+let go pos pst =
   let our_pawns = Material.pawns pos in
   let their_pawns = Material.pawns pos ~swap:true in
   let our_material = Material.not_pawns pos in
@@ -520,9 +547,7 @@ let go pos =
     Rook_open_file.advantage pos our_endgame their_endgame +
     Bishop_pair.advantage pos our_endgame their_endgame +
     King_pawn_shield.advantage pos our_endgame their_endgame +
-    Passed_pawns.advantage pos our_endgame their_endgame +
-    Doubled_pawns.advantage pos our_endgame their_endgame +
-    Isolated_pawns.advantage pos our_endgame their_endgame +
+    Pawns.go pos pst our_endgame their_endgame +
     Placement.advantage pos our_endgame their_endgame +
     Mop_up.advantage pos
       our_endgame our_material

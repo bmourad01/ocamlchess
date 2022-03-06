@@ -1,3 +1,11 @@
+(** Pawn structure table. *)
+module Pst : sig
+  type t
+
+  (** Create the table. *)
+  val create : unit -> t
+end
+
 (** The weight given to material count on the board. *)
 val material_weight : int
 
@@ -7,4 +15,4 @@ val material_weight : int
     Note that draws and checkmates are not explored here, but instead
     are considered when searching positions (see the [Search] module).
 *)
-val go : Position.t -> int
+val go : Position.t -> Pst.t -> int

@@ -83,7 +83,7 @@ val create :
   root:Position.t ->
   history:int Core_kernel.Int64.Map.t ->
   tt:Tt.t ->
-  unit ->
+  pst:Eval.Pst.t ->
   t
 
 (** [go search ~clear] runs the game tree search and returns the search
