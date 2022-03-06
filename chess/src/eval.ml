@@ -21,34 +21,42 @@ let pawn_margin = Piece.Kind.value Pawn * 2 * material_weight
 let weigh_start n endgame = Float.(to_int (of_int n * (1.0 - endgame)))
 let weigh_end n endgame = Float.(to_int (of_int n * endgame))
 
-(* Weighted sum of pawns. *)
-let pawns ?(swap = false) pos =
-  let us = Position.active_board pos in
-  let them = Position.inactive_board pos in
-  let b = if swap then them else us in
-  let b' = Position.board_of_kind pos Pawn in
-  let v = Piece.Kind.value Pawn in
-  v * Bb.(count (b & b')) * material_weight
-
-(* Weighted sum of material (minus pawns). *)
-let material =
-  let kinds = Piece.[Knight; Bishop; Rook; Queen] in
-  fun ?(swap = false) pos ->
+module Material = struct
+  (* Weighted sum of pawns. *)
+  let pawns ?(swap = false) pos =
     let us = Position.active_board pos in
     let them = Position.inactive_board pos in
     let b = if swap then them else us in
-    List.fold kinds ~init:0 ~f:(fun acc k ->
-        let b' = Position.board_of_kind pos k in
-        let v = Piece.Kind.value k in
-        acc + v * Bb.(count (b & b')) * material_weight)
+    let b' = Position.board_of_kind pos Pawn in
+    let v = Piece.Kind.value Pawn in
+    v * Bb.(count (b & b')) * material_weight
 
-(* Weighted sum of the "mobility" of the material. *)
-let mobility =
+  (* Weighted sum of material (minus pawns). *)
+  let not_pawns =
+    let kinds = Piece.[Knight; Bishop; Rook; Queen] in
+    fun ?(swap = false) pos ->
+      let us = Position.active_board pos in
+      let them = Position.inactive_board pos in
+      let b = if swap then them else us in
+      List.fold kinds ~init:0 ~f:(fun acc k ->
+          let b' = Position.board_of_kind pos k in
+          let v = Piece.Kind.value k in
+          acc + v * Bb.(count (b & b')) * material_weight)
+
+  (* Calculate the endgame weight based on the amount of material on
+     the board. *)
+  let endgame_weight material =
+    Float.(1.0 - (min 1.0 (of_int material * endgame_scale)))
+end
+
+module Mobility = struct
   (* In order: pawn, knight, bishop, rook, queen, king. *)
-  let start_bonus = [|0; 4; 3; 0; 0; 0|] in
-  let end_bonus   = [|1; 6; 2; 1; 1; 1|] in
-  let kinds = Piece.[Knight; Bishop; Rook; Queen; King] in
-  fun ?(swap = false) pos endgame ->
+  let start_bonus = [|0; 4; 3; 0; 0; 0|]
+  let end_bonus   = [|1; 6; 2; 1; 1; 1|]
+  let kinds       = Piece.[Knight; Bishop; Rook; Queen; King]
+
+  (* Weighted sum of the "mobility" of the material. *)
+  let go ?(swap = false) pos endgame =
     let us = Position.active_board pos in
     let them = Position.inactive_board pos in
     let occupied = Bb.(us + them) in
@@ -101,16 +109,18 @@ let mobility =
               acc + start + end_)) in
     mobility + pawn
 
-(* Relative mobility advantage. *)
-let mobility pos our_endgame their_endgame =
-  mobility pos their_endgame - mobility pos our_endgame ~swap:true
+  (* Relative mobility advantage. *)
+  let advantage pos our_endgame their_endgame =
+    go pos their_endgame - go pos our_endgame ~swap:true
+end
 
-(* Count the rooks on open files. This can also be measured by the mobility
-   score, but we also give a bonus here. *)
-let rook_open_file =
-  let start_bonus = 20 in
-  let end_bonus = 40 in
-  fun ?(swap = false) pos endgame ->
+module Rook_open_file = struct
+  let start_bonus = 20
+  let end_bonus = 40
+
+  (* Count the rooks on open files. This can also be measured by the mobility
+     score, but we also give a bonus here. *)
+  let go ?(swap = false) pos endgame =
     let us = Position.active_board pos in
     let them = Position.inactive_board pos in
     let occupied = Bb.(us + them) in
@@ -124,148 +134,238 @@ let rook_open_file =
           if Bb.(b <> empty && b = (f & occupied))
           then acc + 1 else acc) in
     weigh_start (score * start_bonus) endgame +
-    weigh_end (score * end_bonus) endgame
+    weigh_end   (score * end_bonus)   endgame
 
-(* Relative advantage of rooks on open files. *)
-let rook_open_file pos our_endgame their_endgame =
-  rook_open_file pos their_endgame - rook_open_file pos our_endgame ~swap:true
+  (* Relative advantage of rooks on open files. *)
+  let advantage pos our_endgame their_endgame =
+    go pos their_endgame - go pos our_endgame ~swap:true
+end
 
-(* Weighted sum of piece placement (using piece-square tables). *)
-let placement =
-  let pawn = [|
-    0;  0;   0;   0;   0;   0;   0;  0;
-    50; 50;  50;  50;  50;  50;  50; 50;
-    10; 10;  20;  30;  30;  20;  10; 10;
-    5;  5;   10;  25;  25;  10;  5;  5;
-    0;  0;   0;   20;  20;  0;   0;  0;
-    5; -5;  -10;  0;   0;  -10; -5;  5;
-    5;  10;  10; -20; -20;  10;  10; 5;
-    0;  0;   0;   0;   0;   0;   0;  0;
-  |] in
-  let knight = [|
-    -50; -40; -30; -30; -30; -30; -40; -50;
-    -40; -20;  0;   0;   0;   0;  -20; -40;
-    -30;  0;   10;  15;  15;  10;  0;  -30;
-    -30;  5;   15;  20;  20;  15;  5;  -30;
-    -30;  5;   10;  15;  15;  10;  0;  -30;
-    -30;  5;   15;  20;  20;  15;  5;  -30;
-    -40; -20;  0;   5;   5;   0;  -20; -40;
-    -50; -40; -30; -30; -30; -30; -40; -50;
-  |] in
-  let bishop = [|
-    -20; -10; -10; -10; -10; -10; -10; -20;
-    -10;  0;   0;   0;   0;   0;   0;  -10;
-    -10;  0;   5;   10;  10;  5;   0;  -10;
-    -10;  5;   5;   10;  10;  5;   5;  -10;
-    -10;  0;   10;  10;  10;  10;  0;  -10;
-    -10;  10;  10;  10;  10;  10;  10; -10;
-    -10;  5;   0;   0;   0;   0;   5;  -10;
-    -20; -10; -10; -10; -10; -10; -10; -20;
-  |] in
-  let rook = [|
-    +0; 0;  0;  0;  0;  0;  0;  0;
-    +5; 10; 10; 10; 10; 10; 10; 5;
-    -5; 0;  0;  0;  0;  0;  0; -5;
-    -5; 0;  0;  0;  0;  0;  0; -5;
-    -5; 0;  0;  0;  0;  0;  0; -5;
-    -5; 0;  0;  0;  0;  0;  0; -5;
-    -5; 0;  0;  0;  0;  0;  0; -5;
-    +0; 0;  0;  0;  5;  5;  0;  0;
-  |] in
-  let queen = [|
-    -20; -10; -10; -5; -5; -10; -10; -20;
-    -10;  0;   0;   0;  0;  0;   0;   0;
-    -10;  0;   5;   5;  5;  5;   0;  -10;
-    -5;   0;   5;   5;  5;  5;   0;  -5;
-    +0;   0;   5;   5;  5;  5;   0;  -5;
-    -10;  5;   5;   5;  5;  5;   5;  -10;
-    -10;  0;   5;   0;  0;  0;   0;  -10;
-    -20; -10; -10; -5; -5; -10; -10; -20;
-  |] in
-  let king_start = [|
-    -30; -40; -40; -50; -50; -40; -40; -30;
-    -30; -40; -40; -50; -50; -40; -40; -30;
-    -30; -40; -40; -50; -50; -40; -40; -30;
-    -30; -40; -40; -50; -50; -40; -40; -30;
-    -20; -30; -30; -40; -40; -30; -30; -20;
-    -10; -20; -20; -20; -20; -20; -20; -10;
-    +20;  20;  0;   0;   0;   0;   20;  20;
-    +20;  30;  10;  0;   0;   10;  20;  30;
-  |] in
-  let king_end = [|
-    -50; -40; -30; -20; -20; -30; -40; -50;
-    -30; -20; -10;  0;   0;  -10; -20; -30;
-    -30; -10;  20;  30;  30;  20; -10; -30;
-    -30; -10;  30;  40;  40;  30; -10; -30;
-    -30; -10;  30;  40;  40;  30; -10; -30;
-    -30; -10;  20;  30;  30;  20; -10; -30;
-    -30; -30;  0;   0;   0;   0;  -30; -30;
-    -50; -30; -30; -30; -30; -30; -30; -50;
-  |] in
-  let get t sq c =
-    let sq = match c with
-      | Piece.White -> Square.(with_rank_exn sq (7 - rank sq))
-      | Piece.Black -> sq in
-    Array.unsafe_get t @@ Square.to_int sq in
-  fun ?(swap = false) pos endgame ->
+module Bishop_pair = struct
+  let start_bonus = 45
+  let end_bonus = 55
+
+  let go ?(swap = false) pos endgame =
+    let us = Position.active_board pos in
+    let them = Position.inactive_board pos in
+    let b = if swap then them else us in
+    let bishop = Bb.(b & Position.bishop pos) in
+    let has_pair =
+      Bb.(count (bishop & black)) <> 0 &&
+      Bb.(count (bishop & white)) <> 0 in
+    let score = Bool.to_int has_pair in
+    weigh_start (score * start_bonus) endgame +
+    weigh_end   (score * end_bonus)   endgame
+
+  let advantage pos our_endgame their_endgame =
+    go pos their_endgame - go pos our_endgame ~swap:true
+end
+
+module Placement = struct
+  (* Piece-square tables. *)
+  module Tables = struct
+    let pawn_start = [|
+      0;  0;   0;   0;   0;   0;   0;  0;
+      50; 50;  50;  50;  50;  50;  50; 50;
+      10; 10;  20;  30;  30;  20;  10; 10;
+      5;  5;   10;  25;  25;  10;  5;  5;
+      0;  0;   0;   20;  20;  0;   0;  0;
+      5; -5;  -10;  0;   0;  -10; -5;  5;
+      5;  10;  10; -20; -20;  10;  10; 5;
+      0;  0;   0;   0;   0;   0;   0;  0;
+    |]
+
+    let pawn_end = [|
+      +0;   0;   0;   0;   0;   0;   0;   0;
+      +80;  80;  80;  80;  80;  80;  80;  80;
+      +60;  60;  60;  60;  60;  60;  60;  60;
+      +40;  40;  40;  40;  40;  40;  40;  40;
+      +20;  20;  20;  20;  20;  20;  20;  20;
+      +0;   0;   0;   0;   0;   0;   0;   0;
+      -20; -20; -20; -20; -20; -20; -20; -20;
+      +0;   0;   0;   0;   0;   0;   0;   0;
+    |]
+
+    let knight_start = [|
+      -50; -40; -30; -30; -30; -30; -40; -50;
+      -40; -20;  0;   0;   0;   0;  -20; -40;
+      -30;  0;   10;  15;  15;  10;  0;  -30;
+      -30;  5;   15;  20;  20;  15;  5;  -30;
+      -30;  5;   10;  15;  15;  10;  0;  -30;
+      -30;  5;   15;  20;  20;  15;  5;  -30;
+      -40; -20;  0;   5;   5;   0;  -20; -40;
+      -50; -40; -30; -30; -30; -30; -40; -50;
+    |]
+
+    let knight_end = [|
+      -50; -40; -30; -30; -30; -30; -40; -50;
+      -40; -20;  0;   0;   0;   0;  -20; -40;
+      -30;  0;   10;  15;  15;  10;  0;  -30;
+      -30;  5;   15;  20;  20;  15;  5;  -30;
+      -30;  0;   15;  20;  20;  15;  0;  -30;
+      -30;  5;   10;  15;  15;  10;  5;  -30;
+      -40; -20;  0;   5;   5;   0;  -20; -40;
+      -50; -40; -30; -30; -30; -30; -40; -50;
+    |]
+
+    let bishop_start = [|
+      -20; -10; -10; -10; -10; -10; -10; -20;
+      -10;  0;   0;   0;   0;   0;   0;  -10;
+      -10;  0;   5;   10;  10;  5;   0;  -10;
+      -10;  5;   5;   10;  10;  5;   5;  -10;
+      -10;  0;   10;  10;  10;  10;  0;  -10;
+      -10;  10;  10;  10;  10;  10;  10; -10;
+      -10;  5;   0;   0;   0;   0;   5;  -10;
+      -20; -10; -10; -10; -10; -10; -10; -20;
+    |]
+
+    let bishop_end = [|
+      -20; -10; -10; -10; -10; -10; -10; -20;
+      -10;  0;    0;   0;   0;   0;   0; -10;
+      -10;  0;    5;  10;  10;   5;   0; -10;
+      -10;  5;    5;  10;  10;   5;   5; -10;
+      -10;  0;   10;  10;  10;  10;   0; -10;
+      -10;  10;  10;  10;  10;  10;  10; -10;
+      -10;  5;    0;   0;   0;   0;   5; -10;
+      -20; -10; -10; -10; -10; -10; -10; -20;
+    |]
+
+    let rook_start = [|
+      +0; 0;  0;  0;  0;  0;  0;  0;
+      +5; 10; 10; 10; 10; 10; 10; 5;
+      -5; 0;  0;  0;  0;  0;  0; -5;
+      -5; 0;  0;  0;  0;  0;  0; -5;
+      -5; 0;  0;  0;  0;  0;  0; -5;
+      -5; 0;  0;  0;  0;  0;  0; -5;
+      -5; 0;  0;  0;  0;  0;  0; -5;
+      +0; 0;  0;  0;  5;  5;  0;  0;
+    |]
+
+    let rook_end = [|
+      +0;  0;  0;  0;  0;  0;  0;  0;
+      -5;  0;  0;  0;  0;  0;  0; -5;
+      -5;  0;  0;  0;  0;  0;  0; -5;
+      -5;  0;  0;  0;  0;  0;  0; -5;
+      -5;  0;  0;  0;  0;  0;  0; -5;
+      -5;  0;  0;  0;  0;  0;  0; -5;
+      -5;  0;  0;  0;  0;  0;  0; -5;
+      +0;  0;  0;  0;  0;  0;  0;  0;
+    |]
+
+    let queen_start = [|
+      -20; -10; -10; -5; -5; -10; -10; -20;
+      -10;  0;   0;   0;  0;  0;   0;   0;
+      -10;  0;   5;   5;  5;  5;   0;  -10;
+      -5;   0;   5;   5;  5;  5;   0;  -5;
+      +0;   0;   5;   5;  5;  5;   0;  -5;
+      -10;  5;   5;   5;  5;  5;   5;  -10;
+      -10;  0;   5;   0;  0;  0;   0;  -10;
+      -20; -10; -10; -5; -5; -10; -10; -20;
+    |]
+
+    let queen_end = [|
+      -20; -10; -10; -5; -5; -10; -10; -20;
+      -10;  0;   0;   0;  0;  0;   0;  -10;
+      -10;  0;   5;   5;  5;  5;   0;  -10;
+      -5;   0;   5;   5;  5;  5;   0;  -5;
+      +0;   0;   5;   5;  5;  5;   0;  -5;
+      -10;  5;   5;   5;  5;  5;   0;  -10;
+      -10;  0;   5;   0;  0;  0;   0;  -10;
+      -20; -10; -10; -5; -5; -10; -10; -20;
+    |]
+
+    let king_start = [|
+      -30; -40; -40; -50; -50; -40; -40; -30;
+      -30; -40; -40; -50; -50; -40; -40; -30;
+      -30; -40; -40; -50; -50; -40; -40; -30;
+      -30; -40; -40; -50; -50; -40; -40; -30;
+      -20; -30; -30; -40; -40; -30; -30; -20;
+      -10; -20; -20; -20; -20; -20; -20; -10;
+      +20;  20;  0;   0;   0;   0;   20;  20;
+      +20;  30;  10;  0;   0;   10;  20;  30;
+    |]
+
+    let king_end = [|
+      -50; -40; -30; -20; -20; -30; -40; -50;
+      -30; -20; -10;  0;   0;  -10; -20; -30;
+      -30; -10;  20;  30;  30;  20; -10; -30;
+      -30; -10;  30;  40;  40;  30; -10; -30;
+      -30; -10;  30;  40;  40;  30; -10; -30;
+      -30; -10;  20;  30;  30;  20; -10; -30;
+      -30; -30;  0;   0;   0;   0;  -30; -30;
+      -50; -30; -30; -30; -30; -30; -30; -50;
+    |]
+
+    let get t sq c =
+      let sq = match c with
+        | Piece.White -> Square.(with_rank_exn sq (7 - rank sq))
+        | Piece.Black -> sq in
+      Array.unsafe_get t @@ Square.to_int sq 
+  end
+
+  (* Weighted sum of piece placement (using piece-square tables). *)
+  let go ?(swap = false) pos endgame =
     let c = if swap then Position.inactive pos else Position.active pos in
     Position.collect_color pos c |> List.fold ~init:0 ~f:(fun acc (sq, k) ->
-        let v = match k with
-          | Piece.Pawn   -> weigh_start (get pawn   sq c) endgame
-          | Piece.Knight -> weigh_start (get knight sq c) endgame
-          | Piece.Bishop -> weigh_start (get bishop sq c) endgame
-          | Piece.Rook   -> weigh_start (get rook   sq c) endgame
-          | Piece.Queen  -> weigh_start (get queen  sq c) endgame
-          | Piece.King   ->
-            weigh_start (get king_start sq c) endgame +
-            weigh_end   (get king_end   sq c) endgame in
-        acc + v)
+        let open Tables in
+        let start, end_ = match k with
+          | Piece.Pawn   -> pawn_start,   pawn_end
+          | Piece.Knight -> knight_start, knight_end
+          | Piece.Bishop -> bishop_start, bishop_end
+          | Piece.Rook   -> rook_start,   rook_end
+          | Piece.Queen  -> queen_start,  queen_end
+          | Piece.King   -> king_start,   king_end in
+        let start = weigh_start (get start sq c) endgame in
+        let end_  = weigh_end   (get end_  sq c) endgame in
+        acc + start + end_)
 
-(* Relative placement advantage. *)
-let placement pos our_endgame their_endgame =
-  placement pos their_endgame - placement pos our_endgame ~swap:true
+  (* Relative placement advantage. *)
+  let advantage pos our_endgame their_endgame =
+    go pos their_endgame - go pos our_endgame ~swap:true
+end
 
-(* Mop-up score (for endgames).
+module Mop_up = struct
+  (* Mop-up score (for endgames).
 
-   See: https://www.chessprogramming.org/Mop-up_Evaluation
-*)
-let mop_up ?(swap = false) pos endgame =
-  let us = Position.active_board pos in
-  let them = Position.inactive_board pos in
-  let b, b' = if swap then them, us else us, them in
-  let our_king = Bb.(first_set_exn (b & Position.king pos)) in
-  let their_king = Bb.(first_set_exn (b' & Position.king pos)) in
-  let n =
-    Square.manhattan_center their_king * 10 +
-    (14 - Square.manhattan our_king their_king) * 4 in
-  weigh_end n endgame
+     See: https://www.chessprogramming.org/Mop-up_Evaluation
+  *)
+  let go ?(swap = false) pos endgame =
+    let us = Position.active_board pos in
+    let them = Position.inactive_board pos in
+    let b, b' = if swap then them, us else us, them in
+    let our_king = Bb.(first_set_exn (b & Position.king pos)) in
+    let their_king = Bb.(first_set_exn (b' & Position.king pos)) in
+    let n =
+      Square.manhattan_center their_king * 10 +
+      (14 - Square.manhattan our_king their_king) * 4 in
+    weigh_end n endgame
 
-(* Calculate the endgame weight based on the amount of material on
-   the board. *)
-let endgame_weight material =
-  Float.(1.0 - (min 1.0 (of_int material * endgame_scale)))
+  let advantage pos
+      our_endgame our_material
+      their_endgame their_material =
+    let us = if our_material > their_material + pawn_margin
+      then go pos their_endgame else 0 in
+    let them = if their_material > our_material + pawn_margin
+      then go pos our_endgame ~swap:true else 0 in
+    us - them
+end
 
 (* Overall evaluation. *)
 let go pos =
-  let our_pawns = pawns pos in
-  let their_pawns = pawns pos ~swap:true in
-  let our_material = material pos in
-  let their_material = material pos ~swap:true in
-  let our_endgame = endgame_weight our_material in
-  let their_endgame = endgame_weight their_material in
-  let material =
-    (our_material + our_pawns) -
-    (their_material + their_pawns) in
-  let our_mop_up =
-    if our_material > their_material + pawn_margin
-    then mop_up pos their_endgame else 0 in
-  let their_mop_up =
-    if their_material > our_material + pawn_margin
-    then mop_up pos our_endgame ~swap:true else 0 in
+  let our_pawns = Material.pawns pos in
+  let their_pawns = Material.pawns pos ~swap:true in
+  let our_material = Material.not_pawns pos in
+  let their_material = Material.not_pawns pos ~swap:true in
+  let our_endgame = Material.endgame_weight our_material in
+  let their_endgame = Material.endgame_weight their_material in
+  let material = (our_material + our_pawns) - (their_material + their_pawns) in
   let score =
     material +
-    mobility pos our_endgame their_endgame +
-    rook_open_file pos our_endgame their_endgame +
-    placement pos our_endgame their_endgame +
-    (our_mop_up - their_mop_up) in
-  score, our_endgame
+    Mobility.advantage pos our_endgame their_endgame +
+    Rook_open_file.advantage pos our_endgame their_endgame +
+    Bishop_pair.advantage pos our_endgame their_endgame +
+    Placement.advantage pos our_endgame their_endgame +
+    Mop_up.advantage pos
+      our_endgame our_material
+      their_endgame their_material in
+  score

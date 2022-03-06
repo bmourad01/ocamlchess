@@ -36,6 +36,8 @@ let file_f = 0x2020202020202020L
 let file_g = 0x4040404040404040L
 let file_h = 0x8080808080808080L
 let edges  = 0xFF818181818181FFL
+let black  = 0xAA55AA55AA55AA55L
+let white  = 0x55AA55AA55AA55AAL
 
 (* Helpers to access rank/file by index. *)
 

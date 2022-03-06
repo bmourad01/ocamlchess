@@ -68,6 +68,12 @@ val file_h : t
 (** [edges] is the union of [file_a], [file_h], [rank_1], and [rank_8]. *)
 val edges : t
 
+(** [black] is the set of black squares. *)
+val black : t
+
+(** [white] is the set of white squares. *)
+val white : t
+
 (** [rank_exn i] the rank at index [i] if [i \in \[0,7\]]. Otherwise, an
     exception is raised. *)
 val rank_exn : int -> t

@@ -336,7 +336,7 @@ module Quiescence = struct
 
   and with_moves pos moves ~alpha ~beta =
     State.(update inc_nodes) >>= fun () ->
-    let score, _ = Eval.go pos in
+    let score = Eval.go pos in
     if score >= beta then State.return beta
     else let open Continue_or_stop in
       let init = max score alpha in
@@ -486,7 +486,7 @@ module Main = struct
     not check &&
     null &&
     depth < Array.length futility_margin &&
-    let score, _ = Eval.go pos in
+    let score = Eval.go pos in
     let margin = Array.unsafe_get futility_margin depth in
     score + margin <= alpha
 
@@ -502,7 +502,7 @@ module Main = struct
     if beta - alpha > 1 || check || not null
     then State.return None
     else
-      let score, _ = Eval.go pos in
+      let score = Eval.go pos in
       nmr pos ~score ~beta ~ply ~depth >>= function
       | Some _ as beta -> State.return beta
       | None -> razor pos moves ~score ~alpha ~beta ~depth
