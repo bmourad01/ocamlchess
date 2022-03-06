@@ -178,6 +178,16 @@ let assert_hash new_pos =
       "\nNew position has hash %016LX, but %016LX was expected. \
        Position:\n%s\n%!" h' h (Position.Fen.to_string new_pos) ()
 
+let assert_pawn_hash new_pos =
+  let h =
+    Position.Fen.to_string new_pos |>
+    Position.Fen.of_string_exn |>
+    Position.pawn_hash in
+  let h' = Position.pawn_hash new_pos in
+  if Int64.(h = h') then h' else failwithf
+      "\nNew position has pawn hash %016LX, but %016LX was expected. \
+       Position:\n%s\n%!" h' h (Position.Fen.to_string new_pos) ()
+
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
@@ -201,6 +211,7 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
         (Move.to_string m) (Position.San.of_legal mv)
         (Position.Fen.to_string new_pos);
       printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
+      printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
       printf "%d legal moves\n%!" @@ List.length legal;
       printf "\n%!";
     end;
@@ -262,6 +273,7 @@ let go pos ~white ~black ~delay =
   printf "\n%!";
   printf "Starting position: %s\n%!" @@ Position.Fen.to_string pos;
   printf "Hash: %016LX\n%!" @@ Position.hash pos;
+  printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
   printf "%d legal moves\n%!" @@ List.length legal;
   printf "\n%!";
   let State.T.{game; _} =

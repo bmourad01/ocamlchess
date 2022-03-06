@@ -10,6 +10,11 @@ let expected_hash pos =
   Fen.of_string_exn |>
   Position.hash
 
+let expected_pawn_hash pos =
+  Fen.to_string pos |>
+  Fen.of_string_exn |>
+  Position.pawn_hash
+
 let test_single_aux m pos =
   let hash = Position.hash pos in
   let expected = expected_hash pos in
@@ -17,6 +22,13 @@ let test_single_aux m pos =
     ~msg:(Format.asprintf
             "Position '%a' has hash %016LX after making move %a, but was \
              expected to have hash %016LX"
+            Position.pp pos hash Move.pp m expected);
+  let hash = Position.pawn_hash pos in
+  let expected = expected_pawn_hash pos in
+  assert_equal hash expected ~cmp:Int64.equal
+    ~msg:(Format.asprintf
+            "Position '%a' has pawn hash %016LX after making move %a, but \
+             was expected to have pawn hash %016LX"
             Position.pp pos hash Move.pp m expected)
 
 let test_single legal =

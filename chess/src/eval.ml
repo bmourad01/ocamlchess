@@ -339,7 +339,7 @@ module Pawns = struct
   (* Evaluate the pawn structure. At the same time, see if we cached the
      result of a previous evaluation. *)
   let go pos pst our_endgame their_endgame =
-    let key = Position.hash pos in
+    let key = Position.pawn_hash pos in
     match Hashtbl.find pst key with
     | Some score -> score
     | None ->

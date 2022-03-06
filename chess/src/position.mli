@@ -57,6 +57,9 @@ val fullmove : t -> int
 (** [hash pos] returns the Zobrist hash of the position. *)
 val hash : t -> int64
 
+(** [pawn_hash pos] returns the pawn structure hash of the position. *)
+val pawn_hash : t -> int64
+
 (** [same_hash pos1 pos2] returns [true] if [pos1] and [pos2] have the same
     Zobrist hash. *)
 val same_hash : t -> t -> bool

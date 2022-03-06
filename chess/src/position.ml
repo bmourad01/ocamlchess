@@ -43,6 +43,7 @@ module T = struct
     mutable halfmove : int;
     mutable fullmove : int;
     mutable hash : int64;
+    mutable pawn_hash : int64;
   } [@@deriving compare, equal, fields, sexp]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
@@ -64,6 +65,7 @@ module T = struct
     halfmove   = pos.halfmove;
     fullmove   = pos.fullmove;
     hash       = pos.hash;
+    pawn_hash  = pos.pawn_hash;
   }
 end
 
@@ -276,7 +278,13 @@ module Hash = struct
     H.update @@ Update.castle_test pos.castle White Kingside  >>= fun () ->
     H.update @@ Update.castle_test pos.castle White Queenside >>= fun () ->
     H.update @@ Update.castle_test pos.castle Black Kingside  >>= fun () ->
-    H.update @@ Update.castle_test pos.castle Black Queenside 
+    H.update @@ Update.castle_test pos.castle Black Queenside
+
+  let pawn_structure pos = Fn.flip Monad.State.exec 0L @@
+    let module H = Monad.State.Make(Int64)(Monad.Ident) in
+    let open H.Syntax in
+    collect_kind pos Pawn |> H.List.iter ~f:(fun (sq, c) ->
+        H.update @@ Update.piece c Pawn sq)
 end
 
 let same_hash pos1 pos2 = Int64.(pos1.hash = pos2.hash)
@@ -964,8 +972,10 @@ module Fen = struct
       parse_fullmove fullmove >>= fun fullmove ->
       let pos = Fields.create
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
-          ~active ~castle ~en_passant ~halfmove ~fullmove ~hash:0L in
-      set_hash pos @@ Hash.of_position pos;      
+          ~active ~castle ~en_passant ~halfmove ~fullmove
+          ~hash:0L ~pawn_hash:0L in
+      set_hash pos @@ Hash.of_position pos;
+      set_pawn_hash pos @@ Hash.pawn_structure pos;
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
 
@@ -1015,6 +1025,9 @@ module Makemove = struct
 
   let[@inline] update_hash pos ~f = set_hash pos @@ f pos.hash
 
+  let[@inline] update_pawn_hash sq c pos =
+    set_pawn_hash pos @@ Hash.Update.piece c Pawn sq pos.pawn_hash
+
   let[@inline] map_color c pos ~f = match c with
     | Piece.White -> set_white pos @@ f @@ white pos
     | Piece.Black -> set_black pos @@ f @@ black pos
@@ -1033,6 +1046,10 @@ module Makemove = struct
     map_color c pos ~f;
     map_kind k pos ~f;
     update_hash pos ~f:(Hash.Update.piece c k sq);
+    begin match k with
+      | Pawn -> update_pawn_hash sq c pos
+      | _ -> ()
+    end;
     k
 
   let set = Fn.flip Bb.set
