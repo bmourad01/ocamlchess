@@ -3,6 +3,7 @@ open Core_kernel
 module Bb = Bitboard
 module Pre = Precalculated
 
+(* Pawn structure table. *)
 module Pst = struct
   type t = (int64, int) Hashtbl.t
 
@@ -170,25 +171,29 @@ end
 module King_pawn_shield = struct
   let bonus = 10
 
+  let idx i j = i + j * Piece.Color.count
+
   (* Given the king's square for a particular side, calculate the mask
      for pawns that can shield it (left, right, and center) from their
      starting ranks. *)
   let masks =
     let wf, wfl, wfr, wr = Int64.(lsl), Bb.file_a, Bb.file_h, Bb.rank_2 in
     let bf, bfl, bfr, br = Int64.(lsr), Bb.file_h, Bb.file_a, Bb.rank_7 in
-    let tbl = Array.create ~len:(Piece.Color.count * Square.count) Bb.empty in
-    for i = 0 to Piece.Color.count - 1 do
-      for j = 0 to Square.count - 1 do
-        let sq = Int64.(1L lsl j) in
-        tbl.(Piece.Color.white + j * Piece.Color.count) <-
-          Bb.(((of_int64 (wf sq 8)) +
-               (of_int64 (wf sq 7) - wfr) +
-               (of_int64 (wf sq 9) - wfl)) & wr);
-        tbl.(Piece.Color.black + j * Piece.Color.count) <-
-          Bb.(((of_int64 (bf sq 8)) +
-               (of_int64 (bf sq 7) - bfr) +
-               (of_int64 (bf sq 9) - bfl)) & br);
-      done;
+    let tbl =
+      let len = Piece.Color.count * Square.count in
+      Array.create ~len Bb.empty in
+    for i = 0 to Square.count - 1 do
+      let sq = Int64.(1L lsl i) in
+      let wm =
+        Bb.(((of_int64 (wf sq 8)) +
+             (of_int64 (wf sq 7) - wfr) +
+             (of_int64 (wf sq 9) - wfl)) & wr) in
+      let bm =
+        Bb.(((of_int64 (bf sq 8)) +
+             (of_int64 (bf sq 7) - bfr) +
+             (of_int64 (bf sq 9) - bfl)) & br) in
+      tbl.(idx Piece.Color.white i) <- wm;
+      tbl.(idx Piece.Color.black i) <- bm;
     done;
     tbl
 
@@ -202,9 +207,8 @@ module King_pawn_shield = struct
     let king = Bb.(b & Position.king pos) in
     let pawn = Bb.(b & Position.pawn pos) in
     let king_sq = Bb.first_set_exn king in
-    let m =
-      Array.unsafe_get masks
-        Piece.Color.(to_int c + Square.to_int king_sq * count) in
+    let m = Array.unsafe_get masks @@
+      idx (Piece.Color.to_int c) (Square.to_int king_sq) in
     let score = Bb.(count (m & pawn)) in
     weigh_start (score * bonus) endgame
 
@@ -219,6 +223,10 @@ module Pawns = struct
     let start_bonus = 10
     let end_bonus = 70
 
+    let idx i j = i + j * Piece.Color.count
+
+    (* Given a pawn's square and color, get the squares left, right, and
+       center for all the ranks that are ahead of it. *)
     let masks =
       let east b =
         let b' = Bb.to_int64 b in
@@ -228,18 +236,15 @@ module Pawns = struct
         Bb.(of_int64 Int64.(b' lsr 1) - file_h) in
       let wf, wl, wr = Precalculated.Mask.north, east, west in
       let bf, bl, br = Precalculated.Mask.south, west, east in
-      let tbl = Array.create
-          ~len:(Piece.Color.count * Square.count) Bb.empty in
-      for i = 0 to Piece.Color.count - 1 do
-        for j = 0 to Square.count - 1 do
-          let sq = Square.of_int_exn j in
-          let w = wf sq in
-          let b = bf sq in
-          tbl.(Piece.Color.white + j * Piece.Color.count) <-
-            Bb.(w + wl w + wr w);
-          tbl.(Piece.Color.black + j * Piece.Color.count) <-
-            Bb.(w + bl b + br b);
-        done;
+      let tbl =
+        let len = Piece.Color.count * Square.count in
+        Array.create ~len Bb.empty in
+      for i = 0 to Square.count - 1 do
+        let sq = Square.of_int_exn i in
+        let w = wf sq in
+        let b = bf sq in
+        tbl.(idx Piece.Color.white i) <- Bb.(w + wl w + wr w);
+        tbl.(idx Piece.Color.black i) <- Bb.(w + bl b + br b);
       done;
       tbl
 
@@ -256,9 +261,10 @@ module Pawns = struct
         if Bb.(b = empty) then acc
         else
           let sq = Bb.first_set_exn b in
-          let m =
-            Array.unsafe_get masks
-              Piece.Color.(to_int c + Square.to_int sq * count) in
+          (* If there's no enemy pawns that can intersect with this mask,
+             then we have a passed pawn. *)
+          let m = Array.unsafe_get masks @@
+            idx (Piece.Color.to_int c) (Square.to_int sq) in
           let acc = acc + Bool.to_int Bb.((m & pawn') = empty) in
           loop acc @@ Bb.(b - (file_exn @@ Square.file sq)) in
       let score = loop 0 pawn in
@@ -316,6 +322,8 @@ module Pawns = struct
       let score =
         List.init Square.File.count ~f:ident |>
         List.fold ~init:0 ~f:(fun acc i ->
+            (* Check if there are any pawns on the neighboring files
+               that could potentially form a pawn chain. *)
             let f = Bb.file_exn i in
             let nf = Array.unsafe_get neighbor_files i in
             let isolated =
