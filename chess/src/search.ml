@@ -49,24 +49,24 @@ module Tt = struct
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
+
      https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
-     For now, we will favor entries with a higher depth, as a deeper search 
-     should, intuitively, have the more accurate results.
   *)
   let store tt pos ~depth ~score ~best ~bound =
-    let entry = {depth; score; best; bound} in
-    Position.hash pos |> Hashtbl.update tt ~f:(function
-        | Some old when depth > old.depth -> entry
-        | Some old -> old
-        | None -> entry)
+    let key = Position.hash pos in
+    let data = {depth; score; best; bound} in
+    Hashtbl.set tt ~key ~data
 
   (* Check for a previous evaluation of the position at a comparable depth.
+
      - Lower: the score is a lower bound, so only return it if it causes a
               beta cutoff, which would prune the rest of the branch being
               searched.
+
      - Upper: the score is an upper bound, so if it doesn't improve alpha
               we can use that score to prune the rest of the branch being
               searched.
+
      - Exact: the score is an exact evaluation for this position.
   *)
   let lookup tt ~pos ~depth ~alpha ~beta =
@@ -81,13 +81,11 @@ module Tt = struct
       end
     | _ -> Second (alpha, beta)
 
-  (* Extract the principal variation from the table. It's important to
-     track the depth we're currently at, and compare it against the entry.
-     Otherwise, there are situations where it can loop infinitely. *)
-  let pv tt m =
+  (* Extract the principal variation from the table. *)
+  let pv tt m n =
     let rec aux i acc pos =
       match Hashtbl.find tt @@ Position.hash pos with
-      | Some entry when entry.depth >= i ->
+      | Some entry when n > i ->
         aux (i + 1) (entry.best :: acc) @@ Legal.new_position entry.best
       | _ -> List.rev acc in
     aux 0 [m] @@ Legal.new_position m
@@ -553,8 +551,9 @@ let rec iterdeep ?(i = 1) st ~moves =
   let (best, score), st = Monad.State.run (Main.root moves i) st in
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  if score = inf || i >= st.search.limits.depth then
-    let pv = Tt.pv st.tt best in
+  let n = st.search.limits.depth in
+  if score = inf || i >= n then
+    let pv = Tt.pv st.tt best n in
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 
