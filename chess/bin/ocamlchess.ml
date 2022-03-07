@@ -4,18 +4,23 @@ module Caml_player = struct
   open Chess
   open Core_kernel
 
-  let limits = Search.Limits.create ~depth:9 ~nodes:None ()
+  let limits = Search.Limits.create ~depth:7 ~nodes:None ()
 
   let update_history m pos =
     Position.hash pos |> Map.update m ~f:(function
         | Some n -> n + 1
         | None -> 1)
 
-  let print_pv res =
-    Search.Result.pv res |>
-    List.map ~f:(fun m -> Position.San.of_legal m) |>
-    String.concat ~sep:" " |>
-    printf "Principal variation: %s\n\n%!"
+  let print_res res =
+    let pv =
+      Search.Result.pv res |>
+      List.map ~f:(fun m -> Position.San.of_legal m) |>
+      String.concat ~sep:" " in
+    printf "Principal variation: %s\n%!" pv;
+    printf "Depth: %d\n%!" @@ Search.Result.depth res;
+    printf "Nodes searched: %d\n%!" @@ Search.Result.evals res;
+    printf "Score: %d\n%!" @@ Search.Result.score res;
+    printf "\n%!"
 
   let choice (history, tt, pst) moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
@@ -23,7 +28,7 @@ module Caml_player = struct
     let search = Search.create ~limits ~root ~history ~tt ~pst in
     let res = Search.go search in
     let m = Search.Result.best res in
-    print_pv res;
+    print_res res;
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
     m, (history, tt, pst)

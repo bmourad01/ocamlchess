@@ -134,9 +134,8 @@ module Rook_open_file = struct
     let b = if swap then them else us in
     let rook = Bb.(b & Position.rook pos) in
     let score =
-      List.init Square.File.count ~f:ident |>
-      List.fold ~init:0 ~f:(fun acc i ->
-          let f = Bb.file_exn i in
+      List.init Square.File.count ~f:Bb.file_exn |>
+      List.fold ~init:0 ~f:(fun acc f ->
           let b = Bb.(f & rook) in
           if Bb.(b <> empty && b = (f & occupied))
           then acc + 1 else acc) in
@@ -287,9 +286,9 @@ module Pawns = struct
       let b = Position.board_of_color pos c in
       let pawn = Bb.(b & Position.pawn pos) in
       let score =
-        List.init Square.File.count ~f:ident |>
-        List.fold ~init:0 ~f:(fun acc i ->
-            let n = Bb.(count (file_exn i & pawn)) in
+        List.init Square.File.count ~f:Bb.file_exn |>
+        List.fold ~init:0 ~f:(fun acc f ->
+            let n = Bb.(count (f & pawn)) in
             acc + max 0 (n - 1)) in
       weigh_start (score * start_penalty) endgame +
       weigh_end   (score * end_penalty)   endgame

@@ -408,7 +408,8 @@ module Main = struct
         else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
 
   (* Principal variation search. *)
-  and pvs ps pos ~beta ~ply ~depth = let open Plysearch in
+  and pvs ps pos ~beta ~ply ~depth =
+    let open Plysearch in
     let f alpha =
       go pos
         ~alpha
@@ -462,17 +463,10 @@ module Main = struct
     else reduce pos moves
         ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
       | Some score -> State.return score
-      | None -> iid pos ~alpha ~beta ~ply ~depth ~null >>= fun () ->
-        let open Continue_or_stop in
+      | None -> let open Continue_or_stop in
         State.(gets tt) >>= fun tt ->
         State.(gets pst) >>= fun pst ->
         let ps = Plysearch.create moves ~alpha in
-        let moves =
-          if futile pos pst ~alpha ~beta ~depth ~check ~null
-          then List.filter moves ~f:(fun m ->
-              Position.in_check @@ Legal.new_position m ||
-              is_noisy m)
-          else moves in
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
         let finish () = State.return ps.alpha in
         State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
@@ -483,23 +477,6 @@ module Main = struct
         >>| fun score ->
         Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
-
-  (* Futility pruning. *)
-  and futile pos pst ~alpha ~beta ~depth ~check ~null =
-    beta - alpha <= 1 &&
-    not check &&
-    null &&
-    depth < Array.length futility_margin &&
-    let score = Eval.go pos pst in
-    let margin = Array.unsafe_get futility_margin depth in
-    score + margin <= alpha
-
-  and futility_margin = Piece.Kind.[|
-      0;
-      value Pawn * Eval.material_weight;
-      value Knight * Eval.material_weight;
-      value Rook * Eval.material_weight;
-    |]
 
   (* Try to reduce the depth. *)
   and reduce pos moves ~alpha ~beta ~ply ~depth ~check ~depth ~null =
@@ -526,27 +503,23 @@ module Main = struct
       Option.some_if (score >= beta) beta
     else State.return None
 
-  (* Razoring. *)
+  (* Razoring. 
+
+     Drop down to quescience search if we're approaching the horizon and we 
+     have little chance to improve alpha.
+  *)
   and razor pos moves ~score ~alpha ~beta ~depth =
-    let margin = Piece.Kind.value Pawn in
-    let score = score + margin in
-    if score < beta && depth = 1 then
-      Quiescence.with_moves pos moves ~alpha ~beta >>| fun score' ->
-      Some (max score score')
-    else
-      let score = score + margin in
-      if score < beta && depth < reduction_factor * 2 then
-        Quiescence.with_moves pos moves ~alpha ~beta >>| fun score' ->
-        Option.some_if (score' < beta) (max score score')
-      else State.return None
+    let score = score + (razor_margin * depth) in
+    if score < alpha && depth < reduction_factor * 2 then
+      Quiescence.with_moves pos moves ~alpha ~beta >>| fun score ->
+      Option.some_if (score < alpha) score
+    else State.return None
 
-  (* Internal iterative deepening. *)
-  and iid pos ~alpha ~beta ~ply ~depth ~null =
-    if depth > iid_limit && beta - alpha > 1
-    then go pos ~alpha ~beta ~ply ~depth:(depth - 2) ~null >>| ignore
-    else State.return ()
+  and razor_margin =
+    let m = Piece.Kind.value Pawn * Eval.material_weight in
+    m + (m / 2)
 
-  and iid_limit = 5
+  and razor_limit = 4
 
   (* The search we start from the root position. *)
   and root moves depth =
