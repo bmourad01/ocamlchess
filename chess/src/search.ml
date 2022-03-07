@@ -510,7 +510,7 @@ module Main = struct
   *)
   and razor pos moves ~score ~alpha ~beta ~depth =
     let score = score + (razor_margin * depth) in
-    if score < alpha && depth < reduction_factor * 2 then
+    if score < alpha && depth < razor_limit then
       Quiescence.with_moves pos moves ~alpha ~beta >>| fun score ->
       Option.some_if (score < alpha) score
     else State.return None
