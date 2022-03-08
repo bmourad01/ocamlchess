@@ -16,10 +16,15 @@ module Caml_player = struct
       Search.Result.pv res |>
       List.map ~f:(fun m -> Position.San.of_legal m) |>
       String.concat ~sep:" " in
+    let score =
+      let s = Search.Result.score res in
+      if s = Int.max_value then "inf"
+      else if s = (-Int.max_value) then "-inf"
+      else Int.to_string s in
     printf "Principal variation: %s\n%!" pv;
     printf "Depth: %d\n%!" @@ Search.Result.depth res;
     printf "Nodes searched: %d\n%!" @@ Search.Result.evals res;
-    printf "Score: %d\n%!" @@ Search.Result.score res;
+    printf "Score: %s\n%!" score;
     printf "\n%!"
 
   let choice (history, tt) moves =
