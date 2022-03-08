@@ -32,7 +32,6 @@ module Tt = struct
     score : int;
     best : Position.legal;
     bound : bound;
-    age : int;
   }
 
   type t = (int64, entry) Hashtbl.t
@@ -47,10 +46,9 @@ module Tt = struct
   *)
   let store tt pos ~depth ~score ~best ~bound =
     let key = Position.hash pos in
-    let age = Position.halfmove pos in
-    let data = {depth; score; best; bound; age} in
+    let data = {depth; score; best; bound} in
     Hashtbl.update tt key ~f:(function
-        | Some old when old.age > age -> data
+        | Some old when old.depth <= depth -> data
         | Some old -> old
         | None -> data)
 
