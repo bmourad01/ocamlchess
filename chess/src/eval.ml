@@ -3,13 +3,6 @@ open Core_kernel
 module Bb = Bitboard
 module Pre = Precalculated
 
-(* Pawn structure table. *)
-module Pst = struct
-  type t = (int64, int) Hashtbl.t
-
-  let create () = Hashtbl.create (module Int64)
-end
-
 let material_weight = 100
 
 (* Threshold value that will keep the endgame weight very low
@@ -335,19 +328,12 @@ module Pawns = struct
       go pos their_endgame - go pos our_endgame ~swap:true
   end
 
-  (* Evaluate the pawn structure. At the same time, see if we cached the
-     result of a previous evaluation. *)
-  let go pos pst our_endgame their_endgame =
-    let key = Position.pawn_hash pos in
-    match Hashtbl.find pst key with
-    | Some score -> score
-    | None ->
-      let passed = Passed.advantage pos our_endgame their_endgame in
-      let doubled = Doubled.advantage pos our_endgame their_endgame in
-      let isolated = Isolated.advantage pos our_endgame their_endgame in
-      let data = passed + doubled + isolated in
-      Hashtbl.set pst ~key ~data;
-      data
+  (* Evaluate the pawn structure. *)
+  let go pos our_endgame their_endgame =
+    let passed = Passed.advantage pos our_endgame their_endgame in
+    let doubled = Doubled.advantage pos our_endgame their_endgame in
+    let isolated = Isolated.advantage pos our_endgame their_endgame in
+    passed + doubled + isolated
 end
 
 module Placement = struct
@@ -540,7 +526,7 @@ module Mop_up = struct
 end
 
 (* Overall evaluation. *)
-let go pos pst =
+let go pos =
   let our_pawns = Material.pawns pos in
   let their_pawns = Material.pawns pos ~swap:true in
   let our_material = Material.not_pawns pos in
@@ -554,7 +540,7 @@ let go pos pst =
     Rook_open_file.advantage pos our_endgame their_endgame +
     Bishop_pair.advantage pos our_endgame their_endgame +
     King_pawn_shield.advantage pos our_endgame their_endgame +
-    Pawns.go pos pst our_endgame their_endgame +
+    Pawns.go pos our_endgame their_endgame +
     Placement.advantage pos our_endgame their_endgame +
     Mop_up.advantage pos
       our_endgame our_material

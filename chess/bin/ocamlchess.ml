@@ -22,21 +22,21 @@ module Caml_player = struct
     printf "Score: %d\n%!" @@ Search.Result.score res;
     printf "\n%!"
 
-  let choice (history, tt, pst) moves =
+  let choice (history, tt) moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
     let history = update_history history root in
-    let search = Search.create ~limits ~root ~history ~tt ~pst in
+    let search = Search.create ~limits ~root ~history ~tt in
     let res = Search.go search in
     let m = Search.Result.best res in
     print_res res;
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
-    m, (history, tt, pst)
+    m, (history, tt)
 
   let name = "caml"
   let create () =
     let player =
-      let state = Int64.Map.empty, Search.Tt.create (), Eval.Pst.create () in
+      let state = Int64.Map.empty, Search.Tt.create () in
       Player.create ~choice ~state ~name
         ~desc:"The flagship player, based on traditional game tree search and \
                evaluation." in
