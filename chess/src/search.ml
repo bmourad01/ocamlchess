@@ -36,7 +36,7 @@ module Tt = struct
 
   type t = (int64, entry) Hashtbl.t
 
-  let create () = Hashtbl.create ~size:0x40000 (module Int64)
+  let create () = Hashtbl.create (module Int64)
   let clear = Hashtbl.clear
 
   (* Store the evaluation results for the position. There is consideration to
@@ -471,16 +471,17 @@ module Main = struct
   (* Futility pruning.
 
      If our score is within a margin below alpha, then skip searching
-     quiet moves.
+     quiet moves (since they are likely to be "futile" in improving alpha).
   *)
   and futile m ~score ~alpha ~beta ~depth =
     beta - alpha <= 1 &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
     depth < futility_limit &&
-    score + rfp_margin * depth <= alpha
+    score + futility_margin * depth <= alpha
 
   and futility_limit = 4
+  and futility_margin = Piece.Kind.value Pawn * Eval.material_weight
 
   (* Try to reduce the depth. *)
   and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
@@ -498,23 +499,23 @@ module Main = struct
      good, and should cause a cutoff.
   *)
   and rfp ~depth ~score ~beta =
-    let score = score - rfp_margin * depth in
+    let score = score - futility_margin * depth in
     Option.some_if (depth <= futility_limit && score >= beta) score
 
-  and rfp_margin = Piece.Kind.value Pawn * Eval.material_weight
+  (* Null move reduction.
 
-  (* Null move reduction. *)
+     If we forfeit our right to play a move and our opponent's best
+     response still produces a beta cutoff, then we know this position
+     is unlikely.
+  *)
   and nmr pos ~score ~beta ~ply ~depth =
     if score >= beta && depth > reduction_factor then
-      (* Forfeit our right to play a move. *)
       Position.null_move pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)
         ~depth:(depth - 1 - reduction_factor)
         ~null:false >>= negm >>| fun score ->
-      (* Opponent's best response still produces a beta cutoff, so we know
-         this position is unlikely. *)
       Option.some_if (score >= beta) beta
     else State.return None
 
