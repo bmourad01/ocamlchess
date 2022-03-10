@@ -372,7 +372,11 @@ val legal_moves : t -> legal list
 val make_move : t -> Move.t -> legal
 
 (** [null_move pos] switches the active player of [pos], pretending that
-    no move was played *)
+    no move was played.
+
+    If the active player of [pos] is in check, then the resulting 
+    position is illegal, and any behavior thereafter is undefined.
+*)
 val null_move : t -> t
 
 (** Implements SAN (Standard Algebraic Notation). *)
