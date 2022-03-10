@@ -510,7 +510,7 @@ module Main = struct
   *)
   and nmr pos ~score ~beta ~ply ~depth =
     if score >= beta && depth > reduction_factor then
-      Position.null_move pos |> go
+      Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)

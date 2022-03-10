@@ -1493,13 +1493,18 @@ let make_move pos move =
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
   | Some legal -> legal
 
-let null_move pos =
+let null_move_unsafe pos =
   let pos' = copy pos in
   Makemove.flip_active pos';
   Makemove.update_hash pos' ~f:(Hash.Update.en_passant pos'.en_passant);
   set_en_passant pos' Uopt.none;
   set_halfmove pos' 0;
   pos'
+
+let null_move pos =
+  if in_check pos
+  then invalid_argf "Illegal null move on position %s" (Fen.to_string pos) ()
+  else null_move_unsafe pos
 
 (* Standard Algebraic Notation (SAN). *)
 
