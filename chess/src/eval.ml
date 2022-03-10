@@ -5,48 +5,59 @@ module Pre = Precalculated
 
 let material_weight = 100
 
-(* Threshold value that will keep the endgame weight very low
-   until some significant amount material is lost. *)
-let endgame_scale =
-  let material =
-    Piece.Kind.value Rook * 2 +
-    Piece.Kind.value Bishop +
-    Piece.Kind.value Knight in
-  Float.(1.0 / of_int Int.(material_weight * material))
+module Phase = struct
+  type t = Opening | Endgame [@@deriving equal]
 
-(* Margin to measure whether a mop-up evaluation matters. *)
-let pawn_margin = Piece.Kind.value Pawn * 2 * material_weight
+  let knight_phase = 1
+  let bishop_phase = 1
+  let rook_phase   = 2
+  let queen_phase  = 4
 
-(* Weigh a score based on whether we're in endgame phase or not. *)
-let weigh_start n endgame = Float.(to_int (of_int n * (1.0 - endgame)))
-let weigh_end n endgame = Float.(to_int (of_int n * endgame))
+  let total_phase  =
+    knight_phase * 4 +
+    bishop_phase * 4 +
+    rook_phase   * 4 +
+    queen_phase  * 2
+
+  let max_phase = 256
+
+  let of_position =
+    let kinds = Piece.[
+        Knight, knight_phase;
+        Bishop, bishop_phase;
+        Rook,   rook_phase;
+        Queen,  queen_phase;
+      ] in
+    fun pos ->
+      let phase =
+        List.fold kinds ~init:total_phase ~f:(fun acc (k, w) ->
+            acc - Bb.(count (Position.board_of_kind pos k)) * w) in
+      ((phase * max_phase) + (total_phase / 2)) / total_phase
+
+  let weigh_start phase score = (score * (max_phase - phase)) / max_phase
+  let weigh_end phase score = (score * phase) / max_phase
+end
 
 module Material = struct
-  (* Weighted sum of pawns. *)
-  let pawns ?(swap = false) pos =
-    let us = Position.active_board pos in
-    let them = Position.inactive_board pos in
-    let b = if swap then them else us in
-    let b' = Position.board_of_kind pos Pawn in
-    let v = Piece.Kind.value Pawn in
-    v * Bb.(count (b & b')) * material_weight
+  (* In order: Pawn, Knight, Bishop, Rook, Queen *)
+  let start_value = [|100; 300; 300; 500; 900|]
+  let end_value   = [|140; 320; 330; 500; 900|]
 
-  (* Weighted sum of material (minus pawns). *)
-  let not_pawns =
-    let kinds = Piece.[Knight; Bishop; Rook; Queen] in
-    fun ?(swap = false) pos ->
+  let go =
+    let kinds = Piece.[Pawn; Knight; Bishop; Rook; Queen] in
+    fun ?(swap = false) pos phase ->
       let us = Position.active_board pos in
       let them = Position.inactive_board pos in
       let b = if swap then them else us in
       List.fold kinds ~init:0 ~f:(fun acc k ->
           let b' = Position.board_of_kind pos k in
-          let v = Piece.Kind.value k in
-          acc + v * Bb.(count (b & b')) * material_weight)
+          let n = Bb.(count (b & b')) in
+          let i = Piece.Kind.to_int k in
+          match phase with
+          | Phase.Opening -> acc + n * Array.unsafe_get start_value i
+          | Phase.Endgame -> acc + n * Array.unsafe_get end_value   i)
 
-  (* Calculate the endgame weight based on the amount of material on
-     the board. *)
-  let endgame_weight material =
-    Float.(1.0 - (min 1.0 (of_int material * endgame_scale)))
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 module Mobility = struct
@@ -56,7 +67,7 @@ module Mobility = struct
   let kinds       = Piece.[Knight; Bishop; Rook; Queen; King]
 
   (* Weighted sum of the "mobility" of the material. *)
-  let go ?(swap = false) pos endgame =
+  let go ?(swap = false) pos phase =
     let us = Position.active_board pos in
     let them = Position.inactive_board pos in
     let occupied = Bb.(us + them) in
@@ -85,9 +96,9 @@ module Mobility = struct
       let i = Piece.Kind.pawn in
       let start_bonus = Array.unsafe_get start_bonus i in
       let end_bonus = Array.unsafe_get end_bonus i in
-      let start = weigh_start (n * start_bonus) endgame in
-      let end_ = weigh_end (n * end_bonus) endgame in
-      start + end_ in
+      match phase with
+      | Phase.Opening -> n * start_bonus
+      | Phase.Endgame -> n * end_bonus in
     let mobility =
       (* For the rest, count the number of attacked squares. *)
       List.fold kinds ~init:0 ~f:(fun acc k ->
@@ -104,14 +115,13 @@ module Mobility = struct
           Bb.(Position.board_of_kind pos k & b) |>
           Bb.fold ~init:acc ~f:(fun acc sq ->
               let n = Bb.(count (f sq - b)) in
-              let start = weigh_start (n * start_bonus) endgame in
-              let end_ = weigh_end (n * end_bonus) endgame in
-              acc + start + end_)) in
+              match phase with
+              | Phase.Opening -> acc + n * start_bonus
+              | Phase.Endgame -> acc + n * end_bonus)) in
     mobility + pawn
 
   (* Relative mobility advantage. *)
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 module Rook_open_file = struct
@@ -120,7 +130,7 @@ module Rook_open_file = struct
 
   (* Count the rooks on open files. This can also be measured by the mobility
      score, but we also give a bonus here. *)
-  let go ?(swap = false) pos endgame =
+  let go ?(swap = false) pos phase =
     let us = Position.active_board pos in
     let them = Position.inactive_board pos in
     let occupied = Bb.(us + them) in
@@ -132,19 +142,19 @@ module Rook_open_file = struct
           let b = Bb.(f & rook) in
           if Bb.(b <> empty && b = (f & occupied))
           then acc + 1 else acc) in
-    weigh_start (score * start_bonus) endgame +
-    weigh_end   (score * end_bonus)   endgame
+    match phase with
+    | Phase.Opening -> score * start_bonus
+    | Phase.Endgame -> score * end_bonus
 
   (* Relative advantage of rooks on open files. *)
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 module Bishop_pair = struct
   let start_bonus = 45
   let end_bonus = 55
 
-  let go ?(swap = false) pos endgame =
+  let go ?(swap = false) pos phase =
     let us = Position.active_board pos in
     let them = Position.inactive_board pos in
     let b = if swap then them else us in
@@ -153,11 +163,11 @@ module Bishop_pair = struct
       Bb.(count (bishop & black)) <> 0 &&
       Bb.(count (bishop & white)) <> 0 in
     let score = Bool.to_int has_pair in
-    weigh_start (score * start_bonus) endgame +
-    weigh_end   (score * end_bonus)   endgame
+    match phase with 
+    | Phase.Opening -> score * start_bonus
+    | Phase.Endgame -> score * end_bonus
 
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 module King_pawn_shield = struct
@@ -191,21 +201,22 @@ module King_pawn_shield = struct
 
   (* In the opening phase, the king should be protected behind a group
      of pawns. *)
-  let go ?(swap = false) pos endgame =
-    let us = Position.active pos in
-    let them = Position.inactive pos in
-    let c = if swap then them else us in
-    let b = Position.board_of_color pos c in
-    let king = Bb.(b & Position.king pos) in
-    let pawn = Bb.(b & Position.pawn pos) in
-    let king_sq = Bb.first_set_exn king in
-    let m = Array.unsafe_get masks @@
-      idx (Piece.Color.to_int c) (Square.to_int king_sq) in
-    let score = Bb.(count (m & pawn)) in
-    weigh_start (score * bonus) endgame
+  let go ?(swap = false) pos phase = match phase with
+    | Phase.Endgame -> 0
+    | Phase.Opening ->
+      let us = Position.active pos in
+      let them = Position.inactive pos in
+      let c = if swap then them else us in
+      let b = Position.board_of_color pos c in
+      let king = Bb.(b & Position.king pos) in
+      let pawn = Bb.(b & Position.pawn pos) in
+      let king_sq = Bb.first_set_exn king in
+      let m = Array.unsafe_get masks @@
+        idx (Piece.Color.to_int c) (Square.to_int king_sq) in
+      let score = Bb.(count (m & pawn)) in
+      score * bonus
 
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 (* Pawn structure. *)
@@ -240,10 +251,7 @@ module Pawns = struct
       done;
       tbl
 
-    let go ?(swap = false) pos endgame =
-      let us = Position.active pos in
-      let them = Position.inactive pos in
-      let c = if swap then them else us in
+    let go pos phase c =
       let c' = Piece.Color.opposite c in
       let b = Position.board_of_color pos c in
       let b' = Position.board_of_color pos c' in
@@ -260,11 +268,11 @@ module Pawns = struct
           let acc = acc + Bool.to_int Bb.((m & pawn') = empty) in
           loop acc @@ Bb.(b - (file_exn @@ Square.file sq)) in
       let score = loop 0 pawn in
-      weigh_start (score * start_bonus) endgame +
-      weigh_end   (score * end_bonus)   endgame
+      match phase with
+      | Phase.Opening -> score * start_bonus
+      | Phase.Endgame -> score * end_bonus
 
-    let advantage pos our_endgame their_endgame =
-      go pos their_endgame - go pos our_endgame ~swap:true
+    let advantage pos phase = go pos phase White - go pos phase Black
   end
 
   (* Penalize having more than one pawn of the same color on the same file. *)
@@ -272,10 +280,7 @@ module Pawns = struct
     let start_penalty = -20
     let end_penalty = -30
 
-    let go ?(swap = false) pos endgame =
-      let us = Position.active pos in
-      let them = Position.inactive pos in
-      let c = if swap then them else us in
+    let go pos phase c =
       let b = Position.board_of_color pos c in
       let pawn = Bb.(b & Position.pawn pos) in
       let score =
@@ -283,11 +288,11 @@ module Pawns = struct
         List.fold ~init:0 ~f:(fun acc f ->
             let n = Bb.(count (f & pawn)) in
             acc + max 0 (n - 1)) in
-      weigh_start (score * start_penalty) endgame +
-      weigh_end   (score * end_penalty)   endgame
+      match phase with
+      | Phase.Opening -> score * start_penalty
+      | Phase.Endgame -> score * end_penalty
 
-    let advantage pos our_endgame their_endgame =
-      go pos their_endgame - go pos our_endgame ~swap:true
+    let advantage pos phase = go pos phase White - go pos phase Black
   end
 
   module Isolated = struct
@@ -305,10 +310,7 @@ module Pawns = struct
         file_g;
       |]
 
-    let go ?(swap = false) pos endgame =
-      let us = Position.active pos in
-      let them = Position.inactive pos in
-      let c = if swap then them else us in
+    let go pos phase c =
       let b = Position.board_of_color pos c in
       let pawn = Bb.(b & Position.pawn pos) in
       let score =
@@ -321,19 +323,44 @@ module Pawns = struct
             let isolated =
               Bb.(((f & pawn) <> empty) && ((nf & pawn) = empty)) in
             acc + Bool.to_int isolated) in
-      weigh_start (score * start_penalty) endgame +
-      weigh_end   (score * end_penalty)   endgame
+      match phase with
+      | Phase.Opening -> score * start_penalty
+      | Phase.Endgame -> score * end_penalty
 
-    let advantage pos our_endgame their_endgame =
-      go pos their_endgame - go pos our_endgame ~swap:true
+    let advantage pos phase = go pos phase White - go pos phase Black
   end
 
+  (* The pawn structure evaluations are static, therefore they aren't specific
+     to any particular game or search history. Given this property, we can
+     safely cache these results. *)
+  let table = Hashtbl.create (module Int64)
+
   (* Evaluate the pawn structure. *)
-  let go pos our_endgame their_endgame =
-    let passed = Passed.advantage pos our_endgame their_endgame in
-    let doubled = Doubled.advantage pos our_endgame their_endgame in
-    let isolated = Isolated.advantage pos our_endgame their_endgame in
-    passed + doubled + isolated
+  let go pos phase =
+    let key = Position.pawn_hash pos in
+    let start, end_ =
+      match Hashtbl.find table key with
+      | Some entry -> entry
+      | None ->
+        let start =
+          Passed.advantage pos Opening +
+          Doubled.advantage pos Opening +
+          Isolated.advantage pos Opening in
+        let end_ = 
+          Passed.advantage pos Endgame +
+          Doubled.advantage pos Endgame +
+          Isolated.advantage pos Endgame in
+        let data = start, end_ in
+        Hashtbl.set table ~key ~data;
+        data in
+    (* To be able to cache these entries, we calculate them from white's
+       perspective. If black is active, then it is as simple as negating
+       the score. *)
+    match phase, Position.active pos with
+    | Phase.Opening, Piece.White -> start
+    | Phase.Opening, Piece.Black -> -start
+    | Phase.Endgame, Piece.White -> end_
+    | Phase.Endgame, Piece.Black -> -end_
 end
 
 module Placement = struct
@@ -479,7 +506,7 @@ module Placement = struct
   end
 
   (* Weighted sum of piece placement (using piece-square tables). *)
-  let go ?(swap = false) pos endgame =
+  let go ?(swap = false) pos phase =
     let c = if swap then Position.inactive pos else Position.active pos in
     Position.collect_color pos c |> List.fold ~init:0 ~f:(fun acc (sq, k) ->
         let open Tables in
@@ -490,13 +517,12 @@ module Placement = struct
           | Piece.Rook   -> rook_start,   rook_end
           | Piece.Queen  -> queen_start,  queen_end
           | Piece.King   -> king_start,   king_end in
-        let start = weigh_start (get start sq c) endgame in
-        let end_  = weigh_end   (get end_  sq c) endgame in
-        acc + start + end_)
+        match phase with
+        | Phase.Opening -> acc + get start sq c
+        | Phase.Endgame -> acc + get end_  sq c)
 
   (* Relative placement advantage. *)
-  let advantage pos our_endgame their_endgame =
-    go pos their_endgame - go pos our_endgame ~swap:true
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 module Mop_up = struct
@@ -504,45 +530,33 @@ module Mop_up = struct
 
      See: https://www.chessprogramming.org/Mop-up_Evaluation
   *)
-  let go ?(swap = false) pos endgame =
-    let us = Position.active_board pos in
-    let them = Position.inactive_board pos in
-    let b, b' = if swap then them, us else us, them in
-    let our_king = Bb.(first_set_exn (b & Position.king pos)) in
-    let their_king = Bb.(first_set_exn (b' & Position.king pos)) in
-    let n =
+  let go ?(swap = false) pos phase = match phase with
+    | Phase.Opening -> 0
+    | Phase.Endgame ->
+      let us = Position.active_board pos in
+      let them = Position.inactive_board pos in
+      let b, b' = if swap then them, us else us, them in
+      let our_king = Bb.(first_set_exn (b & Position.king pos)) in
+      let their_king = Bb.(first_set_exn (b' & Position.king pos)) in
       Square.manhattan_center their_king * 10 +
-      (14 - Square.manhattan our_king their_king) * 4 in
-    weigh_end n endgame
+      (14 - Square.manhattan our_king their_king) * 4
 
-  let advantage pos
-      our_endgame our_material
-      their_endgame their_material =
-    let us = if our_material > their_material + pawn_margin
-      then go pos their_endgame else 0 in
-    let them = if their_material > our_material + pawn_margin
-      then go pos our_endgame ~swap:true else 0 in
-    us - them
+  let advantage pos phase = go pos phase - go pos phase ~swap:true
 end
 
 (* Overall evaluation. *)
+let of_phase pos phase =
+  Material.advantage pos phase +
+  Mobility.advantage pos phase +
+  Rook_open_file.advantage pos phase +
+  Bishop_pair.advantage pos phase +
+  King_pawn_shield.advantage pos phase +
+  Pawns.go pos phase +
+  Placement.advantage pos phase +
+  Mop_up.advantage pos phase
+
 let go pos =
-  let our_pawns = Material.pawns pos in
-  let their_pawns = Material.pawns pos ~swap:true in
-  let our_material = Material.not_pawns pos in
-  let their_material = Material.not_pawns pos ~swap:true in
-  let our_endgame = Material.endgame_weight our_material in
-  let their_endgame = Material.endgame_weight their_material in
-  let material = (our_material + our_pawns) - (their_material + their_pawns) in
-  let score =
-    material +
-    Mobility.advantage pos our_endgame their_endgame +
-    Rook_open_file.advantage pos our_endgame their_endgame +
-    Bishop_pair.advantage pos our_endgame their_endgame +
-    King_pawn_shield.advantage pos our_endgame their_endgame +
-    Pawns.go pos our_endgame their_endgame +
-    Placement.advantage pos our_endgame their_endgame +
-    Mop_up.advantage pos
-      our_endgame our_material
-      their_endgame their_material in
-  score
+  let phase = Phase.of_position pos in
+  let start = Phase.weigh_start phase @@ of_phase pos Opening in
+  let end_  = Phase.weigh_end   phase @@ of_phase pos Endgame in
+  start + end_

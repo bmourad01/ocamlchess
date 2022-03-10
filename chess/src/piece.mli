@@ -93,7 +93,10 @@ module Kind : sig
   (** [is_sliding k] returns [true] if [k] is a sliding piece kind. *)
   val is_sliding : t -> bool
 
-  (** [value k] returns the numerical score of how "valuable" [k] is. *)
+  (** [value k] returns the numerical score of how "valuable" [k] is. 
+
+      See: https://en.wikipedia.org/wiki/Chess_piece_relative_value#Standard_valuations
+  *)
   val value : t -> int
 end
 

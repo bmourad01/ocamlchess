@@ -1,4 +1,10 @@
-(** The weight given to material count on the board. *)
+(** Given the standard valuations of pieces in chess:
+
+    https://en.wikipedia.org/wiki/Chess_piece_relative_value#Standard_valuations
+
+    [material_weight] is the weight given to these valuations relative to the
+    entire score of the position.
+*)
 val material_weight : int
 
 (** Returns a score for a position.
