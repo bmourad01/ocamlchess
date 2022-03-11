@@ -1,7 +1,5 @@
 open Cmdliner
 
-let book = ref None
-
 module Caml_player = struct
   open Chess
   open Core_kernel
@@ -28,6 +26,8 @@ module Caml_player = struct
     printf "Nodes searched: %d\n%!" @@ Search.Result.evals res;
     printf "Score: %s\n%!" score;
     printf "\n%!"
+
+  let book = ref None
 
   let try_book in_book root history =
     if not in_book then None
@@ -119,7 +119,7 @@ module Perft = struct
 end
 
 module Gui = struct
-  let go pos white black delay book_file no_validate =
+  let go pos white black delay book no_validate =
     let validate = not no_validate in
     let pos = Chess.Position.Fen.of_string_exn pos ~validate in
     let white = choose_player white in
@@ -128,8 +128,8 @@ module Gui = struct
       | Some _, Some _ when Float.(delay <= 0.0) -> Fun.id
       | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
       | _ -> Fun.id in
-    Base.Option.iter book_file ~f:(fun filename ->
-        book := Some (Chess.Book.create filename));
+    Base.Option.iter book ~f:(fun filename ->
+        Caml_player.book := Some (Chess.Book.create filename));
     Gui.go pos ~white ~black ~delay
 
   let pos =
