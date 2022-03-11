@@ -13,19 +13,19 @@ type t = (int64, entry list) Hashtbl.t
 (* Moves are stored compactly within a 16-bit integer:
 
    ------------------------------------------------------------------------
-   | unused | promotion piece | dst rank | dst file | src rank | src file |
+   | unused | promotion piece | src rank | src file | dst rank | dst file |
    ------------------------------------------------------------------------
    | 16  15 | 14           12 | 11     9 | 8      6 | 5      3 | 2      0 |
    ------------------------------------------------------------------------
 *)
 let decode_move i =
   let src =
-    let rank = (i land 0x38) lsr 3 in
-    let file = i land 0x7 in
-    Square.create_exn ~rank ~file in
-  let dst =
     let rank = (i land 0xE00) lsr 9 in
     let file = (i land 0x1C0) lsr 6 in
+    Square.create_exn ~rank ~file in
+  let dst =
+    let rank = (i land 0x38) lsr 3 in
+    let file = i land 0x7 in
     Square.create_exn ~rank ~file in
   let promote =
     match (i land 0x7000) lsr 12 with
@@ -363,6 +363,27 @@ end
 
 type error = Error.t
 
+let make_legal pos move =
+  let src, dst, _ = Move.decomp move in
+  let move = match Piece.kind @@ Position.piece_at_square_exn pos src with
+    | King -> begin
+        (* Special case for castling moves. The Polyglot format uses
+           the extremal files as the destination squares instead of 
+           the actual squares that the king will move to. *)
+        match Position.active pos with
+        | White when Square.(src = e1 && dst = h1) ->
+          Move.create src Square.g1
+        | White when Square.(src = e1 && dst = a1) ->
+          Move.create src Square.c1
+        | Black when Square.(src = e8 && dst = h8) ->
+          Move.create src Square.g8
+        | Black when Square.(src = e8 && dst = a8) ->
+          Move.create src Square.c8
+        | _ -> move
+      end
+    | _ -> move in
+  Position.make_move pos move
+
 let lookup book pos =
   let open Error in
   match Hashtbl.find book @@ Hash.of_position pos with
@@ -376,7 +397,8 @@ let lookup book pos =
       | [] -> Error (Bad_weight pos)
       | {move; weight} :: rest ->
         let sum = sum - weight in
-        if sum <= target then match Position.make_move pos move with
+        if sum <= target then
+          match Position.make_move pos move with
           | exception _ -> Error (Illegal_move (move, pos))
           | legal -> Ok legal
         else find sum rest in

@@ -1,5 +1,7 @@
 open Cmdliner
 
+let book = ref None
+
 module Caml_player = struct
   open Chess
   open Core_kernel
@@ -27,21 +29,37 @@ module Caml_player = struct
     printf "Score: %s\n%!" score;
     printf "\n%!"
 
-  let choice (history, tt) moves =
+  let try_book in_book root history =
+    if not in_book then None
+    else Option.bind !book ~f:(fun book ->
+        match Book.lookup book root with
+        | Ok m ->
+          printf "Book move: %s\n%!" @@ Position.San.of_legal m;
+          let new_pos = Position.Legal.new_position m in
+          let history = update_history history new_pos in
+          Some (m, history, true)
+        | Error (Book.Error.Position_not_found _) -> None
+        | Error err ->
+          failwithf "Opening book error: %s" (Book.Error.to_string err) ())
+
+  let choice (history, tt, in_book) moves =
     let root = Position.Legal.parent @@ List.hd_exn moves in
     let history = update_history history root in
-    let search = Search.create ~limits ~root ~history ~tt in
-    let res = Search.go search in
-    let m = Search.Result.best res in
-    print_res res;
-    let new_pos = Position.Legal.new_position m in
-    let history = update_history history new_pos in
-    m, (history, tt)
+    match try_book in_book root history with
+    | Some (m, history, in_book) -> m, (history, tt, in_book)
+    | None ->
+      let search = Search.create ~limits ~root ~history ~tt in
+      let res = Search.go search in
+      let m = Search.Result.best res in
+      print_res res;
+      let new_pos = Position.Legal.new_position m in
+      let history = update_history history new_pos in
+      m, (history, tt, false)
 
   let name = "caml"
   let create () =
     let player =
-      let state = Int64.Map.empty, Search.Tt.create () in
+      let state = Int64.Map.empty, Search.Tt.create (), true in
       Player.create ~choice ~state ~name
         ~desc:"The flagship player, based on traditional game tree search and \
                evaluation." in
@@ -101,7 +119,7 @@ module Perft = struct
 end
 
 module Gui = struct
-  let go pos white black delay no_validate =
+  let go pos white black delay book_file no_validate =
     let validate = not no_validate in
     let pos = Chess.Position.Fen.of_string_exn pos ~validate in
     let white = choose_player white in
@@ -110,6 +128,8 @@ module Gui = struct
       | Some _, Some _ when Float.(delay <= 0.0) -> Fun.id
       | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
       | _ -> Fun.id in
+    Base.Option.iter book_file ~f:(fun filename ->
+        book := Some (Chess.Book.create filename));
     Gui.go pos ~white ~black ~delay
 
   let pos =
@@ -129,9 +149,14 @@ module Gui = struct
   let delay =
     let doc = "Delay (in seconds) between AI moves \
                (only applies when both players are AI)" in
-    Arg.(value & opt float 0.0 (info ["delay"] ~docv:"DELAY" ~doc))
+    Arg.(value & opt float 0.0 (info ["delay"] ~docv:"SECONDS" ~doc))
 
-  let t = Term.(const go $ pos $ white $ black $ delay $ no_validate)
+  let book =
+    let doc = "Path of opening book in Polyglot .bin format \
+               (only used by the 'caml' player)" in
+    Arg.(value & opt (some string) None (info ["book"] ~docv:"FILE" ~doc))
+
+  let t = Term.(const go $ pos $ white $ black $ delay $ book $ no_validate)
 
   let info =
     let doc = "Runs the testing GUI." in
