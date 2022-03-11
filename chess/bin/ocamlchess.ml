@@ -37,7 +37,7 @@ module Caml_player = struct
           printf "Book move: %s\n%!" @@ Position.San.of_legal m;
           let new_pos = Position.Legal.new_position m in
           let history = update_history history new_pos in
-          Some (m, history, true)
+          Some (m, history)
         | Error (Book.Error.Position_not_found _) -> None
         | Error err ->
           failwithf "Opening book error: %s" (Book.Error.to_string err) ())
@@ -46,7 +46,7 @@ module Caml_player = struct
     let root = Position.Legal.parent @@ List.hd_exn moves in
     let history = update_history history root in
     match try_book in_book root history with
-    | Some (m, history, in_book) -> m, (history, tt, in_book)
+    | Some (m, history) -> m, (history, tt, true)
     | None ->
       let search = Search.create ~limits ~root ~history ~tt in
       let res = Search.go search in
