@@ -72,7 +72,6 @@ let create filepath =
           (* let _learn = Bigstring.get_int32_t_be contents ~pos in *)
           let pos = pos + 4 in
           i := pos;
-          (* Ignore duplicate entries. *)
           Hashtbl.update book key ~f:(function
               | Some entries -> {move; weight} :: entries
               | None -> [{move; weight}]);
