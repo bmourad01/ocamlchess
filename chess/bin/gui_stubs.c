@@ -74,7 +74,7 @@ static wchar_t piece_unicode(int color, int kind) {
   }
 }
 
-#define Sfml_window_val(v) (*(sfRenderWindow**)(Data_custom_val(v)))
+#define Sfml_window_val(v) (*(sfRenderWindow **)(Data_custom_val(v)))
 #define Make_square(x, y) ((unsigned int)(((y) << 3) | (x)))
 #define Move_src(m) (Int_val(m) & 0b111111)
 #define Move_dst(m) ((Int_val(m) >> 6) & 0b111111)
@@ -90,15 +90,15 @@ static void sfml_finalize_window(value window) {
 }
 
 static struct custom_operations sfml_window_custom_ops = {
-  (char *)"sfml_window_custom_ops",
-  sfml_finalize_window,
-  custom_compare_default,
-  custom_compare_ext_default,
-  custom_hash_default,
-  custom_serialize_default,
-  custom_deserialize_default,
+    (char *)"sfml_window_custom_ops",
+    sfml_finalize_window,
+    custom_compare_default,
+    custom_compare_ext_default,
+    custom_hash_default,
+    custom_serialize_default,
+    custom_deserialize_default,
 #if OCAML_VERSION_MAJOR >= 4 && OCAML_VERSION_MINOR >= 8
-  NULL, // custom_fixed_length
+    NULL, // custom_fixed_length
 #endif
 };
 
@@ -125,14 +125,12 @@ value ml_window_create(value w, value h, value name) {
   sfVideoMode video_mode = sfVideoMode_getDesktopMode();
   video_mode.width = Int_val(w);
   video_mode.height = Int_val(h);
-  
-  sfRenderWindow *sf_window = sfRenderWindow_create(video_mode,
-                                                    String_val(name),
-                                                    sfTitlebar|sfClose,
-                                                    NULL);
 
-  window = caml_alloc_custom(&sfml_window_custom_ops,
-                             sizeof(sfRenderWindow *), 0, 1);
+  sfRenderWindow *sf_window = sfRenderWindow_create(
+      video_mode, String_val(name), sfTitlebar | sfClose, NULL);
+
+  window = caml_alloc_custom(&sfml_window_custom_ops, sizeof(sfRenderWindow *),
+                             0, 1);
 
   Sfml_window_val(window) = sf_window;
   CAMLreturn(window);
@@ -295,7 +293,7 @@ value ml_window_paint_board(value window, value pos, value valid_squares,
         sfVector2f position;
         position.x = fx + xa;
         position.y = fy + ya;
-        
+
         sfText *text = sfText_create();
         sfText_setUnicodeString(text, unicode);
         sfText_setFont(text, _piece_font);
