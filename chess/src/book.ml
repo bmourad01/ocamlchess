@@ -70,8 +70,7 @@ let create filepath =
               Bigstring.get_uint16_be contents ~pos:(i + 8) in
             let weight = Bigstring.get_uint16_be contents ~pos:(i + 8 + 2) in
             (* let _learn = Bigstring.get_int32_t_be contents ~pos:(i + 8 + 2 + 2) in *)
-            let data = {move; weight} in
-            Hashtbl.add_multi book ~key ~data;
+            Hashtbl.add_multi book ~key ~data:{move; weight};
             read (i + entry_size)
           end else book in
         read 0)
