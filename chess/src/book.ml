@@ -296,9 +296,9 @@ module Hash = struct
     let p = ref 0 in
     for k = 0 to Piece.Kind.count - 1 do
       let k = Piece.Kind.of_int_exn k in
-      for c = 0 to Piece.Color.count - 1 do
-        (* Black is 0 in this format. *)
-        let c = Piece.Color.(opposite @@ of_int_exn c) in
+      for c = Piece.Color.count - 1 downto 0 do
+        (* Black appears first in this format. *)
+        let c = Piece.Color.of_int_exn c in
         Position.collect_piece pos (Piece.create c k) |>
         List.iter ~f:(fun sq ->
             let sq = Square.to_int sq in
