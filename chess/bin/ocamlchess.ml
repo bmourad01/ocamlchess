@@ -34,7 +34,7 @@ module Caml_player = struct
     else Option.bind !book ~f:(fun book ->
         match Book.lookup book root with
         | Ok m ->
-          printf "Book move: %s\n%!" @@ Position.San.of_legal m;
+          printf "Book move: %s\n\n%!" @@ Position.San.of_legal m;
           let new_pos = Position.Legal.new_position m in
           let history = update_history history new_pos in
           Some (m, history)

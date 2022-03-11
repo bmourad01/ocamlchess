@@ -1,4 +1,5 @@
 open Core_kernel
+open Monads.Std
 
 module Bb = Bitboard
 module Cr = Castling_rights
@@ -7,6 +8,8 @@ type entry = {
   move : Move.t;
   weight : int;
 }
+
+let entry_size = 16
 
 type t = (int64, entry list) Hashtbl.t
 
@@ -60,23 +63,18 @@ let create filepath =
       if len land 0b1111 <> 0 then
         invalid_arg "Invalid length of book file, must be divisible by 16"
       else
-        let i = ref 0 in
-        while !i < len do
-          let pos = !i in
-          let key = Bigstring.get_int64_t_be contents ~pos in
-          let pos = pos + 8 in
-          let move = decode_move @@ Bigstring.get_uint16_be contents ~pos in
-          let pos = pos + 2 in
-          let weight = Bigstring.get_uint16_be contents ~pos in
-          let pos = pos + 2 in
-          (* let _learn = Bigstring.get_int32_t_be contents ~pos in *)
-          let pos = pos + 4 in
-          i := pos;
-          Hashtbl.update book key ~f:(function
-              | Some entries -> {move; weight} :: entries
-              | None -> [{move; weight}]);
-        done;
-        book)
+        let rec read i =
+          if i < len then begin
+            let key = Bigstring.get_int64_t_be contents ~pos:i in
+            let move = decode_move @@
+              Bigstring.get_uint16_be contents ~pos:(i + 8) in
+            let weight = Bigstring.get_uint16_be contents ~pos:(i + 8 + 2) in
+            (* let _learn = Bigstring.get_int32_t_be contents ~pos:(i + 8 + 2 + 2) in *)
+            let data = {move; weight} in
+            Hashtbl.add_multi book ~key ~data;
+            read (i + entry_size)
+          end else book in
+        read 0)
 
 (* Polyglot uses its own random numbers for Zobrist hashing. If there is any
    source of provenance for how these were generated, then we should switch
@@ -288,58 +286,59 @@ module Hash = struct
 
   let white_to_move = 0xF8D626AAAF278509L
 
-  let of_position pos =
-    let key = ref 0L in
-    let active = Position.active pos in
-    (* Piece placement. *)
-    let p = ref 0 in
-    for k = 0 to Piece.Kind.count - 1 do
-      let k = Piece.Kind.of_int_exn k in
-      for c = Piece.Color.count - 1 downto 0 do
-        (* Black appears first in this format. *)
-        let c = Piece.Color.of_int_exn c in
-        Position.collect_piece pos (Piece.create c k) |>
-        List.iter ~f:(fun sq ->
-            let sq = Square.to_int sq in
-            let r = Array.unsafe_get piece (sq + Square.count * !p) in
-            key := Int64.bit_xor !key r);
-        incr p;
-      done;
-    done;
-    (* Castling rights. *)
-    let cr = Position.castle pos in
-    if Cr.mem cr White Kingside then
-      key := Int64.bit_xor !key @@ Array.unsafe_get castle 0;
-    if Cr.mem cr White Queenside then
-      key := Int64.bit_xor !key @@ Array.unsafe_get castle 1;
-    if Cr.mem cr Black Kingside then
-      key := Int64.bit_xor !key @@ Array.unsafe_get castle 2;
-    if Cr.mem cr Black Queenside then
-      key := Int64.bit_xor !key @@ Array.unsafe_get castle 3;
-    (* En passant. *)
-    Position.en_passant pos |> Option.iter ~f:(fun ep ->
-        (* The hash is only affected if the pawn can be captured
-           at the en passant square. *)
-        let cap =
-          let ep = Bb.(to_int64 !!ep) in
-          match active with
-          | White ->
-            let l = Bb.of_int64 Int64.(ep lsr 7) in
-            let r = Bb.of_int64 Int64.(ep lsr 9) in
-            Bb.((l - file_h) + (r - file_a))
-          | Black ->
-            let l = Bb.of_int64 Int64.(ep lsl 7) in
-            let r = Bb.of_int64 Int64.(ep lsl 9) in
-            Bb.((l - file_a) + (r - file_h)) in
-        let pawn = Position.pawn pos in
-        let us = Position.board_of_color pos active in
-        if Bb.((cap & pawn & us) <> empty) then
-          let file = Square.file ep in
-          key := Int64.bit_xor !key @@ Array.unsafe_get en_passant file);
-    (* White to move? *)
-    if Piece.Color.(active = White) then
-      key := Int64.bit_xor !key white_to_move;
-    !key
+  let of_position =
+    let kinds = Piece.[Pawn; Knight; Bishop; Rook; Queen; King] in
+    let colors = Piece.[Black; White] in
+    let module H = Monad.State.Make(Int64)(Monad.Ident) in
+    let open H.Syntax in
+    let (!!) r = H.update @@ fun h -> Int64.(h lxor r) in
+    fun pos -> Fn.flip Monad.State.exec 0L @@
+      let active = Position.active pos in
+      (* Piece placement. *)
+      H.List.fold kinds ~init:0 ~f:(fun init k ->
+          H.List.fold colors ~init ~f:(fun i c ->
+              Piece.create c k |> Position.collect_piece pos |>
+              H.List.iter ~f:(fun sq ->
+                  let sq = Square.to_int sq in
+                  !!(Array.unsafe_get piece (sq + i * Square.count))) >>| fun () ->
+              i + 1)) >>= fun _ ->
+      (* Castling rights. *)
+      let cr c s =
+        if Cr.mem (Position.castle pos) c s then
+          let i = (Piece.Color.to_int c lsl 1) lor (Cr.Side.to_int s) in
+          !!(Array.unsafe_get castle i)
+        else H.return () in
+      cr White Kingside  >>= fun () ->
+      cr White Queenside >>= fun () ->
+      cr Black Kingside  >>= fun () ->
+      cr Black Queenside >>= fun () ->
+      (* En passant. *)
+      begin match Position.en_passant pos with
+        | None -> H.return ()
+        | Some ep ->
+          (* The hash is only affected if the pawn can be captured
+             at the en passant square. *)
+          let cap =
+            let ep = Bb.(to_int64 !!ep) in
+            match active with
+            | White ->
+              let l = Bb.of_int64 Int64.(ep lsr 7) in
+              let r = Bb.of_int64 Int64.(ep lsr 9) in
+              Bb.((l - file_h) + (r - file_a))
+            | Black ->
+              let l = Bb.of_int64 Int64.(ep lsl 7) in
+              let r = Bb.of_int64 Int64.(ep lsl 9) in
+              Bb.((l - file_a) + (r - file_h)) in
+          let pawn = Position.pawn pos in
+          let us = Position.board_of_color pos active in
+          if Bb.((cap & pawn & us) <> empty)
+          then !!(Array.unsafe_get en_passant @@ Square.file ep)
+          else H.return ()
+      end >>= fun () ->
+      (* White to move? *)
+      match active with
+      | White -> !!white_to_move
+      | Black -> H.return ()
 end
 
 module Error = struct
