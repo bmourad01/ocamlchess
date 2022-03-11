@@ -363,7 +363,7 @@ end
 
 type error = Error.t
 
-let make_legal pos move =
+let make_move pos move =
   let src, dst, _ = Move.decomp move in
   let move = match Piece.kind @@ Position.piece_at_square_exn pos src with
     | King -> begin
@@ -397,8 +397,7 @@ let lookup book pos =
       | [] -> Error (Bad_weight pos)
       | {move; weight} :: rest ->
         let sum = sum - weight in
-        if sum <= target then
-          match Position.make_move pos move with
+        if sum <= target then match make_move pos move with
           | exception _ -> Error (Illegal_move (move, pos))
           | legal -> Ok legal
         else find sum rest in
