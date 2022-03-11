@@ -96,12 +96,13 @@ end
 type error = Error.t
 
 let make_move pos move =
-  let src, dst, _ = Move.decomp move in
+  let src, dst, promote = Move.decomp move in
   let move = match Piece.kind @@ Position.piece_at_square_exn pos src with
     | King -> begin
         (* Special case for castling moves. The Polyglot format uses
            the extremal files as the destination squares instead of 
            the actual squares that the king will move to. *)
+        assert (Option.is_none promote);
         match Position.active pos with
         | White when Square.(src = e1 && dst = h1) ->
           Move.create src Square.g1
