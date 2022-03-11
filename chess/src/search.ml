@@ -458,7 +458,7 @@ module Main = struct
         Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
         let finish () = State.return ps.alpha in
         State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-            if futile m ~score ~alpha:ps.alpha ~beta ~depth
+            if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
             then State.return @@ Continue ()
             else lmr_pvs ps pos m ~beta ~ply ~depth ~check >>= fun score ->
               if score >= beta
@@ -473,7 +473,8 @@ module Main = struct
      If our score is within a margin below alpha, then skip searching
      quiet moves (since they are likely to be "futile" in improving alpha).
   *)
-  and futile m ~score ~alpha ~beta ~depth =
+  and futile m ~score ~alpha ~beta ~depth ~check =
+    not check &&
     beta - alpha <= 1 &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
