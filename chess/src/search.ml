@@ -477,11 +477,10 @@ module Main = struct
     beta - alpha <= 1 &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
-    depth < futility_limit &&
-    score + futility_margin * depth <= alpha
+    depth <= futility_limit &&
+    score + 115 + 90 * depth <= alpha
 
-  and futility_limit = 4
-  and futility_margin = Piece.Kind.value Pawn * Eval.material_weight
+  and futility_limit = 6
 
   (* Try to reduce the depth. *)
   and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
@@ -499,7 +498,7 @@ module Main = struct
      good, and should cause a cutoff.
   *)
   and rfp ~depth ~score ~beta =
-    let score = score - futility_margin * depth in
+    let score = score - 70 * depth in
     Option.some_if (depth <= futility_limit && score >= beta) score
 
   (* Null move reduction.
