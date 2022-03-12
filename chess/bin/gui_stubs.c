@@ -17,15 +17,15 @@
 
 static const value *_piece_at_square, *_string_of_square;
 
-/*
-  Assets
+/* Fonts for displaying pieces and text.
 
-  XXX: don't rely on system installation for these
-
- */
+   These file paths are a backup if the installation of the assets
+   didn't succeed.
+*/
 
 static const char *const _piece_font_filename =
     "/usr/share/fonts/TTF/FreeSerif.ttf";
+
 static const char *const _text_font_filename =
     "/usr/share/fonts/TTF/FreeSans.ttf";
 
@@ -43,11 +43,16 @@ static const value *named_value_or_fail(const char *name) {
   }
 }
 
-static void init_font_or_fail(sfFont **font, const char *name) {
+static void init_font_or_fail(sfFont **font, const char *name,
+                              const char *backup) {
   assert(font);
+  // This function will give us a nice error message already.
   if (!(*font = sfFont_createFromFile(name))) {
-    fprintf(stderr, "Couldn't load font %s\n", name);
-    abort();
+    fprintf(stderr, "Trying %s\n", backup);
+    if (!(*font = sfFont_createFromFile(backup))) {
+      abort();
+    }
+    fprintf(stderr, "\n");
   }
 }
 
@@ -104,10 +109,10 @@ static struct custom_operations sfml_window_custom_ops = {
 
 /* Exposed minimal API */
 
-value ml_init_fonts(value dummy) {
-  CAMLparam1(dummy);
-  init_font_or_fail(&_piece_font, _piece_font_filename);
-  init_font_or_fail(&_text_font, _text_font_filename);
+value ml_init_fonts(value piece, value text) {
+  CAMLparam2(piece, text);
+  init_font_or_fail(&_piece_font, String_val(piece), _piece_font_filename);
+  init_font_or_fail(&_text_font, String_val(text), _text_font_filename);
   CAMLreturn(Val_unit);
 }
 

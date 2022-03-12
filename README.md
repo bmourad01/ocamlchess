@@ -23,7 +23,9 @@ The custom testing GUI requires the following:
 
 - CSFML 2.5
 
-Finally, a version of Make (such as GNU Make) is needed for building the project.
+For building, a version of Make (such as GNU Make) is needed for building the project.
+
+Note that this project assumes that the target system is POSIX-compliant (Windows users may encounter some trouble).
 
 # Instructions
 

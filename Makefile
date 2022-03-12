@@ -1,4 +1,7 @@
-DIR := chess
+DIR := ./chess/
+ASSETS := ./assets/
+SHARE := ~/.local/share/ocamlchess/
+SHARE_ASSETS := $(SHARE)assets/
 
 .PHONY: build clean install uninstall test doc indent
 
@@ -11,9 +14,12 @@ clean:
 	$(MAKE) clean -C $(DIR)
 
 install: build
+	mkdir -p $(SHARE_ASSETS)
+	cp -r $(ASSETS) $(SHARE)
 	$(MAKE) install -C $(DIR)
 
 uninstall:
+	rm -rf $(SHARE)
 	$(MAKE) uninstall -C $(DIR)
 
 test:
