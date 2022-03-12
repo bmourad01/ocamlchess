@@ -7,6 +7,7 @@ module Cr = Castling_rights
 type entry = {
   move : Move.t;
   weight : int;
+  learn : int32;
 }
 
 let entry_size = 16
@@ -58,22 +59,42 @@ let decode_move i =
 let create filepath =
   In_channel.with_file filepath ~binary:true ~f:(fun file ->
       let book = Hashtbl.create (module Int64) in
-      let contents = Bigstring.of_string @@ In_channel.input_all file in
-      let len = Bigstring.length contents in
-      if len land 0b1111 <> 0 then
-        invalid_arg "Invalid length of book file, must be divisible by 16"
-      else
-        let rec read i =
-          if i < len then begin
-            let key = Bigstring.get_int64_t_be contents ~pos:i in
-            let move = decode_move @@
-              Bigstring.get_uint16_be contents ~pos:(i + 8) in
-            let weight = Bigstring.get_uint16_be contents ~pos:(i + 8 + 2) in
-            (* let _learn = Bigstring.get_int32_t_be contents ~pos:(i + 8 + 2 + 2) in *)
-            Hashtbl.add_multi book ~key ~data:{move; weight};
-            read (i + entry_size)
-          end else book in
-        read 0)
+      let buf = Buffer.create entry_size in
+      let len = entry_size in
+      let rec read () = match In_channel.input_buffer file buf ~len with
+        | None when Buffer.length buf = 0 -> book
+        | None ->
+          (* We read at least 1 byte, but less than the size needed for
+             an entry in the table. *)
+          failwithf "Invalid length of book file, \
+                     must be divisible by %d" len ()
+        | Some () ->
+          let b = Buffer.contents_bytes buf in
+          let get i = Char.to_int @@ Bytes.get b i in
+          let get32 i = Int32.of_int_exn @@ get i in
+          let get64 i = Int64.of_int @@ get i in
+          let key =
+            let open Int64 in
+            (get64 0 lsl 56) lor
+            (get64 1 lsl 48) lor
+            (get64 2 lsl 40) lor
+            (get64 3 lsl 32) lor
+            (get64 4 lsl 24) lor
+            (get64 5 lsl 16) lor
+            (get64 6 lsl 8) lor
+            get64 7 in
+          let move = decode_move ((get 8 lsl 8) lor get 9) in
+          let weight = (get 10 lsl 8) lor get 11 in
+          let learn =
+            let open Int32 in
+            (get32 12 lsl 24) lor
+            (get32 13 lsl 16) lor
+            (get32 14 lsl 8) lor
+            get32 15 in
+          Hashtbl.add_multi book ~key ~data:{move; weight; learn};
+          Buffer.clear buf;
+          read () in
+      read ())
 
 module Error = struct
   type t =
