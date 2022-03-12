@@ -342,16 +342,6 @@ module Legal : sig
       performed on. Otherwise, returns [None]. *)
   val castle_side : legal -> Castling_rights.side option
 
-  (** [sort moves ~eval] will sort the [moves] according to the scores assigned
-      by [eval]. *)
-  val sort : legal list -> eval:(legal -> int) -> legal list
-
-  (** [best moves ~eval] will take a list of moves [moves], evaluate them with
-      [eval], and then return a list of the highest scoring moves (with the
-      same score). If [eval] returns [None] for a particular move, then it
-      is discarded from the final solution. *)
-  val best : legal list -> eval:(legal -> int option) -> legal list
-
   (** A legal move. *)
   type t = legal [@@deriving compare, equal, sexp]
 

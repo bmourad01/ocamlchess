@@ -7,6 +7,16 @@ module Legal = Position.Legal
 
 let thunk player = fun () -> Player.T player
 
+let best moves ~eval =
+  let open Option.Monad_infix in
+  List.filter_map moves ~f:(fun m -> eval m >>| fun score -> (m, score)) |>
+  List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
+  List.fold_until ~init:([], 0) ~finish:fst
+    ~f:(fun (acc, score') (m, score) -> match acc with
+        | [] -> Continue (m :: acc, score)
+        | _ when score' > score -> Stop acc
+        | _ -> Continue (m :: acc, score'))
+
 module Alphabetical = struct
   let choice _ moves =
     List.sort moves ~compare:(fun a b ->
@@ -34,12 +44,12 @@ module Cccp = struct
       Legal.new_position m |> Position.in_check)
 
   (* Try to capture an inactive piece of the highest value. *)
-  let capture moves = Legal.best moves ~eval:(fun m ->
+  let capture moves = best moves ~eval:(fun m ->
       Legal.capture m |> Option.map ~f:Piece.Kind.value)
 
   (* Push a piece that results in the the largest number of controlled
      squares. *)
-  let push moves = Legal.best moves ~eval:(fun m ->
+  let push moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
       let pos = Legal.new_position m in
       Some (Bb.count @@ Position.Attacks.all pos active))
@@ -62,17 +72,17 @@ end
 
 module Equalizer = struct
   type state = {
-    moved : int Map.M(Square).t;
+    moved         : int Map.M(Square).t;
     visited_white : int Map.M(Square).t;
     visited_black : int Map.M(Square).t;
   }
 
-  let least_moved moved moves = Legal.best moves ~eval:(fun m ->
+  let least_moved moved moves = best moves ~eval:(fun m ->
       match Map.find moved @@ Move.src @@ Legal.move m with
       | Some n -> Some (-n)
       | None -> Some 0)
 
-  let least_visited visited moves = Legal.best moves ~eval:(fun m ->
+  let least_visited visited moves = best moves ~eval:(fun m ->
       match Map.find visited @@ Move.dst @@ Legal.move m with
       | Some n -> Some (-n)
       | None -> Some 0)
@@ -167,7 +177,7 @@ module Equalizer = struct
 end
 
 module Generous = struct
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       Legal.new_position m |>
       Position.legal_moves |>
       List.fold ~init:0 ~f:(fun acc m -> match Legal.capture m with
@@ -183,7 +193,7 @@ module Generous = struct
 end
 
 module Huddle = struct
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
       let pos = Legal.new_position m in
       let active_board = Position.board_of_color pos active in
@@ -201,7 +211,7 @@ module Huddle = struct
 end
 
 module Max_oppt_moves = struct
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let pos = Legal.new_position m in
       Some (List.length @@ Position.legal_moves pos)) |>
                        List.random_element_exn, ()
@@ -213,7 +223,7 @@ module Max_oppt_moves = struct
 end
 
 module Min_oppt_moves = struct
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let pos = Legal.new_position m in
       Some (-(List.length @@ Position.legal_moves pos))) |>
                        List.random_element_exn, ()
@@ -228,7 +238,7 @@ module Opposite_color = struct
   let opposite_color active sq =
     not @@ Piece.Color.equal active @@ Square.color sq
 
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
       let pos = Legal.new_position m in
       Option.return @@ Bb.count @@
@@ -244,7 +254,7 @@ end
 module Pacifist = struct
   let inf = Int.max_value
 
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let pos = Legal.new_position m in
       let in_check = Position.in_check pos in
       (* Give the highest possible penalty for checkmating the opponent.
@@ -279,7 +289,7 @@ end
 module Same_color = struct
   let same_color active sq = Piece.Color.equal active @@ Square.color sq
 
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.new_position m in
       let pos = Legal.new_position m in
       Option.return @@ Bb.count @@
@@ -293,7 +303,7 @@ module Same_color = struct
 end
 
 module Suicide_king = struct
-  let choice _ moves = Legal.best moves ~eval:(fun m ->
+  let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
       let pos = Legal.new_position m in
       let king = Position.king pos in
@@ -317,7 +327,7 @@ module Swarm = struct
     let inactive_board = Position.board_of_color pos inactive in
     let king = Position.king pos in
     let king_sq = Bb.(first_set_exn (king & inactive_board)) in
-    Legal.best moves ~eval:(fun m ->
+    best moves ~eval:(fun m ->
         let pos = Legal.new_position m in
         Position.collect_color pos active |>
         List.fold ~init:0 ~f:(fun acc (sq, _) ->

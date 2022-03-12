@@ -31,21 +31,21 @@ module T = struct
      performance advantage over a typical state monad pattern (where
      we are making a new copy every time we update a field). *)
   type t = {
-    mutable white : Bb.t;
-    mutable black : Bb.t;
-    mutable pawn : Bb.t;
-    mutable knight : Bb.t;
-    mutable bishop : Bb.t;
-    mutable rook : Bb.t;
-    mutable queen : Bb.t;
-    mutable king : Bb.t;
-    mutable active : Piece.color;
-    mutable castle : Cr.t;
+    mutable white      : Bb.t;
+    mutable black      : Bb.t;
+    mutable pawn       : Bb.t;
+    mutable knight     : Bb.t;
+    mutable bishop     : Bb.t;
+    mutable rook       : Bb.t;
+    mutable queen      : Bb.t;
+    mutable king       : Bb.t;
+    mutable active     : Piece.color;
+    mutable castle     : Cr.t;
     mutable en_passant : Square.t Uopt.t;
-    mutable halfmove : int;
-    mutable fullmove : int;
-    mutable hash : int64;
-    mutable pawn_hash : int64;
+    mutable halfmove   : int;
+    mutable fullmove   : int;
+    mutable hash       : int64;
+    mutable pawn_hash  : int64;
   } [@@deriving compare, equal, fields, sexp]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
@@ -345,18 +345,18 @@ let is_insufficient_material pos = let open Bb in
 module Analysis = struct
   module T = struct
     type t = {
-      pos : T.t;
-      king_sq : Square.t;
-      en_passant_pawn : Square.t Uopt.t;
-      occupied : Bb.t;
-      active_board : Bb.t;
-      inactive_board : Bb.t;
-      inactive_attacks : Bb.t;
-      pinners : Bb.t array;
-      num_checkers : int;
-      check_mask : Bb.t;
+      pos                   : T.t;
+      king_sq               : Square.t;
+      en_passant_pawn       : Square.t Uopt.t;
+      occupied              : Bb.t;
+      active_board          : Bb.t;
+      inactive_board        : Bb.t;
+      inactive_attacks      : Bb.t;
+      pinners               : Bb.t array;
+      num_checkers          : int;
+      check_mask            : Bb.t;
       en_passant_check_mask : Bb.t;
-      inactive_sliders : (Square.t * Piece.kind) list;
+      inactive_sliders      : (Square.t * Piece.kind) list;
     } [@@deriving fields]
   end
 
@@ -970,9 +970,9 @@ module Makemove = struct
   *)
   type context = {
     en_passant_pawn : Square.t Uopt.t;
-    castle_side : Cr.side Uopt.t;
-    piece : Piece.t;
-    direct_capture : Piece.t Uopt.t;
+    castle_side     : Cr.side Uopt.t;
+    piece           : Piece.t;
+    direct_capture  : Piece.t Uopt.t;
   } [@@deriving fields]
 
   let[@inline] update_hash pos ~f = set_hash pos @@ f pos.hash
@@ -1184,47 +1184,33 @@ end
 module Legal = struct
   module T = struct
     type t = {
-      move : Move.t;
-      parent : T.t;
-      new_position : T.t;
-      capture : Piece.kind Uopt.t;
+      move          : Move.t;
+      parent        : T.t;
+      new_position  : T.t;
+      capture       : Piece.kind Uopt.t;
       is_en_passant : bool;
-      castle_side : Cr.side Uopt.t;
+      castle_side   : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
 
-    let same l1 l2 =
-      same_hash l1.parent l2.parent &&
-      same_hash l1.new_position l2.new_position
-
-    let is_move legal m = Move.(m = legal.move)
-    let capture legal = Uopt.to_option legal.capture
-    let castle_side legal = Uopt.to_option legal.castle_side
-
-    let capture_square legal =
-      if Uopt.is_none legal.capture then None
-      else Option.some @@
-        let dst = Move.dst legal.move in
-        if not legal.is_en_passant then dst
-        else Fn.flip en_passant_pawn_aux dst @@ inactive legal.new_position
   end
-
-  let sort moves ~eval =
-    List.map moves ~f:(fun m -> m, eval m) |>
-    List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
-    List.map ~f:fst
-
-  let best moves ~eval =
-    let open Option.Monad_infix in
-    List.filter_map moves ~f:(fun m -> eval m >>| fun score -> (m, score)) |>
-    List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
-    List.fold_until ~init:([], 0) ~finish:fst
-      ~f:(fun (acc, score') (m, score) -> match acc with
-          | [] -> Continue (m :: acc, score)
-          | _ when score' > score -> Stop acc
-          | _ -> Continue (m :: acc, score'))
 
   include T
   include Comparable.Make(T)
+
+  let same l1 l2 =
+    same_hash l1.parent l2.parent &&
+    same_hash l1.new_position l2.new_position
+
+  let is_move legal m = Move.(m = legal.move)
+  let capture legal = Uopt.to_option legal.capture
+  let castle_side legal = Uopt.to_option legal.castle_side
+
+  let capture_square legal =
+    if Uopt.is_none legal.capture then None
+    else Option.some @@
+      let dst = Move.dst legal.move in
+      if not legal.is_en_passant then dst
+      else Fn.flip en_passant_pawn_aux dst @@ inactive legal.new_position
 end
 
 type legal = Legal.t [@@deriving compare, equal, sexp]

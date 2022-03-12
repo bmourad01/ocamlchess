@@ -30,7 +30,7 @@ module Tt = struct
   type entry = {
     depth : int;
     score : int;
-    best : Position.legal;
+    best  : Position.legal;
     bound : bound;
   }
 
@@ -87,16 +87,16 @@ module Tt = struct
 end
 
 type t = {
-  limits : limits;
-  root : Position.t;
+  limits  : limits;
+  root    : Position.t;
   history : int Int64.Map.t;
-  tt : Tt.t;
+  tt      : Tt.t;
 } [@@deriving fields]
 
 module Result = struct
   type t = {
-    best : Position.legal;
-    pv : Position.legal list;
+    best  : Position.legal;
+    pv    : Position.legal list;
     score : int;
     evals : int;
     depth : int;
@@ -125,9 +125,8 @@ let is_noisy = Fn.non is_quiet
 module State = struct
   module T = struct
     type t = {
-      nodes : int;
-      search : search;
-      tt : Tt.t;
+      nodes   : int;
+      search  : search;
       killer1 : Position.legal Int.Map.t;
       killer2 : Position.legal Int.Map.t;
       history : int array;
@@ -136,7 +135,6 @@ module State = struct
     let create search = {
       nodes = 0;
       search;
-      tt = search.tt;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
       history = Array.create ~len:Square.(count * count) 0;
@@ -275,6 +273,11 @@ module Ordering = struct
   (* Overall score. *)
   let score att m = capture m + promote m + attacked att m
 
+  let sort_aux moves ~eval =
+    List.map moves ~f:(fun m -> m, eval m) |>
+    List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
+    List.map ~f:fst
+
   (* Use the transposition table to favor moves that are in the principal
      variation. Also, apply the killer move and history heuristics. *)
   let sort moves ~ply ~pos ~tt =
@@ -286,7 +289,7 @@ module Ordering = struct
     let killer m b =
       Option.value_map ~default:0 ~f:(fun k ->
           if Legal.same m k then b else 0) in
-    Legal.sort moves ~eval:(fun m ->
+    sort_aux moves ~eval:(fun m ->
         if best m then inf
         else
           let s = score att m in
@@ -303,7 +306,7 @@ module Ordering = struct
   (* Sort for quiescence search, ignoring PV nodes. *)
   let qsort ~pos =
     let att = Position.(Attacks.all pos @@ inactive pos) in
-    Legal.sort ~eval:(score att)
+    sort_aux ~eval:(score att)
 end
 
 let negm = Fn.compose State.return Int.neg
@@ -385,8 +388,7 @@ module Main = struct
     || Position.halfmove pos >= 100
     || Position.is_insufficient_material pos then State.return 0
     else (* Find if we evaluated this position previously. *)
-      State.(gets tt) >>= fun tt ->
-      match Tt.lookup tt ~pos ~depth ~alpha ~beta with
+      match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
       | First score -> State.return score
       | Second (alpha, beta) ->
         let moves = Position.legal_moves pos in
@@ -454,9 +456,9 @@ module Main = struct
         ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
-        State.(gets tt) >>= fun tt ->
+        State.(gets search) >>= fun search ->
         let ps = Plysearch.create moves ~alpha in
-        Ordering.sort moves ~ply ~pos ~tt >>= fun moves ->
+        Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
         let finish () = State.return ps.alpha in
         State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
             if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
@@ -466,7 +468,7 @@ module Main = struct
               then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
               else State.return @@ Continue (Plysearch.better ps m score))
         >>| fun score ->
-        Tt.store tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+        Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
 
   (* Futility pruning.
@@ -537,9 +539,8 @@ module Main = struct
   and root moves depth =
     let open Continue_or_stop in
     State.(gets search) >>= fun search ->
-    State.(gets tt) >>= fun tt ->
     let pos = search.root in
-    Ordering.sort moves ~ply:0 ~pos ~tt >>= fun moves ->
+    Ordering.sort moves ~ply:0 ~pos ~tt:search.tt >>= fun moves ->
     let ps = Plysearch.create moves in
     let finish () = State.return ps.alpha in
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
@@ -554,7 +555,7 @@ module Main = struct
         end) >>| fun score ->
     (* Update the transposition table and return the results. *)
     let best = ps.best in
-    Tt.store tt pos ~depth ~score ~best ~bound:Exact;
+    Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
     best, score
 end
 
@@ -567,7 +568,7 @@ let rec iterdeep ?(i = 1) st ~moves =
      again since it will most likely return the same result. *)
   let n = st.search.limits.depth in
   if score = inf || i >= n then
-    let pv = Tt.pv st.tt best n in
+    let pv = Tt.pv st.search.tt best n in
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
 

@@ -28,12 +28,12 @@ module State = struct
   module T = struct
     type t = {
       window : Window.t;
-      game : Game.t;
-      legal : Position.legal list;
-      sel : (Square.t * Position.legal list) option;
-      prev : Position.legal option;
-      white : Player.e option;
-      black : Player.e option;
+      game   : Game.t;
+      legal  : Position.legal list;
+      sel    : (Square.t * Position.legal list) option;
+      prev   : Position.legal option;
+      white  : Player.e option;
+      black  : Player.e option;
     } [@@deriving fields]
   end
 

@@ -9,9 +9,9 @@ type 'a choice = 'a -> Position.legal list -> Position.legal * 'a
 
 type 'a t = {
   choice : 'a choice;
-  name : string;
-  desc : string;
-  state : 'a;
+  name   : string;
+  desc   : string;
+  state  : 'a;
 } [@@deriving fields]
 
 type e = T : 'a t -> e

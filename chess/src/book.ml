@@ -5,9 +5,9 @@ module Bb = Bitboard
 module Cr = Castling_rights
 
 type entry = {
-  move : Move.t;
+  move   : Move.t;
   weight : int;
-  learn : int32;
+  learn  : int32;
 }
 
 let entry_size = 16
@@ -65,11 +65,7 @@ let create filepath =
       let get32 i = Int32.of_int_trunc @@ get i in
       let get64 i = Int64.of_int @@ get i in
       let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
-        | 0 -> book
-        | n when n < len ->
-          failwithf "Invalid length of book file, \
-                     must be divisible by %d" len ()
-        | _ ->
+        | n when n = len ->
           (* The members of each entry are stored as big-endian integers. *)
           let key = Int64.(
               (get64 0 lsl 56) lor (get64 1 lsl 48) lor
@@ -82,7 +78,11 @@ let create filepath =
               (get32 12 lsl 24) lor (get32 13 lsl 16) lor
               (get32 14 lsl 8)  lor (get32 15)) in
           Hashtbl.add_multi book ~key ~data:{move; weight; learn};
-          read () in
+          read ()
+        | 0 -> book
+        | n ->
+          failwithf "Invalid length of book file, must be divisible \
+                     by %d (%d bytes remaining)" len n () in
       read ())
 
 module Error = struct
@@ -138,7 +138,7 @@ let lookup book pos =
     let target = Random.int_incl 0 sum in
     let rec find sum = function
       | [] -> Error (Bad_weight pos)
-      | {move; weight} :: rest ->
+      | {move; weight; _} :: rest ->
         let sum = sum - weight in
         if sum <= target then match make_move pos move with
           | exception _ -> Error (Illegal_move (move, pos))
