@@ -59,19 +59,17 @@ let decode_move i =
 let create filepath =
   In_channel.with_file filepath ~binary:true ~f:(fun file ->
       let book = Hashtbl.create (module Int64) in
-      let buf = Buffer.create entry_size in
-      let get i = Char.to_int @@ Buffer.nth buf i in
+      let len = entry_size in
+      let buf = Bytes.create len in
+      let get i = Char.to_int @@ Bytes.unsafe_get buf i in
       let get32 i = Int32.of_int_trunc @@ get i in
       let get64 i = Int64.of_int @@ get i in
-      let len = entry_size in
-      let rec read () = match In_channel.input_buffer file buf ~len with
-        | None when Buffer.length buf = 0 -> book
-        | None ->
-          (* We read at least 1 byte, but less than the size needed for
-             an entry in the table. *)
+      let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
+        | 0 -> book
+        | n when n < len ->
           failwithf "Invalid length of book file, \
                      must be divisible by %d" len ()
-        | Some () ->
+        | _ ->
           (* The members of each entry are stored as big-endian integers. *)
           let key = Int64.(
               (get64 0 lsl 56) lor (get64 1 lsl 48) lor
@@ -81,10 +79,9 @@ let create filepath =
           let move = decode_move ((get 8 lsl 8) lor get 9) in
           let weight = (get 10 lsl 8) lor get 11 in
           let learn = Int32.(
-            (get32 12 lsl 24) lor (get32 13 lsl 16) lor
-            (get32 14 lsl 8)  lor (get32 15)) in
+              (get32 12 lsl 24) lor (get32 13 lsl 16) lor
+              (get32 14 lsl 8)  lor (get32 15)) in
           Hashtbl.add_multi book ~key ~data:{move; weight; learn};
-          Buffer.clear buf;
           read () in
       read ())
 
