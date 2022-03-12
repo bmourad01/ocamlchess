@@ -336,8 +336,8 @@ module Quiescence = struct
       let finish = State.return in
       List.filter moves ~f:is_noisy |> Ordering.qsort ~pos |>
       State.List.fold_until ~init ~finish ~f:(fun alpha m ->
-          let pos' = Legal.new_position m in
-          go pos' ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
+          Legal.new_position m |>
+          go ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
           if score >= beta then Stop beta else Continue (max score alpha))
 end
 
@@ -418,13 +418,12 @@ module Main = struct
   (* Late move reduction. *)
   and lmr ps pos m ~beta ~ply ~depth ~check =
     let open Plysearch in
-    let pos' = Legal.new_position m in
     if beta - ps.alpha <= 1
     && not ps.full_window
     && depth > reduction_factor
     && not check
     && is_quiet m
-    && not @@ Position.in_check pos'
+    && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
       | true -> State.return None
       | false ->

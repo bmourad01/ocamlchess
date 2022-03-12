@@ -5,7 +5,6 @@ module Caml_player = struct
   open Core_kernel
 
   let limits = Search.Limits.create ~depth:7 ~nodes:None ()
-
   let update_history m pos =
     Position.hash pos |> Map.update m ~f:(function
         | Some n -> n + 1
