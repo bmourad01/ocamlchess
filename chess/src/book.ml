@@ -73,24 +73,16 @@ let create filepath =
                      must be divisible by %d" len ()
         | Some () ->
           (* The members of each entry are stored as big-endian integers. *)
-          let key =
-            let open Int64 in
-            (get64 0 lsl 56) lor
-            (get64 1 lsl 48) lor
-            (get64 2 lsl 40) lor
-            (get64 3 lsl 32) lor
-            (get64 4 lsl 24) lor
-            (get64 5 lsl 16) lor
-            (get64 6 lsl 8) lor
-            get64 7 in
+          let key = Int64.(
+              (get64 0 lsl 56) lor (get64 1 lsl 48) lor
+              (get64 2 lsl 40) lor (get64 3 lsl 32) lor
+              (get64 4 lsl 24) lor (get64 5 lsl 16) lor
+              (get64 6 lsl 8)  lor (get64 7)) in
           let move = decode_move ((get 8 lsl 8) lor get 9) in
           let weight = (get 10 lsl 8) lor get 11 in
-          let learn =
-            let open Int32 in
-            (get32 12 lsl 24) lor
-            (get32 13 lsl 16) lor
-            (get32 14 lsl 8) lor
-            get32 15 in
+          let learn = Int32.(
+            (get32 12 lsl 24) lor (get32 13 lsl 16) lor
+            (get32 14 lsl 8)  lor (get32 15)) in
           Hashtbl.add_multi book ~key ~data:{move; weight; learn};
           Buffer.clear buf;
           read () in
