@@ -11,7 +11,7 @@ module Caml_player = struct
         | Some n -> n + 1
         | None -> 1)
 
-  let print_res res =
+  let print_res res sec =
     let pv =
       Search.Result.pv res |>
       List.map ~f:(fun m -> Position.San.of_legal m) |>
@@ -21,6 +21,7 @@ module Caml_player = struct
       if s = Int.max_value then "inf"
       else if s = (-Int.max_value) then "-inf"
       else Int.to_string s in
+    printf "Time taken: %fs\n%!" sec;
     printf "Principal variation: %s\n%!" pv;
     printf "Depth: %d\n%!" @@ Search.Result.depth res;
     printf "Nodes searched: %d\n%!" @@ Search.Result.evals res;
@@ -49,9 +50,12 @@ module Caml_player = struct
     | Some (m, history) -> m, (history, tt, true)
     | None ->
       let search = Search.create ~limits ~root ~history ~tt in
+      let t = Time.now () in
       let res = Search.go search in
+      let t' = Time.now () in
+      let sec = Time.(Span.to_sec @@ diff t' t) in
       let m = Search.Result.best res in
-      print_res res;
+      print_res res sec;
       let new_pos = Position.Legal.new_position m in
       let history = update_history history new_pos in
       m, (history, tt, false)
