@@ -68,10 +68,10 @@ let promote_prompt () =
   eprintf "Choose promotion piece (n|b|r|q): %!"
 
 let rec promote () = match In_channel.(input_line stdin) with
-  | Some "n" -> Piece.Knight
-  | Some "b" -> Piece.Bishop
-  | Some "r" -> Piece.Rook
-  | Some "q" -> Piece.Queen
+  | Some "n" -> Move.Promote.Knight
+  | Some "b" -> Move.Promote.Bishop
+  | Some "r" -> Move.Promote.Rook
+  | Some "q" -> Move.Promote.Queen
   | _ -> eprintf "Invalid promotion, try again: %!"; promote ()
 
 let find_move sq mv =
@@ -81,7 +81,7 @@ let find_move sq mv =
 let find_promote sq k mv =
   let m = Legal.move mv in
   Square.(sq = Move.dst m) &&
-  Option.exists (Move.promote m) ~f:(Piece.Kind.equal k)
+  Option.exists (Move.promote m) ~f:(Move.Promote.equal k)
 
 let click mx my = State.update @@ fun ({window; game; legal; sel; _} as st) ->
   match screen_to_sq window mx my with

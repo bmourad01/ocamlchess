@@ -33,10 +33,10 @@ let decode_move i =
   let promote =
     match (i land 0x7000) lsr 12 with
     | 0 -> None
-    | 1 -> Some Piece.Knight
-    | 2 -> Some Piece.Bishop
-    | 3 -> Some Piece.Rook
-    | 4 -> Some Piece.Queen
+    | 1 -> Some Move.Promote.Knight
+    | 2 -> Some Move.Promote.Bishop
+    | 3 -> Some Move.Promote.Rook
+    | 4 -> Some Move.Promote.Queen
     | n -> invalid_argf "Invalid promotion piece %d" n () in
   Move.create src dst ~promote
 

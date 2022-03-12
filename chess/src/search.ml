@@ -259,6 +259,7 @@ module Ordering = struct
   let promote m =
     Legal.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(fun k ->
+        let k = Move.Promote.to_piece_kind k in
         promote_bonus + Piece.Kind.value k * Eval.material_weight)
 
   (* Penalize moving to squares that are attacked by the opponent (unless the

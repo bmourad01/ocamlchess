@@ -1135,7 +1135,7 @@ module Makemove = struct
 
   (* Update the piece for the destination square if we're promoting. *)
   let[@inline] do_promote p promote pos = match promote with
-    | Some k -> Piece.with_kind p k
+    | Some k -> Piece.with_kind p @@ Move.Promote.to_piece_kind k
     | None -> p
 
   (* Clear the square of the pawn captured by en passant. *)
@@ -1281,7 +1281,7 @@ module Movegen = struct
           else diag
         else diag
 
-      let promote_kinds = Piece.[Knight; Bishop; Rook; Queen]
+      let promote_kinds = Move.Promote.[Knight; Bishop; Rook; Queen]
 
       (* We need to multiply the move by the number of pieces we can
          promote to. *)
@@ -1536,11 +1536,10 @@ module San = struct
         then adds @@ Square.to_string dst;
         (* Promotion *)
         Option.iter promote ~f:(function
-            | Piece.Knight -> adds "=N"
-            | Piece.Bishop -> adds "=B"
-            | Piece.Rook   -> adds "=R"
-            | Piece.Queen  -> adds "=Q"
-            | _ -> assert false);
+            | Move.Promote.Knight -> adds "=N"
+            | Move.Promote.Bishop -> adds "=B"
+            | Move.Promote.Rook   -> adds "=R"
+            | Move.Promote.Queen  -> adds "=Q");
     end;
     (* Checkmate or check *)
     if checkmate then addc '#'

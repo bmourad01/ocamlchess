@@ -4,7 +4,7 @@ open Chess
 
 let cmp_move_opt = Option.equal Move.equal
 let cmp_square = Square.equal
-let cmp_promote = Option.equal Piece.Kind.equal
+let cmp_promote = Option.equal Move.Promote.equal
 
 let test_parse () =
   let m = Move.of_string_exn "a1b2" in
@@ -19,7 +19,7 @@ let test_parse_promote () =
   let m = Move.of_string_exn "c7c8q" in
   assert_equal (Move.src m) Square.c7 ~cmp:cmp_square;
   assert_equal (Move.dst m) Square.c8 ~cmp:cmp_square;
-  assert_equal (Move.promote m) (Some Piece.Queen) ~cmp:cmp_promote
+  assert_equal (Move.promote m) (Some Move.Promote.Queen) ~cmp:cmp_promote
 
 let test_parse_garbage () =
   assert_equal (Move.of_string "abcdefgh") None ~cmp:cmp_move_opt
