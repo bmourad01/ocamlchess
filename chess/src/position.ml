@@ -111,13 +111,9 @@ let[@inline] en_passant_pawn_uopt pos =
 
 let[@inline] en_passant_pawn pos = Uopt.to_option @@ en_passant_pawn_uopt pos
 
-let[@inline] has_en_passant_threat_aux pos ep =
-  let cap = Pre.pawn_capture ep @@ Piece.Color.opposite pos.active in
+let[@inline] has_pawn_threat pos sq =
+  let cap = Pre.pawn_capture sq @@ Piece.Color.opposite pos.active in
   Bb.((cap & pos.pawn & active_board pos) <> empty)
-
-let[@inline] has_en_passant_threat pos =
-  Uopt.value_map pos.en_passant
-    ~default:false ~f:(has_en_passant_threat_aux pos)
 
 (* Piece lookup *)
 
@@ -202,8 +198,9 @@ module Hash = struct
     let[@inline] en_passant sq h = flip h @@ Zobrist.en_passant sq
     let[@inline] active_player h = flip h Zobrist.white_to_move
 
-    let[@inline] en_passant_opt ep h =
-      Uopt.value_map ep ~default:h ~f:(fun ep -> en_passant ep h)
+    let[@inline] en_passant pos h =
+      Uopt.value_map pos.en_passant ~default:h ~f:(fun ep ->
+          if has_pawn_threat pos ep then en_passant ep h else h)
 
     let[@inline] castle_test cr c s h =
       if Cr.mem cr c s then castle c s h else h
@@ -224,7 +221,7 @@ module Hash = struct
         H.update @@ Update.castle_test pos.castle Black Kingside  >>= fun () ->
         H.update @@ Update.castle_test pos.castle Black Queenside >>= fun () ->
         (* En passant *)
-        H.update @@ Update.en_passant_opt pos.en_passant >>= fun () ->
+        H.update @@ Update.en_passant pos >>= fun () ->
         (* White to move. *)
         match pos.active with
         | White -> H.update @@ Update.active_player
@@ -925,7 +922,9 @@ module Fen = struct
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove
           ~hash:0L ~pawn_hash:0L in
-      if not @@ has_en_passant_threat pos then set_en_passant pos Uopt.none;
+      (* Uopt.iter pos.en_passant ~f:(fun ep -> *)
+      (*     if not @@ has_pawn_threat pos ep *)
+      (*     then set_en_passant pos Uopt.none); *)
       set_hash pos @@ Hash.of_position pos;
       set_pawn_hash pos @@ Hash.pawn_structure pos;
       if validate then validate_and_map pos else E.return pos
@@ -1109,18 +1108,19 @@ module Makemove = struct
 
   (* Reset the en passant hash and return the new en passant square if a pawn
      double push occurred. *) 
-  let[@inline] setup_en_passant p src dst pos =
-    update_hash pos ~f:(Hash.Update.en_passant_opt pos.en_passant);
-    if Piece.is_pawn p then
-      let rank, file = Square.decomp src in
-      let rank' = Square.rank dst in
-      match pos.active with
-      | Piece.White when rank' - rank = 2 ->
-        Uopt.some @@ Square.(with_rank_unsafe dst Rank.three)
-      | Piece.Black when rank - rank' = 2 ->
-        Uopt.some @@ Square.(with_rank_unsafe dst Rank.six)
-      | _ -> Uopt.none
-    else Uopt.none
+  let[@inline] update_en_passant p src dst pos =
+    update_hash pos ~f:(Hash.Update.en_passant pos);
+    let ep = if Piece.is_pawn p then
+        let rank, file = Square.decomp src in
+        let rank' = Square.rank dst in
+        match pos.active with
+        | Piece.White when rank' - rank = 2 ->
+          Uopt.some @@ Square.(with_rank_unsafe dst Rank.three)
+        | Piece.Black when rank - rank' = 2 ->
+          Uopt.some @@ Square.(with_rank_unsafe dst Rank.six)
+        | _ -> Uopt.none
+      else Uopt.none in
+    set_en_passant pos ep
 
   (* After each halfmove, give the turn to the other player. *)
   let[@inline] flip_active pos =
@@ -1147,21 +1147,9 @@ module Makemove = struct
       Uopt.some Piece.Pawn
     else Uopt.none
 
-  (* Set the en passant square for the resulting position, but only if the
-     square is threatened by an opposing pawn. *)
-  let[@inline] update_en_passant ep capture pos =
-    let ep =
-      if Uopt.is_some ep && Uopt.is_none capture then
-        let sq = Uopt.unsafe_value ep in
-        if has_en_passant_threat_aux pos sq then begin
-          update_hash pos ~f:(Hash.Update.en_passant sq); ep
-        end else Uopt.none
-      else Uopt.none in
-    set_en_passant pos ep
-
   let[@inline] go src dst promote ctx pos =
     (* Do the stuff that relies on the initial state. *)
-    let ep = setup_en_passant ctx.piece src dst pos in
+    update_en_passant ctx.piece src dst pos;
     update_halfmove ctx pos;
     update_castle ctx src dst pos;
     (* Clear the old placement. *)
@@ -1176,7 +1164,7 @@ module Makemove = struct
     (* Prepare for the next move. *)
     update_fullmove pos;
     flip_active pos;
-    update_en_passant ep capture pos;
+    update_hash pos ~f:(Hash.Update.en_passant pos);
     (* Return the capture that was made, if any. *)
     capture 
 end
@@ -1447,7 +1435,7 @@ let make_move pos move =
 let null_move_unsafe pos =
   let pos = copy pos in
   Makemove.flip_active pos;
-  Makemove.update_hash pos ~f:(Hash.Update.en_passant_opt pos.en_passant);
+  Makemove.update_hash pos ~f:(Hash.Update.en_passant pos);
   set_en_passant pos Uopt.none;
   set_halfmove pos 0;
   pos
