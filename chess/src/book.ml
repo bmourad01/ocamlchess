@@ -60,6 +60,9 @@ let create filepath =
   In_channel.with_file filepath ~binary:true ~f:(fun file ->
       let book = Hashtbl.create (module Int64) in
       let buf = Buffer.create entry_size in
+      let get i = Char.to_int @@ Buffer.nth buf i in
+      let get32 i = Int32.of_int_trunc @@ get i in
+      let get64 i = Int64.of_int @@ get i in
       let len = entry_size in
       let rec read () = match In_channel.input_buffer file buf ~len with
         | None when Buffer.length buf = 0 -> book
@@ -69,10 +72,6 @@ let create filepath =
           failwithf "Invalid length of book file, \
                      must be divisible by %d" len ()
         | Some () ->
-          let b = Buffer.contents_bytes buf in
-          let get i = Char.to_int @@ Bytes.get b i in
-          let get32 i = Int32.of_int_exn @@ get i in
-          let get64 i = Int64.of_int @@ get i in
           (* The members of each entry are stored as big-endian integers. *)
           let key =
             let open Int64 in
