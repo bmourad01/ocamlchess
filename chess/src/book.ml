@@ -73,6 +73,7 @@ let create filepath =
           let get i = Char.to_int @@ Bytes.get b i in
           let get32 i = Int32.of_int_exn @@ get i in
           let get64 i = Int64.of_int @@ get i in
+          (* The members of each entry are stored as big-endian integers. *)
           let key =
             let open Int64 in
             (get64 0 lsl 56) lor
