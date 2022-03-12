@@ -15,5 +15,5 @@ let lookup name =
   Option.map ~f:(fun create -> create ())
 
 let enumerate () =
-  Map.data !players |> Sequence.of_list |>
-  Sequence.map ~f:(fun create -> create ())
+  Map.to_sequence !players |>
+  Sequence.map ~f:(fun (_, create) -> create ())
