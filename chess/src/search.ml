@@ -550,7 +550,7 @@ module Main = struct
   and razor_margin = Piece.Kind.value Rook * Eval.material_weight
 
   (* The search we start from the root position. *)
-  and root moves depth =
+  and root moves ~depth =
     let open Continue_or_stop in
     State.(gets search) >>= fun search ->
     let pos = search.root in
@@ -561,8 +561,12 @@ module Main = struct
         Legal.new_position m |>
         pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
         State.(gets nodes) >>| fun nodes ->
-        if Limits.is_max_nodes nodes search.limits then Stop ps.alpha
-        else begin
+        if Limits.is_max_nodes nodes search.limits then begin
+          (* We could've reached the limit without getting a chance
+             to improve alpha. *)
+          if ps.alpha = -inf then Plysearch.better ps m score;
+          Stop ps.alpha
+        end else begin
           (* Stop if we've found a mating sequence. *)
           Plysearch.better ps m score;
           if score = max_score then Stop score else Continue ()
@@ -576,15 +580,16 @@ end
 (* Use iterative deepening to optimize the search. This relies on previous
    evaluations stored in the transposition table to prune more nodes with
    each successive iteration. *)
-let rec iterdeep ?(i = 1) st ~moves =
-  let (best, score), st = Monad.State.run (Main.root moves i) st in
+let rec iterdeep ?(depth = 1) st ~moves =
+  let (best, score), st =
+    Monad.State.run (Main.root moves ~depth) st in
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   let n = st.search.limits.depth in
-  if score = max_score || i >= n then
+  if score = max_score || depth >= n then
     let pv = Tt.pv st.search.tt best n in
-    Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
-  else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st
+    Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth
+  else iterdeep ~depth:(depth + 1) ~moves @@ State.new_iter st
 
 let go search = match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"
