@@ -376,7 +376,7 @@ end
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
   (* Search from a new position. *)
-  let rec go ?(null = true) pos ~alpha ~beta ~ply ~depth =
+  let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
     (* Check if we reached the search limits, as well as for positions
@@ -441,7 +441,7 @@ module Main = struct
     | None -> pvs ()
 
   (* The actual search, given all the legal moves. *)
-  and with_moves ?(null = true) pos moves ~alpha ~beta ~ply ~depth ~check =
+  and with_moves ?(null = false) pos moves ~alpha ~beta ~ply ~depth ~check =
     (* Extend the depth limit if we're in check. Since the number of
        responses to a check is typically very low, the search should
        finish quickly. *)
@@ -500,7 +500,7 @@ module Main = struct
 
   (* Try to reduce the depth. *)
   and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
-    if beta - alpha > 1 || check || not null
+    if beta - alpha > 1 || check || null
     then State.return None
     else match rfp ~depth ~score ~beta with
       | Some _ as score -> State.return score
@@ -532,7 +532,7 @@ module Main = struct
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)
         ~depth:(depth - 1 - reduction_factor)
-        ~null:false >>= negm >>| fun score ->
+        ~null:true >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else State.return None
 
@@ -564,7 +564,7 @@ module Main = struct
         if Limits.is_max_nodes nodes search.limits then begin
           (* We could've reached the limit without getting a chance
              to improve alpha. *)
-          if ps.alpha = -inf then Plysearch.better ps m score;
+          if ps.full_window then Plysearch.better ps m score;
           Stop ps.alpha
         end else begin
           (* Stop if we've found a mating sequence. *)
