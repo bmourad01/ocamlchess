@@ -25,6 +25,9 @@ type limits = Limits.t
 (** The search information. *)
 type t
 
+(** The maximum score for a move. *)
+val max_score : int
+
 (** The transposition table. *)
 module Tt : sig
   (** The transposition table. *)

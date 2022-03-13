@@ -68,9 +68,9 @@ module Tt = struct
     match Hashtbl.find tt @@ Position.hash pos with
     | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
         match bound with
-        | Lower when score >= beta -> First beta
+        | Lower when score >= beta -> First score
         | Lower -> Second (max alpha score, beta)
-        | Upper when score <= alpha -> First alpha
+        | Upper when score <= alpha -> First score
         | Upper -> Second (alpha, min beta score)
         | Exact -> First score
       end
@@ -80,8 +80,8 @@ module Tt = struct
   let pv tt m n =
     let rec aux i acc pos =
       match Hashtbl.find tt @@ Position.hash pos with
-      | Some entry when n > i ->
-        aux (i + 1) (entry.best :: acc) @@ Legal.new_position entry.best
+      | Some {best; bound = Exact; _} when n > i ->
+        aux (i + 1) (best :: acc) @@ Legal.new_position best
       | _ -> List.rev acc in
     aux 0 [m] @@ Legal.new_position m
 end
@@ -108,12 +108,8 @@ type search = t
 
 let create = Fields.create
 
-(* Important not to use `Int.min_value`, since negating it seems to give
-   us back a negative number.
-
-   See: https://ocaml.janestreet.com/ocaml-core/latest/doc/base/Base/Int/index.html#val-abs
-*)
-let inf = Int.max_value
+let inf = 65535
+let max_score = inf / 2
 
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
@@ -215,7 +211,6 @@ module Ordering = struct
   let promote_bonus = 3000
   let killer1_bonus = 2000
   let killer2_bonus = 1000
-  let control_penalty = -350
 
   (* Most Valuable Victim/Least Valuable Attacker *)
   let mvv_lva =
@@ -235,7 +230,7 @@ module Ordering = struct
       let j = Piece.Kind.to_int attacker in
       Array.unsafe_get tbl (i + j * num_victims)
 
-  (* Check if a particular move was part of the principal variation. *)
+  (* Check if a particular move has been evaluated already. *)
   let is_best pos tt =
     let best =
       Position.hash pos |> Hashtbl.find tt |>
@@ -260,53 +255,50 @@ module Ordering = struct
         let k = Move.Promote.to_piece_kind k in
         promote_bonus + Piece.Kind.value k * Eval.material_weight)
 
-  (* Penalize moving to squares that are attacked by the opponent (unless the
-     move is made by a pawn). *)
-  let attacked att m =
-    let src = Move.src @@ Legal.move m in
-    let p = Position.piece_at_square_exn (Legal.parent m) src  in
-    if Piece.is_pawn p then 0
-    else
-      let dst = Move.dst @@ Legal.move m in
-      if Bb.(dst @ att) then control_penalty else 0
-
-  (* Overall score. *)
-  let score att m = capture m + promote m + attacked att m
-
+  (* Sort by the result of `eval` for each move. *)
   let sort_aux moves ~eval =
     List.map moves ~f:(fun m -> m, eval m) |>
     List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
     List.map ~f:fst
 
-  (* Use the transposition table to favor moves that are in the principal
-     variation. Also, apply the killer move and history heuristics. *)
+  (* Sort for normal search. *)
   let sort moves ~ply ~pos ~tt =
     let best = is_best pos tt in
-    let att = Position.(Attacks.all pos @@ inactive pos) in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets history) >>| fun history ->
-    let killer m b =
-      Option.value_map ~default:0 ~f:(fun k ->
-          if Legal.same m k then b else 0) in
+    let killer m = match killer1, killer2 with
+      | Some k, _ when Legal.same m k -> killer1_bonus
+      | _, Some k when Legal.same m k -> killer2_bonus
+      | _ -> 0 in
+    let history m =
+      let m = Legal.move m in
+      let src = Square.to_int @@ Move.src m in
+      let dst = Square.to_int @@ Move.dst m in
+      let i = src + dst * Square.count in
+      Array.unsafe_get history i in
     sort_aux moves ~eval:(fun m ->
-        if best m then inf
+        if best m then max_score
         else
-          let s = score att m in
-          let k1 = killer m killer1_bonus killer1 in
-          let k2 = killer m killer2_bonus killer2 in
-          let q =
-            let m = Legal.move m in
-            let src = Square.to_int @@ Move.src m in
-            let dst = Square.to_int @@ Move.dst m in
-            let i = src + dst * Square.count in
-            Array.unsafe_get history i in
-          s + k1 + k2 + q)
+          let capture = capture m in
+          if capture <> 0 then capture
+          else
+            let promote = promote m in
+            if promote <> 0 then promote
+            else
+              let killer = killer m in
+              if killer <> 0 then killer
+              else history m)
 
-  (* Sort for quiescence search, ignoring PV nodes. *)
-  let qsort ~pos =
-    let att = Position.(Attacks.all pos @@ inactive pos) in
-    sort_aux ~eval:(score att)
+  (* Sort for quiescence search. *)
+  let qsort moves =
+    sort_aux moves ~eval:(fun m ->
+        let capture = capture m in
+        if capture <> 0 then capture
+        else
+          let promote = promote m in
+          if promote <> 0 then promote
+          else 0)
 end
 
 let negm = Fn.compose State.return Int.neg
@@ -315,7 +307,9 @@ let negm = Fn.compose State.return Int.neg
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
 module Quiescence = struct
-  let rec go pos ~alpha ~beta =
+  let margin = Piece.Kind.value Queen * Eval.material_weight
+
+  let rec go pos ~alpha ~beta ~ply =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
     if Limits.is_max_nodes nodes search.limits
@@ -324,21 +318,25 @@ module Quiescence = struct
       let moves = Position.legal_moves pos in
       let check = Position.in_check pos in
       if List.is_empty moves
-      then State.return @@ if check then -inf else 0
-      else with_moves pos moves ~alpha ~beta
+      then State.return @@ if check then -max_score else 0
+      else with_moves pos moves ~alpha ~beta ~ply
 
-  and with_moves pos moves ~alpha ~beta =
+  and with_moves pos moves ~alpha ~beta ~ply =
     State.(update inc_nodes) >>= fun () ->
     let score = Eval.go pos in
     if score >= beta then State.return beta
+    else if score + margin < alpha && not @@ Eval.is_endgame pos
+    then State.return alpha
     else let open Continue_or_stop in
+      State.(gets search) >>= fun {tt; _} ->
       let init = max score alpha in
       let finish = State.return in
-      List.filter moves ~f:is_noisy |> Ordering.qsort ~pos |>
+      List.filter moves ~f:is_noisy |> Ordering.qsort |>
       State.List.fold_until ~init ~finish ~f:(fun alpha m ->
           Legal.new_position m |>
-          go ~alpha:(-beta) ~beta:(-alpha) >>= negm >>| fun score ->
-          if score >= beta then Stop beta else Continue (max score alpha))
+          go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
+          negm >>| fun score -> if score >= beta
+          then Stop beta else Continue (max score alpha))
 end
 
 (* The search results for all the moves in one ply. *)
@@ -394,7 +392,7 @@ module Main = struct
         let moves = Position.legal_moves pos in
         let check = Position.in_check pos in
         if List.is_empty moves
-        then State.return @@ if check then -inf else 0
+        then State.return @@ if check then -max_score else 0
         else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
 
   (* Principal variation search. *)
@@ -448,13 +446,15 @@ module Main = struct
        responses to a check is typically very low, the search should
        finish quickly. *)
     let depth = depth + Bool.to_int check in
-    if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta
+    if depth <= 0
+    then Quiescence.with_moves pos moves ~alpha ~beta ~ply
     else
       let score = Eval.go pos in
       reduce pos moves
         ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
       | Some score -> State.return score
       | None -> let open Continue_or_stop in
+        iid pos moves ~alpha ~beta ~ply ~depth ~check >>= fun () ->
         State.(gets search) >>= fun search ->
         let ps = Plysearch.create moves ~alpha in
         Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
@@ -485,6 +485,19 @@ module Main = struct
 
   and futility_limit = 6
 
+  (* Internal iterative deepening. *)
+  and iid pos moves ~alpha ~beta ~ply ~depth ~check =
+    if not check
+    && beta - alpha > 1
+    && depth >= futility_limit then begin
+      with_moves pos moves
+        ~alpha
+        ~beta
+        ~ply
+        ~depth:(depth - 2)
+        ~check >>| ignore
+    end else State.return ()
+
   (* Try to reduce the depth. *)
   and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     if beta - alpha > 1 || check || not null
@@ -493,7 +506,7 @@ module Main = struct
       | Some _ as score -> State.return score
       | None -> nmr pos ~score ~beta ~ply ~depth >>= function
         | Some _ as beta -> State.return beta
-        | None -> razor pos moves ~score ~alpha ~beta ~depth
+        | None -> razor pos moves ~score ~alpha ~beta ~ply ~depth
 
   (* Reverse futility pruning.
 
@@ -511,7 +524,9 @@ module Main = struct
      is unlikely.
   *)
   and nmr pos ~score ~beta ~ply ~depth =
-    if score >= beta && depth > reduction_factor then
+    if score >= beta
+    && depth > reduction_factor
+    && not @@ Eval.is_endgame pos then
       Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
@@ -521,14 +536,14 @@ module Main = struct
       Option.some_if (score >= beta) beta
     else State.return None
 
-  (* Razoring. 
+  (* Razoring.
 
      Drop down to quescience search if we're approaching the horizon and we 
      have little chance to improve alpha.
   *)
-  and razor pos moves ~score ~alpha ~beta ~depth =
+  and razor pos moves ~score ~alpha ~beta ~ply ~depth =
     if depth = 1 && score + razor_margin <= alpha then
-      Quiescence.with_moves pos moves ~alpha ~beta >>| fun qscore ->
+      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun qscore ->
       Option.some_if (qscore <= alpha) qscore
     else State.return None
 
@@ -550,7 +565,7 @@ module Main = struct
         else begin
           (* Stop if we've found a mating sequence. *)
           Plysearch.better ps m score;
-          if score = inf then Stop score else Continue ()
+          if score = max_score then Stop score else Continue ()
         end) >>| fun score ->
     (* Update the transposition table and return the results. *)
     let best = ps.best in
@@ -566,7 +581,7 @@ let rec iterdeep ?(i = 1) st ~moves =
   (* If we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   let n = st.search.limits.depth in
-  if score = inf || i >= n then
+  if score = max_score || i >= n then
     let pv = Tt.pv st.search.tt best n in
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth:i
   else iterdeep ~i:(i + 1) ~moves @@ State.new_iter st

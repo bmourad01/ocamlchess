@@ -4,7 +4,8 @@ module Caml_player = struct
   open Chess
   open Core_kernel
 
-  let limits = Search.Limits.create ~depth:7 ~nodes:None ()
+  let limits = ref None
+
   let update_history m pos =
     Position.hash pos |> Map.update m ~f:(function
         | Some n -> n + 1
@@ -17,8 +18,8 @@ module Caml_player = struct
       String.concat ~sep:" " in
     let score =
       let s = Search.Result.score res in
-      if s = Int.max_value then "inf"
-      else if s = (-Int.max_value) then "-inf"
+      if s = Search.max_score then "win"
+      else if s = -Search.max_score then "lose"
       else Int.to_string s in
     printf "Time taken: %fs\n%!" sec;
     printf "Principal variation: %s\n%!" pv;
@@ -48,6 +49,7 @@ module Caml_player = struct
     match try_book in_book root history with
     | Some (m, history) -> m, (history, tt, true)
     | None ->
+      let limits = Option.value_exn !limits in
       let search = Search.create ~limits ~root ~history ~tt in
       let t = Time.now () in
       let res = Search.go search in
@@ -122,7 +124,7 @@ module Perft = struct
 end
 
 module Gui = struct
-  let go pos white black delay book no_validate =
+  let go pos white black delay depth nodes book no_validate =
     let validate = not no_validate in
     let pos = Chess.Position.Fen.of_string_exn pos ~validate in
     let white = choose_player white in
@@ -131,6 +133,7 @@ module Gui = struct
       | Some _, Some _ when Float.(delay <= 0.0) -> Fun.id
       | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
       | _ -> Fun.id in
+    Caml_player.limits := Some (Chess.Search.Limits.create ~depth ~nodes ());
     Base.Option.iter book ~f:(fun filename ->
         Caml_player.book := Some (Chess.Book.create filename));
     Gui.go pos ~white ~black ~delay
@@ -154,12 +157,32 @@ module Gui = struct
                (only applies when both players are AI)" in
     Arg.(value & opt float 0.0 (info ["delay"] ~docv:"SECONDS" ~doc))
 
+  let depth =
+    let doc = "Depth limit for search (only used by the 'caml' player). \
+               The value must be positive and non-zero." in
+    Arg.(value & opt int 8 (info ["depth"] ~docv:"NUMBER" ~doc))
+
+  let nodes =
+    let doc = "Node limit for search (only used by the 'caml' player). \
+               The value must be positive and non-zero." in
+    Arg.(value & opt (some int) None (info ["nodes"] ~docv:"NUMBER" ~doc))
+
   let book =
     let doc = "Path of opening book in Polyglot .bin format \
                (only used by the 'caml' player)" in
     Arg.(value & opt (some string) None (info ["book"] ~docv:"FILE" ~doc))
 
-  let t = Term.(const go $ pos $ white $ black $ delay $ book $ no_validate)
+
+  let t = Term.(
+      const go $
+      pos $
+      white $
+      black $
+      delay $
+      depth $
+      nodes $
+      book $
+      no_validate)
 
   let info =
     let doc = "Runs the testing GUI." in

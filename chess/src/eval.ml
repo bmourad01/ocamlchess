@@ -554,6 +554,8 @@ module Mop_up = struct
     | Black -> -score
 end
 
+let is_endgame pos = Phase.of_position pos > 150
+
 (* Phase-specific evaluation. *)
 let of_phase pos phase =
   Material.advantage pos phase +
