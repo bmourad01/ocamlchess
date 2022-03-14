@@ -102,7 +102,7 @@ module Simple = struct
       List.fold ~init:Bb.empty ~f:Bb.set)
 
   let white_pawn_advance = make @@ fun rank file -> [rank + 1, file]
-  let black_pawn_advance = make @@ fun rank file -> [rank - 1, file]
+  let black_pawn_advance = make @@ fun rank file -> [rank - 1, file] 
 
   let white_pawn_capture = make @@ fun rank file -> [
       rank + 1, file + 1;
@@ -113,6 +113,9 @@ module Simple = struct
       rank - 1, file + 1;
       rank - 1, file - 1;
     ]
+
+  let pawn_advance = Array.append white_pawn_advance black_pawn_advance
+  let pawn_capture = Array.append white_pawn_capture black_pawn_capture
 
   let knight = make @@ fun rank file -> [
       rank + 2, file + 1;
@@ -236,17 +239,13 @@ end
 
 (* The actual API for accessing precalculated move patterns. *)
 
-let[@inline] pawn_advance sq = function
-  | Piece.White ->
-    Array.unsafe_get Simple.white_pawn_advance @@ Square.to_int sq
-  | Piece.Black ->
-    Array.unsafe_get Simple.black_pawn_advance @@ Square.to_int sq
+let[@inline] pawn_advance sq c =
+  let i = Square.to_int sq + Piece.Color.to_int c * Square.count in
+  Array.unsafe_get Simple.pawn_advance i
 
-let[@inline] pawn_capture sq = function
-  | Piece.White ->
-    Array.unsafe_get Simple.white_pawn_capture @@ Square.to_int sq
-  | Piece.Black ->
-    Array.unsafe_get Simple.black_pawn_capture @@ Square.to_int sq
+let[@inline] pawn_capture sq c =
+  let i = Square.to_int sq + Piece.Color.to_int c * Square.count in
+  Array.unsafe_get Simple.pawn_capture i
 
 let[@inline] knight sq = Array.unsafe_get Simple.knight @@ Square.to_int sq
 
