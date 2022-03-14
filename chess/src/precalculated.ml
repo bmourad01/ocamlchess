@@ -102,7 +102,7 @@ module Simple = struct
       List.fold ~init:Bb.empty ~f:Bb.set)
 
   let white_pawn_advance = make @@ fun rank file -> [rank + 1, file]
-  let black_pawn_advance = make @@ fun rank file -> [rank - 1, file] 
+  let black_pawn_advance = make @@ fun rank file -> [rank - 1, file]
 
   let white_pawn_capture = make @@ fun rank file -> [
       rank + 1, file + 1;
