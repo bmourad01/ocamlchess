@@ -127,10 +127,9 @@ let make_move pos move =
     | _ -> move in
   Position.make_move pos move
 
-let lookup book pos =
-  let open Error in
+let lookup book pos = let open Error in
   match Hashtbl.find book @@ Position.hash pos with
-  | None -> Error (Position_not_found pos)
+  | None | Some [] -> Error (Position_not_found pos)
   | Some entries ->
     let sum =
       List.fold entries ~init:0 ~f:(fun acc {weight; _} ->
