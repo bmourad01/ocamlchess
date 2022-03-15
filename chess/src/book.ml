@@ -16,7 +16,7 @@ type t = (int64, entry list) Hashtbl.t
 
 external b64 : bytes -> int -> int64 = "ml_bytes_int64_be"
 external b32 : bytes -> int -> int32 = "ml_bytes_int32_be"
-external b16 : bytes -> int -> int = "ml_bytes_int16_be" [@@noalloc]
+external b16 : bytes -> int -> int   = "ml_bytes_int16_be" [@@noalloc]
 
 (* Moves are stored compactly within a 16-bit integer:
 
