@@ -209,31 +209,30 @@ module Hash = struct
   module M = Monad.State.Make(Int64)(Monad.Ident)
 
   (* Get the hash of a position. *)
-  let of_position = let open M.Syntax in
-    fun pos -> Monad.State.exec begin
-        (* Piece placement.. *)
-        collect_all pos |> M.List.iter ~f:(fun (sq, p) ->
-            let c, k = Piece.decomp p in
-            M.update @@ Update.piece c k sq) >>= fun () ->
-        (* Castling rights *)
-        M.update @@ Update.castle_test pos.castle White Kingside  >>= fun () ->
-        M.update @@ Update.castle_test pos.castle White Queenside >>= fun () ->
-        M.update @@ Update.castle_test pos.castle Black Kingside  >>= fun () ->
-        M.update @@ Update.castle_test pos.castle Black Queenside >>= fun () ->
-        (* En passant *)
-        M.update @@ Update.en_passant pos >>= fun () ->
-        (* White to move. *)
-        match pos.active with
-        | White -> M.update Update.active_player
-        | Black -> M.return ()
-      end 0L
+  let of_position pos = Monad.State.exec begin
+      let open M.Syntax in
+      (* Piece placement.. *)
+      collect_all pos |> M.List.iter ~f:(fun (sq, p) ->
+          let c, k = Piece.decomp p in
+          M.update @@ Update.piece c k sq) >>= fun () ->
+      (* Castling rights *)
+      M.update @@ Update.castle_test pos.castle White Kingside  >>= fun () ->
+      M.update @@ Update.castle_test pos.castle White Queenside >>= fun () ->
+      M.update @@ Update.castle_test pos.castle Black Kingside  >>= fun () ->
+      M.update @@ Update.castle_test pos.castle Black Queenside >>= fun () ->
+      (* En passant *)
+      M.update @@ Update.en_passant pos >>= fun () ->
+      (* White to move. *)
+      match pos.active with
+      | White -> M.update Update.active_player
+      | Black -> M.return ()
+    end 0L
 
   (* Get the hash of only the pawn placement. *)
-  let pawn_structure =
-    fun pos -> Monad.State.exec begin
-        collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
-            M.update @@ Update.piece c Pawn sq)
-      end 0L
+  let pawn_structure pos = Monad.State.exec begin
+      collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
+          M.update @@ Update.piece c Pawn sq)
+    end 0L
 end
 
 let same_hash pos1 pos2 = Int64.(pos1.hash = pos2.hash)
