@@ -14,6 +14,10 @@ let entry_size = 16
 
 type t = (int64, entry list) Hashtbl.t
 
+external b64 : bytes -> int -> int64 = "ml_bytes_int64_be"
+external b32 : bytes -> int -> int32 = "ml_bytes_int32_be"
+external b16 : bytes -> int -> int = "ml_bytes_int16_be" [@@noalloc]
+
 (* Moves are stored compactly within a 16-bit integer:
 
    ------------------------------------------------------------------------
@@ -61,22 +65,12 @@ let create filepath =
       let book = Hashtbl.create (module Int64) in
       let len = entry_size in
       let buf = Bytes.create len in
-      let get i = Char.to_int @@ Bytes.unsafe_get buf i in
-      let get32 i = Int32.of_int_trunc @@ get i in
-      let get64 i = Int64.of_int @@ get i in
       let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
         | n when n = len ->
-          (* The members of each entry are stored as big-endian integers. *)
-          let key = Int64.(
-              (get64 0 lsl 56) lor (get64 1 lsl 48) lor
-              (get64 2 lsl 40) lor (get64 3 lsl 32) lor
-              (get64 4 lsl 24) lor (get64 5 lsl 16) lor
-              (get64 6 lsl 8)  lor (get64 7)) in
-          let move = decode_move ((get 8 lsl 8) lor get 9) in
-          let weight = (get 10 lsl 8) lor get 11 in
-          let learn = Int32.(
-              (get32 12 lsl 24) lor (get32 13 lsl 16) lor
-              (get32 14 lsl 8)  lor (get32 15)) in
+          let key = b64 buf 0 in
+          let move = decode_move @@ b16 buf 8 in
+          let weight = b16 buf 10 in
+          let learn = b32 buf 12 in
           Hashtbl.add_multi book ~key ~data:{move; weight; learn};
           read ()
         | 0 -> book
