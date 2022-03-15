@@ -1,5 +1,4 @@
 #include <caml/alloc.h>
-#include <caml/memory.h>
 #include <caml/mlvalues.h>
 
 /* The system C compiler is usually smart enough to turn this code into
