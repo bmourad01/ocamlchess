@@ -1,8 +1,4 @@
 open Core_kernel
-open Monads.Std
-
-module Bb = Bitboard
-module Cr = Castling_rights
 
 type entry = {
   move   : Move.t;
