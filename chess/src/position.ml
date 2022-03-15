@@ -229,7 +229,7 @@ module Hash = struct
       end 0L
 
   (* Get the hash of only the pawn placement. *)
-  let pawn_structure = let open M.Syntax in
+  let pawn_structure =
     fun pos -> Monad.State.exec begin
         collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
             M.update @@ Update.piece c Pawn sq)
