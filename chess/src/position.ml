@@ -99,6 +99,8 @@ let[@inline] board_of_piece pos p =
   let c, k = Piece.decomp p in
   Bb.(board_of_color pos c & board_of_kind pos k)
 
+(* En passant *)
+
 let[@inline] is_en_passant pos sq =
   Uopt.is_some pos.en_passant &&
   Square.(sq = Uopt.unsafe_value pos.en_passant) 
@@ -312,6 +314,8 @@ module Attacks = struct
         | _ -> true)
 end
 
+(* Miscellaneous rules *)
+
 let in_check pos =
   let active_board = active_board pos in
   let attacks = Attacks.all pos (inactive pos) ~ignore_same:true in
@@ -320,22 +324,24 @@ let in_check pos =
 let is_insufficient_material pos = let open Bb in
   let active = active_board pos in
   let inactive = inactive_board pos in
-  let occupied = active + inactive in
   let kb = pos.king + pos.bishop in
   let kn = pos.king + pos.knight in
-  (* Only kings are left. *)
-  pos.king = occupied ||
-  (* King + knight/bishop vs king *)
-  (kb = occupied && Int.equal 3 @@ count kb) ||
-  (kn = occupied && Int.equal 3 @@ count kn) ||
-  (* King + bishop vs king + bishop of the same color square. *)
-  ((kb & active) = active &&
-   (kb & inactive) = inactive &&
-   Int.equal 2 @@ count (kb & active) &&
-   Int.equal 2 @@ count (kb & inactive) &&
-   Piece.Color.equal
-     (Square.color @@ Bb.first_set_exn (pos.bishop & active))
-     (Square.color @@ Bb.first_set_exn (pos.bishop & inactive)))
+  (* Lone king on either side. Check if the other player has two knights.
+     This rule is actually a bit fuzzy, because there is no forced mate
+     from two knights. Yet, a statemate is possible. The FIDE rules say
+     that this is not a draw by insufficient material, so we will play
+     by their rules. *)
+  if pos.king = active then
+    Int.(count (kn & inactive) < 3)
+  else if pos.king = inactive then
+    Int.(count (kn & active) < 3)
+  else
+    (* Both sides have king+bishop or king+knight. *)
+    let akb = (kb & active) = active && Int.equal 2 @@ count active in
+    let akn = (kn & active) = active && Int.equal 2 @@ count active in
+    let ikb = (kb & inactive) = inactive && Int.equal 2 @@ count inactive in
+    let ikn = (kn & inactive) = inactive && Int.equal 2 @@ count inactive in
+    (akb && ikb) || (akb && ikn) || (akn && ikb) || (akn && ikn)
 
 (* Relevant info about the position for generating moves, as well as performing
    sanity checks. *)

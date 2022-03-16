@@ -237,7 +237,11 @@ let start_with_game_over_check delay =
   State.(gets window) >>= fun window ->
   display_board (Game.position game) window;
   if not @@ Game.is_over game then main_loop ~delay ()
-  else State.return @@ if Window.is_open window then prompt_end window
+  else begin
+    print_result @@ Game.result game;
+    printf "\n%!";
+    State.return () 
+  end
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
