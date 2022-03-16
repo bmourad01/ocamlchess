@@ -135,7 +135,12 @@ module Gui = struct
       | _ -> Fun.id in
     Caml_player.limits := Some (Chess.Search.Limits.create ~depth ~nodes ());
     Base.Option.iter book ~f:(fun filename ->
-        Caml_player.book := Some (Chess.Book.create filename));
+        let open Core_kernel in
+        let t = Time.now () in
+        Caml_player.book := Some (Chess.Book.create filename);
+        let t' = Time.now () in
+        let sec = Time.(Span.to_sec @@ diff t' t) in
+        printf "Loaded book %s in %fs\n\n%!" filename sec);
     Gui.go pos ~white ~black ~delay
 
   let pos =
