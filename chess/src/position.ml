@@ -14,6 +14,7 @@ module Uopt = struct
 
   (* Convenience functions. *)
 
+  let[@inline] bind x ~f = if is_none x then x else f @@ unsafe_value x
   let[@inline] map x ~f = if is_none x then x else some @@ f @@ unsafe_value x
 
   let[@inline] value_map x ~default ~f =
@@ -195,12 +196,12 @@ module Hash = struct
     let[@inline] flip h x = Int64.(h lxor x)
     let[@inline] piece c k sq h = flip h @@ Zobrist.piece c k sq
     let[@inline] castle c s h = flip h @@ Zobrist.castle c s
-    let[@inline] en_passant sq h = flip h @@ Zobrist.en_passant sq
+    let[@inline] en_passant_sq sq h = flip h @@ Zobrist.en_passant sq
     let[@inline] active_player h = flip h Zobrist.white_to_move
 
     let[@inline] en_passant pos h =
       Uopt.value_map pos.en_passant ~default:h ~f:(fun ep ->
-          if has_pawn_threat pos ep then en_passant ep h else h)
+          if has_pawn_threat pos ep then en_passant_sq ep h else h)
 
     let[@inline] castle_test cr c s h =
       if Cr.mem cr c s then castle c s h else h
@@ -416,8 +417,12 @@ module Analysis = struct
   let[@inline] create pos =
     (* First, find our king. *)
     let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
-    (* Square of the en passant pawn. *)
-    let en_passant_pawn = en_passant_pawn_uopt pos in
+    (* Square of the en passant pawn. For purposes of analysis, we only care
+       if this pawn is actually threatened with an en passant capture. *)
+    let en_passant_pawn = Uopt.bind pos.en_passant ~f:(fun ep ->
+        if has_pawn_threat pos ep
+        then Uopt.some @@ en_passant_pawn_aux pos.active ep
+        else Uopt.none) in
     (* Most general info. *)
     let inactive = inactive pos in
     let occupied = all_board pos in
@@ -922,9 +927,6 @@ module Fen = struct
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove
           ~hash:0L ~pawn_hash:0L in
-      (* Uopt.iter pos.en_passant ~f:(fun ep -> *)
-      (*     if not @@ has_pawn_threat pos ep *)
-      (*     then set_en_passant pos Uopt.none); *)
       set_hash pos @@ Hash.of_position pos;
       set_pawn_hash pos @@ Hash.pawn_structure pos;
       if validate then validate_and_map pos else E.return pos
@@ -956,7 +958,10 @@ let start = Fen.(of_string_exn start)
 *)
 
 module Makemove = struct
-  (* `en_passant_pawn` is the pawn that is "in front" of the en passant
+  (* `en_passant` is the en passant aquare. This field is only valid if the
+     square is threatened with capture.
+
+     `en_passant_pawn` is the pawn that is "in front" of the en passant
      square. This field is only valid if the move we are making is in fact an
      en passant capture.
 
@@ -968,6 +973,7 @@ module Makemove = struct
      by the "direct" move (e.g. it is not an en passant capture).
   *)
   type context = {
+    en_passant      : Square.t Uopt.t;
     en_passant_pawn : Square.t Uopt.t;
     castle_side     : Cr.side Uopt.t;
     piece           : Piece.t;
@@ -1108,9 +1114,10 @@ module Makemove = struct
 
   (* Reset the en passant hash and return the new en passant square if a pawn
      double push occurred. *) 
-  let[@inline] update_en_passant p src dst pos =
-    update_hash pos ~f:(Hash.Update.en_passant pos);
-    let ep = if Piece.is_pawn p then
+  let[@inline] update_en_passant ctx src dst pos =
+    Uopt.iter ctx.en_passant ~f:(fun ep ->
+        update_hash pos ~f:(Hash.Update.en_passant_sq ep));
+    let ep = if Piece.is_pawn ctx.piece then
         let rank, file = Square.decomp src in
         let rank' = Square.rank dst in
         match pos.active with
@@ -1149,7 +1156,7 @@ module Makemove = struct
 
   let[@inline] go src dst promote ctx pos =
     (* Do the stuff that relies on the initial state. *)
-    update_en_passant ctx.piece src dst pos;
+    update_en_passant ctx src dst pos;
     update_halfmove ctx pos;
     update_castle ctx src dst pos;
     (* Clear the old placement. *)
@@ -1356,6 +1363,7 @@ module Movegen = struct
       move sq a + castle a
   end
 
+  (* Calculate the side that we're castling on, if any. *)
   let[@inline] castle_side piece src dst =
     if Piece.is_king piece then
       let file = Square.file src in
@@ -1369,18 +1377,30 @@ module Movegen = struct
 
   (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn =
+    (* The new position, which we are free to mutate. *)
     let new_position = copy pos in
+    (* All captures that are not en passant. *)
     let direct_capture = piece_at_square_uopt pos dst in
+    (* Are we capturing on the en passant square? *)
     let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
+    (* The en passant square, which we only care about if a threat is
+       possible. *)
+    let en_passant =
+      if Uopt.is_some en_passant_pawn then pos.en_passant else Uopt.none in
+    (* The pawn "in front" of the en passant square, which we only care
+       about if we are capturing it on this move. *)
     let en_passant_pawn =
       if is_en_passant then en_passant_pawn else Uopt.none in
+    (* The side we're castling on, if any. *)
     let castle_side = castle_side piece src dst in
+    (* Shared info for makemove. *)
     let ctx = Makemove.Fields_of_context.create
-        ~en_passant_pawn ~piece ~castle_side ~direct_capture in
+        ~en_passant ~en_passant_pawn ~piece ~castle_side ~direct_capture in
+    (* Update the position and return the captured piece, if any. *)
     let capture = Makemove.go src dst promote ctx new_position in
     new_position, capture, is_en_passant, castle_side
 
-  (* Accumulator function for a list of moves. *)
+  (* Accumulate a list of legal moves. *)
   let[@inline] accum_makemove acc move ~pos:parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
     let new_position, capture, is_en_passant, castle_side =
