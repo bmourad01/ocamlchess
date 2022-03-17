@@ -217,7 +217,7 @@ module Syntax : sig
   (** [x - y] is equivalent to [minus x y]. *)
   val (-) : t -> t -> t
 
-  (** [x ^ y] is equivalent to [xor x y]. *)
+  (** [x ^ y] is equivalent to [diff x y]. *)
   val (^) : t -> t -> t
 
   (** [~~b] is equivalent to [compl b]. *)
