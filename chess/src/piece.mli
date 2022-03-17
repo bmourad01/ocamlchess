@@ -1,3 +1,5 @@
+(** This module implements a data structure for representing Chess pieces. *)
+
 (** Number of bits needed to store the color. *)
 val color_bits : int
 

@@ -1,3 +1,6 @@
+(** This module implements an interface for looking up Chess-relevant,
+    precomputed data, such as attack tables. *)
+
 (** Directional masks, from white's pespective. *)
 module Mask : sig
   (** [east sq] returns the mask of all squares east of [sq]. *)

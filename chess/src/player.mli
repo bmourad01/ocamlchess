@@ -1,4 +1,4 @@
-(** The interface used to implement computer players. *)
+(** This module exposes the interface used to implement computer players. *)
 
 (** Raised when no legal moves are available for the player. *)
 exception No_moves

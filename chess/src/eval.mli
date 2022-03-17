@@ -1,3 +1,6 @@
+(** This module implements the algorithm for statically evaluating Chess
+    positions. *)
+
 (** Given the standard valuations of pieces in chess:
 
     https://en.wikipedia.org/wiki/Chess_piece_relative_value#Standard_valuations

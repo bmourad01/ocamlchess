@@ -1,3 +1,5 @@
+(** This module implements a data structure for representing UCI moves. *)
+
 (** The number of bits required to store the move information. *)
 val bits : int
 

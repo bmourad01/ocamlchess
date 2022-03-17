@@ -1,3 +1,6 @@
+(** This module implements the data structures and algorithms used for game
+    tree search. *)
+
 (** The search limits. *)
 module Limits : sig
   (** The search limits. *)

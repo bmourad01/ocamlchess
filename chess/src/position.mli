@@ -1,3 +1,6 @@
+(** This module implements the data strucutres and interfaces associated with
+    Chess positions and legal move generation. *)
+
 (** Representation of a chess position. *)
 type t [@@deriving compare, equal, sexp]
 

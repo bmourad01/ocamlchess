@@ -1,3 +1,6 @@
+(** This module implements a data structure for representing a square on a
+    Chess board. *)
+
 (** Number of bits needed to store the square. *)
 val bits : int
 

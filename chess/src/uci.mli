@@ -1,3 +1,6 @@
+(** This module implements data structures and interfaces for constructing and
+    reading UCI commands. *)
+
 module Go : sig
   type t =
     | Searchmoves of Move.t list

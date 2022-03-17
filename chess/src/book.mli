@@ -1,3 +1,5 @@
+(** This module implements support for Polyglot opening books. *)
+
 (** A database of games that can be used as an opening book for the
     computer player. *)
 type t

@@ -1,3 +1,6 @@
+(** This module implements a data structure for representing the castling
+    rights of a position. *)
+
 (** The number of bits required to represent castling rights. *)
 val bits : int
 
