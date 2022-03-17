@@ -1124,12 +1124,12 @@ module Makemove = struct
     Uopt.iter ctx.en_passant ~f:(fun ep ->
         update_hash pos ~f:(Hash.Update.en_passant_sq ep));
     let ep = if Piece.is_pawn ctx.piece then
-        let rank, file = Square.decomp src in
-        let rank' = Square.rank dst in
+        let src_rank = Square.rank src in
+        let dst_rank = Square.rank dst in
         match pos.active with
-        | Piece.White when rank' - rank = 2 ->
+        | Piece.White when dst_rank - src_rank = 2 ->
           Uopt.some @@ Square.(with_rank_unsafe dst Rank.three)
-        | Piece.Black when rank - rank' = 2 ->
+        | Piece.Black when src_rank - dst_rank = 2 ->
           Uopt.some @@ Square.(with_rank_unsafe dst Rank.six)
         | _ -> Uopt.none
       else Uopt.none in
@@ -1177,6 +1177,7 @@ module Makemove = struct
     (* Prepare for the next move. *)
     update_fullmove pos;
     flip_active pos;
+    (* If en passant state changed, then update the hash. *)
     update_hash pos ~f:(Hash.Update.en_passant pos);
     (* Return the capture that was made, if any. *)
     capture 
