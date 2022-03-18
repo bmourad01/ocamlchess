@@ -57,6 +57,7 @@ end
 module Send : sig
   (** Tells the GUI which parameters can be changed in the engine. *)
   module Option : sig
+    (** The types of values that the options are allowed to have. *)
     module Type : sig
       type spin = {
         default : int;
