@@ -130,10 +130,10 @@ module Gui = struct
 end
 
 module Uci = struct
-  let go _debug = Uci.go ()
+  let go debug = Uci.go ~debug
 
   let info =
-    let doc = "Runs the UCI loop." in
+    let doc = "Runs the UCI loop with the 'caml' player." in
     Cmd.info "uci"
       ~version:"%%VERSION%%"
       ~doc
