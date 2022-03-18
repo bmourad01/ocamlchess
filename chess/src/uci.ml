@@ -3,12 +3,8 @@ open Core_kernel
 let string_of_moves moves =
   List.map moves ~f:Move.to_string |> String.concat ~sep:" "
 
-let string_of_string = function
-  | "" -> "<empty>"
-  | s -> s
-
 module Recv = struct
-  module Option = struct
+  module Setoption = struct
     type t = {
       name : string;
       value : string option;
@@ -53,7 +49,7 @@ module Recv = struct
     | Uci
     | Debug of [`on | `off]
     | Isready
-    | Setoption of Option.t
+    | Setoption of Setoption.t
     | Register of [`later | `namecode of string * string]
     | Ucinewgame
     | Position of [`fen of string | `startpos] * Move.t list
@@ -67,7 +63,7 @@ module Recv = struct
     | Debug `on -> "debug on"
     | Debug `off -> "debug off"
     | Isready -> "isready"
-    | Setoption opt -> "setoption " ^ Option.to_string opt
+    | Setoption opt -> "setoption " ^ Setoption.to_string opt
     | Register `later -> "register later"
     | Register (`namecode (name, code)) ->
       sprintf "register name %s code %s" name code
@@ -88,87 +84,44 @@ end
 
 module Send = struct
   module Option = struct
-    module Spin = struct
-      type t = {
+    module Type = struct
+      type spin = {
         default : int;
         min : int;
         max : int;
       }
 
-      let to_string {default; min; max} =
-        sprintf "type spin default %d min %d max %d" default min max
-    end
-
-    module Check = struct
-      type t = {
-        default : bool;
-      }
-
-      let to_string {default} =
-        sprintf "type check default %s" (Bool.to_string default)
-    end
-
-    module Combo = struct
-      type t = {
+      type combo = {
         default : string;
         var : string list;
       }
 
-      let to_string {default; var} =
-        let default = sprintf "default %s" @@ string_of_string default in
-        let var = List.map var ~f:(fun s -> "var " ^ string_of_string s) in
-        sprintf "type combo %s" @@ String.concat (default :: var) ~sep:" "
+      type t =
+        | Spin of spin
+        | Check of bool
+        | Combo of combo
+        | String of string
+        | Button
+
+      let to_string = function
+        | Spin {default; min; max} ->
+          sprintf "type spin default %d min %d max %d" default min max
+        | Check default -> sprintf "type check default %b" default
+        | Combo {default; var} ->
+          let default = sprintf "default %s" default in
+          let var = List.map var ~f:(sprintf "var %s") in
+          sprintf "type combo %s" @@ String.concat (default :: var) ~sep:" "
+        | String default -> sprintf "type string default %s" default
+        | Button -> "type button"
     end
 
-    module String = struct
-      type t = {
-        default : string
-      }
+    type t = {
+      name : string;
+      typ : Type.t;
+    }
 
-      let to_string {default} =
-        "type string default " ^ string_of_string default
-    end
-
-    type t =
-      | Hash of Spin.t
-      | NalimovPath of String.t
-      | NalimovCache of Spin.t
-      | Ponder of Check.t
-      | OwnBook of Check.t
-      | MultiPV of Spin.t
-      | UCI_ShowCurrLine of Check.t
-      | UCI_ShowRefutations of Check.t
-      | UCI_LimitStrength of Check.t
-      | UCI_Elo of Spin.t
-      | UCI_AnalyseMode of Check.t
-      | UCI_Opponent of String.t
-      | UCI_EngineAbout of String.t
-      | UCI_ShredderbasesPath of String.t
-      | UCI_SetPositionValue of String.t
-
-    let to_string = function
-      | Hash spin -> "name Hash " ^ Spin.to_string spin
-      | NalimovPath string -> "name NalimovPath " ^ String.to_string string
-      | NalimovCache spin -> "name NalimovCache " ^ Spin.to_string spin
-      | Ponder check -> "name Ponder " ^ Check.to_string check
-      | OwnBook check -> "name OwnBook " ^ Check.to_string check
-      | MultiPV spin -> "name MultiPV " ^ Spin.to_string spin
-      | UCI_ShowCurrLine check ->
-        "name UCI_ShowCurrLine " ^ Check.to_string check
-      | UCI_ShowRefutations check ->
-        "name UCI_ShowRefutations " ^ Check.to_string check
-      | UCI_LimitStrength check ->
-        "name UCI_LimitStrength " ^ Check.to_string check
-      | UCI_Elo spin -> "name UCI_Elo " ^ Spin.to_string spin
-      | UCI_AnalyseMode check ->
-        "name UCI_AnalyseMode " ^ Check.to_string check
-      | UCI_Opponent string -> "name UCI_Opponent " ^ String.to_string string
-      | UCI_EngineAbout string ->
-        "name UCI_EngineAbout " ^ String.to_string string
-      | UCI_ShredderbasesPath string ->
-        "name UCI_ShredderbasesPath " ^ String.to_string string
-      | UCI_SetPositionValue string ->
-        "name UCI_SetPositionValue " ^ String.to_string string
+    let to_string {name; typ} =
+      sprintf "name %s %s" name @@ Type.to_string typ
   end
 
   module Bestmove = struct

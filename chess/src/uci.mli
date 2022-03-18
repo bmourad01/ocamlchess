@@ -6,7 +6,7 @@
 module Recv : sig
   (** Sent by the user when they want to change the internal parameters of the
       engine. *)
-  module Option : sig
+  module Setoption : sig
     type t = {
       name : string;
       value : string option;
@@ -39,7 +39,7 @@ module Recv : sig
     | Uci
     | Debug of [`on | `off]
     | Isready
-    | Setoption of Option.t
+    | Setoption of Setoption.t
     | Register of [`later | `namecode of string * string]
     | Ucinewgame
     | Position of [`fen of string | `startpos] * Move.t list
@@ -57,57 +57,32 @@ end
 module Send : sig
   (** Tells the GUI which parameters can be changed in the engine. *)
   module Option : sig
-    module Spin : sig
-      type t = {
+    module Type : sig
+      type spin = {
         default : int;
         min : int;
-        max : int
+        max : int;
       }
 
-      val to_string : t -> string
-    end
-
-    module Check : sig
-      type t = {
-        default : bool
-      }
-
-      val to_string : t -> string
-    end
-
-    module Combo : sig
-      type t = {
+      type combo = {
         default : string;
-        var : string list
+        var : string list;
       }
+
+      type t =
+        | Spin of spin
+        | Check of bool
+        | Combo of combo
+        | String of string
+        | Button
 
       val to_string : t -> string
     end
 
-    module String : sig
-      type t = {
-        default : string
-      }
-
-      val to_string : t -> string
-    end
-
-    type t =
-      | Hash of Spin.t
-      | NalimovPath of String.t
-      | NalimovCache of Spin.t
-      | Ponder of Check.t
-      | OwnBook of Check.t
-      | MultiPV of Spin.t
-      | UCI_ShowCurrLine of Check.t
-      | UCI_ShowRefutations of Check.t
-      | UCI_LimitStrength of Check.t
-      | UCI_Elo of Spin.t
-      | UCI_AnalyseMode of Check.t
-      | UCI_Opponent of String.t
-      | UCI_EngineAbout of String.t
-      | UCI_ShredderbasesPath of String.t
-      | UCI_SetPositionValue of String.t
+    type t = {
+      name : string;
+      typ : Type.t;
+    }
 
     val to_string : t -> string
   end
