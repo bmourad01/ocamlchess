@@ -80,7 +80,7 @@ module Tt = struct
   let pv tt m n =
     let rec aux i acc pos =
       match Hashtbl.find tt @@ Position.hash pos with
-      | Some {best; bound = Exact; _} when n > i ->
+      | Some {best; _} when n > i ->
         aux (i + 1) (best :: acc) @@ Legal.new_position best
       | _ -> List.rev acc in
     aux 0 [m] @@ Legal.new_position m
