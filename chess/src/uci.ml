@@ -19,10 +19,12 @@ module Recv = struct
       | {name; value = None} -> name
       | {name; value = Some value} -> sprintf "%s value %s" name value
 
-    let of_string s = match tokens s with
+    let of_tokens = function
       | [name; "value"; value] -> Some {name; value = Some value}
       | [name] -> Some {name; value = None}
       | _ -> None
+
+    let of_string s = of_tokens @@ tokens s
   end
 
   module Go = struct
@@ -55,9 +57,9 @@ module Recv = struct
       | Movetime t -> sprintf "movetime %d" t
       | Infinite -> "infinite"
 
-    let of_string s =
+    let of_tokens tok =
       let open Monad.Option.Syntax in
-      match tokens s with
+      match tok with
       | "searchmoves" :: moves ->
         Monad.Option.List.map moves ~f:Move.of_string >>= begin function
           | [] -> None
@@ -73,6 +75,8 @@ module Recv = struct
       | ["movetime"; t] -> int_of_string_opt t >>| fun t -> Movetime t
       | ["infinite"] -> Some Infinite
       | _ -> None
+
+    let of_string s = of_tokens @@ tokens s 
   end
 
   type t =
@@ -121,10 +125,7 @@ module Recv = struct
     | ["debug"; "on"] -> Some (Debug `on)
     | ["debug"; "off"] -> Some (Debug `off)
     | ["isready"] -> Some Isready
-    | ("setoption" as c) :: _ ->
-      let n = String.length c + 1 in
-      let s = String.drop_prefix s n in
-      Setoption.of_string s >>| fun o -> Setoption o
+    | "setoption" :: rest -> Setoption.of_tokens rest >>| fun o -> Setoption o
     | ["register"; "later"] -> Some (Register `later)
     | ["register"; "name"; name; "code"; code] ->
       Some (Register (`namecode (name, code)))
@@ -141,10 +142,7 @@ module Recv = struct
     | "position" :: "startpos" :: "moves" :: moves ->
       Monad.Option.List.map moves ~f:Move.of_string >>| fun moves ->
       Position (`startpos, moves)
-    | ("go" as c) :: _ ->
-      let n = String.length c + 1 in
-      let s = String.drop_prefix s n in
-      Go.of_string s >>| fun go -> Go go
+    | "go" :: rest -> Go.of_tokens rest >>| fun go -> Go go
     | ["stop"] -> Some Stop
     | ["ponderhit"] -> Some Ponderhit
     | ["quit"] -> Some Quit
@@ -184,9 +182,9 @@ module Send = struct
         | String default -> sprintf "type string default %s" default
         | Button -> "type button"
 
-      let of_string s =
+      let of_tokens tok =
         let open Monad.Option.Syntax in
-        match tokens s with
+        match tok with
         | ["type"; "spin"; "default"; default; "min"; min; "max"; max] ->
           int_of_string_opt default >>= fun default ->
           int_of_string_opt min >>= fun min ->
@@ -203,6 +201,8 @@ module Send = struct
         | ["type"; "string"; "default"; default] -> Some (String default)
         | ["type"; "button"] -> Some Button
         | _ -> None
+
+      let of_string s = of_tokens @@ tokens s
     end
 
     type t = {
@@ -213,14 +213,14 @@ module Send = struct
     let to_string {name; typ} =
       sprintf "name %s %s" name @@ Type.to_string typ
 
-    let of_string s =
+    let of_tokens tok =
       let open Monad.Option.Syntax in
-      match tokens s with
-      | ("name" as c) :: name :: _ ->
-        let n = String.length c + String.length name + 2 in
-        let s = String.drop_prefix s n in
-        Type.of_string s >>| fun typ -> {name; typ}
+      match tok with
+      | "name" :: name :: rest ->
+        Type.of_tokens rest >>| fun typ -> {name; typ}
       | _ -> None
+
+    let of_string s = of_tokens @@ tokens s
   end
 
   module Bestmove = struct
@@ -234,15 +234,17 @@ module Send = struct
       | {move; ponder = Some ponder} ->
         Format.asprintf "%a ponder %a" Move.pp move Move.pp ponder
 
-    let of_string s =
+    let of_tokens tok =
       let open Monad.Option.Syntax in
-      match tokens s with
+      match tok with
       | [move; "ponder"; ponder] ->
         Move.of_string move >>= fun move ->
         Move.of_string ponder >>| fun ponder ->
         {move; ponder = Some ponder}
       | [move] -> Move.of_string move >>| fun move -> {move; ponder = None}
       | _ -> None
+
+    let of_string s = of_tokens @@ tokens s
   end
 
   module Info = struct
@@ -450,11 +452,8 @@ module Send = struct
     | ["id"; "author"; author] -> Some (Id (`author author))
     | ["uciok"] -> Some Uciok
     | ["readyok"] -> Some Readyok
-    | ("bestmove" as c) :: _ ->
-      let n = String.length c + 1 in
-      let s = String.drop_prefix s n in
-      Bestmove.of_string s >>| fun bestmove ->
-      Bestmove bestmove
+    | "bestmove" :: rest ->
+      Bestmove.of_tokens rest >>| fun bestmove -> Bestmove bestmove
     | ["copyprotection"; "checking"] -> Some (Copyprotection `checking)
     | ["copyprotection"; "ok"] -> Some (Copyprotection `ok)
     | ["copyprotection"; "error"] -> Some (Copyprotection `error)
@@ -462,10 +461,7 @@ module Send = struct
     | ["registration"; "ok"] -> Some (Registration `ok)
     | ["registration"; "error"] -> Some (Registration `error)
     | "info" :: rest -> parse_infos rest >>| fun info -> Info info
-    | ("option" as c) :: _ ->
-      let n = String.length c + 1 in
-      let s = String.drop_prefix s n in
-      Option.of_string s >>| fun opt -> Option opt
+    | "option" :: rest -> Option.of_tokens rest >>| fun opt -> Option opt
     | _ -> None
 end
 
