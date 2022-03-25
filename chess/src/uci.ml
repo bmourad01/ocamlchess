@@ -4,6 +4,10 @@ open Monads.Std
 let string_of_moves moves =
   List.map moves ~f:Move.to_string |> String.concat ~sep:" "
 
+let tokens s =
+  String.split s ~on:' ' |>
+  List.filter ~f:(Fn.non String.is_empty)
+
 module Recv = struct
   module Setoption = struct
     type t = {
@@ -15,7 +19,7 @@ module Recv = struct
       | {name; value = None} -> name
       | {name; value = Some value} -> sprintf "%s value %s" name value
 
-    let of_string s = match String.split s ~on:' ' with
+    let of_string s = match tokens s with
       | [name; "value"; value] -> Some {name; value = Some value}
       | [name] -> Some {name; value = None}
       | _ -> None
@@ -53,7 +57,7 @@ module Recv = struct
 
     let of_string s =
       let open Monad.Option.Syntax in
-      match String.split s ~on:' ' with
+      match tokens s with
       | "searchmoves" :: moves ->
         Monad.Option.List.map moves ~f:Move.of_string >>= begin function
           | [] -> None
@@ -96,13 +100,15 @@ module Recv = struct
       sprintf "register name %s code %s" name code
     | Ucinewgame -> "ucinewgame"
     | Position (`fen pos, moves) ->
-      let moves = string_of_moves moves in
-      let moves = if String.is_empty moves then moves else " " ^ moves in
-      sprintf "position fen %s moves%s" (Position.Fen.to_string pos) moves
+      let moves =
+        let s = string_of_moves moves in
+        if String.is_empty s then s else " moves " ^ s in
+      sprintf "position fen %s%s" (Position.Fen.to_string pos) moves
     | Position (`startpos, moves) ->
-      let moves = string_of_moves moves in
-      let moves = if String.is_empty moves then moves else " " ^ moves in
-      sprintf "position startpos moves%s" moves
+      let moves =
+        let s = string_of_moves moves in
+        if String.is_empty s then s else " moves " ^ s in
+      sprintf "position startpos%s" moves
     | Go go -> "go " ^ Go.to_string go
     | Stop -> "stop"
     | Ponderhit -> "ponderhit"
@@ -110,7 +116,7 @@ module Recv = struct
 
   let of_string s =
     let open Monad.Option.Syntax in
-    match String.split s ~on:' ' with
+    match tokens s with
     | ["uci"] -> Some Uci
     | ["debug"; "on"] -> Some (Debug `on)
     | ["debug"; "off"] -> Some (Debug `off)
@@ -123,10 +129,15 @@ module Recv = struct
     | ["register"; "name"; name; "code"; code] ->
       Some (Register (`namecode (name, code)))
     | ["ucinewgame"] -> Some Ucinewgame
-    | "position" :: "fen" :: fen :: "moves" :: moves ->
+    | "position" :: "fen" :: p :: c :: cr :: ep :: h :: f :: rest ->
+      let fen = String.concat ~sep:" " [p; c; cr; ep; h; f] in
       Position.Fen.of_string fen |> Result.ok >>= fun pos ->
-      Monad.Option.List.map moves ~f:Move.of_string >>| fun moves ->
-      Position (`fen pos, moves)
+      begin match rest with
+        | [] -> Some []
+        | "moves" :: moves -> Monad.Option.List.map moves ~f:Move.of_string
+        | _ -> None
+      end >>| fun moves -> Position (`fen pos, moves)
+    | ["position"; "startpos"] -> Some (Position (`startpos, []))
     | "position" :: "startpos" :: "moves" :: moves ->
       Monad.Option.List.map moves ~f:Move.of_string >>| fun moves ->
       Position (`startpos, moves)
@@ -175,7 +186,7 @@ module Send = struct
 
       let of_string s =
         let open Monad.Option.Syntax in
-        match String.split s ~on:' ' with
+        match tokens s with
         | ["type"; "spin"; "default"; default; "min"; min; "max"; max] ->
           int_of_string_opt default >>= fun default ->
           int_of_string_opt min >>= fun min ->
@@ -204,7 +215,7 @@ module Send = struct
 
     let of_string s =
       let open Monad.Option.Syntax in
-      match String.split s ~on:' ' with
+      match tokens s with
       | ("name" as c) :: name :: _ ->
         let n = String.length c + String.length name + 2 in
         let s = String.drop_prefix s n in
@@ -225,7 +236,7 @@ module Send = struct
 
     let of_string s =
       let open Monad.Option.Syntax in
-      match String.split s ~on:' ' with
+      match tokens s with
       | [move; "ponder"; ponder] ->
         Move.of_string move >>= fun move ->
         Move.of_string ponder >>| fun ponder ->
@@ -301,7 +312,7 @@ module Send = struct
       let moves_aux moves =
         Monad.Option.List.map moves ~f:Move.of_string >>= function
         | [] -> None | moves -> Some moves in
-      match String.split s ~on:' ' with
+      match tokens s with
       | ["depth"; n] -> int_of_string_opt n >>| fun n -> Depth n
       | ["seldepth"; n] -> int_of_string_opt n >>| fun n -> Seldepth n
       | ["time"; t] -> int_of_string_opt t >>| fun t -> Time t
@@ -434,7 +445,7 @@ module Send = struct
 
   let of_string s =
     let open Monad.Option.Syntax in
-    match String.split s ~on:' ' with
+    match tokens s with
     | ["id"; "name"; name] -> Some (Id (`name name))
     | ["id"; "author"; author] -> Some (Id (`author author))
     | ["uciok"] -> Some Uciok
