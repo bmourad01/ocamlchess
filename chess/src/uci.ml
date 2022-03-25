@@ -1,4 +1,5 @@
 open Core_kernel
+open Monads.Std
 
 let string_of_moves moves =
   List.map moves ~f:Move.to_string |> String.concat ~sep:" "
@@ -8,11 +9,16 @@ module Recv = struct
     type t = {
       name : string;
       value : string option;
-    }
+    } [@@deriving equal, compare, sexp]
 
     let to_string = function
       | {name; value = None} -> name
       | {name; value = Some value} -> sprintf "%s value %s" name value
+
+    let of_string s = match String.split s ~on:' ' with
+      | [name; "value"; value] -> Some {name; value = Some value}
+      | [name] -> Some {name; value = None}
+      | _ -> None
   end
 
   module Go = struct
@@ -29,6 +35,7 @@ module Recv = struct
       | Mate of int
       | Movetime of int
       | Infinite
+    [@@deriving equal, compare, sexp]
 
     let to_string = function
       | Searchmoves moves -> "searchmoves " ^ string_of_moves moves
@@ -43,6 +50,25 @@ module Recv = struct
       | Mate n -> sprintf "mate %d" n
       | Movetime t -> sprintf "movetime %d" t
       | Infinite -> "infinite"
+
+    let of_string s =
+      let open Monad.Option.Syntax in
+      match String.split s ~on:' ' with
+      | "searchmoves" :: moves ->
+        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
+          | [] -> None
+          | moves -> Some (Searchmoves moves)
+        end
+      | ["ponder"] -> Some Ponder
+      | ["wtime"; t] -> int_of_string_opt t >>| fun t -> Wtime t
+      | ["btime"; t] -> int_of_string_opt t >>| fun t -> Btime t
+      | ["movestogo"; n] -> int_of_string_opt n >>| fun n -> Movestogo n
+      | ["depth"; n] -> int_of_string_opt n >>| fun n -> Depth n
+      | ["nodes"; n] -> int_of_string_opt n >>| fun n -> Nodes n
+      | ["mate"; n] -> int_of_string_opt n >>| fun n -> Mate n
+      | ["movetime"; t] -> int_of_string_opt t >>| fun t -> Movetime t
+      | ["infinite"] -> Some Infinite
+      | _ -> None
   end
 
   type t =
@@ -52,11 +78,12 @@ module Recv = struct
     | Setoption of Setoption.t
     | Register of [`later | `namecode of string * string]
     | Ucinewgame
-    | Position of [`fen of string | `startpos] * Move.t list
+    | Position of [`fen of Position.t | `startpos] * Move.t list
     | Go of Go.t
     | Stop
     | Ponderhit
     | Quit
+  [@@deriving equal, compare, sexp]
 
   let to_string = function
     | Uci -> "uci"
@@ -68,10 +95,10 @@ module Recv = struct
     | Register (`namecode (name, code)) ->
       sprintf "register name %s code %s" name code
     | Ucinewgame -> "ucinewgame"
-    | Position (`fen fen, moves) ->
+    | Position (`fen pos, moves) ->
       let moves = string_of_moves moves in
       let moves = if String.is_empty moves then moves else " " ^ moves in
-      sprintf "position fen %s moves%s" fen moves
+      sprintf "position fen %s moves%s" (Position.Fen.to_string pos) moves
     | Position (`startpos, moves) ->
       let moves = string_of_moves moves in
       let moves = if String.is_empty moves then moves else " " ^ moves in
@@ -80,6 +107,37 @@ module Recv = struct
     | Stop -> "stop"
     | Ponderhit -> "ponderhit"
     | Quit -> "quit"
+
+  let of_string s =
+    let open Monad.Option.Syntax in
+    match String.split s ~on:' ' with
+    | ["uci"] -> Some Uci
+    | ["debug"; "on"] -> Some (Debug `on)
+    | ["debug"; "off"] -> Some (Debug `off)
+    | ["isready"] -> Some Isready
+    | ("setoption" as c) :: _ ->
+      let n = String.length c + 1 in
+      let s = String.drop_prefix s n in
+      Setoption.of_string s >>| fun o -> Setoption o
+    | ["register"; "later"] -> Some (Register `later)
+    | ["register"; "name"; name; "code"; code] ->
+      Some (Register (`namecode (name, code)))
+    | ["ucinewgame"] -> Some Ucinewgame
+    | "position" :: "fen" :: fen :: "moves" :: moves ->
+      Position.Fen.of_string fen |> Result.ok >>= fun pos ->
+      Monad.Option.List.map moves ~f:Move.of_string >>| fun moves ->
+      Position (`fen pos, moves)
+    | "position" :: "startpos" :: "moves" :: moves ->
+      Monad.Option.List.map moves ~f:Move.of_string >>| fun moves ->
+      Position (`startpos, moves)
+    | ("go" as c) :: _ ->
+      let n = String.length c + 1 in
+      let s = String.drop_prefix s n in
+      Go.of_string s >>| fun go -> Go go
+    | ["stop"] -> Some Stop
+    | ["ponderhit"] -> Some Ponderhit
+    | ["quit"] -> Some Quit
+    | _ -> None
 end
 
 module Send = struct
@@ -89,12 +147,12 @@ module Send = struct
         default : int;
         min : int;
         max : int;
-      }
+      } [@@deriving equal, compare, sexp]
 
       type combo = {
         default : string;
         var : string list;
-      }
+      } [@@deriving equal, compare, sexp]
 
       type t =
         | Spin of spin
@@ -102,6 +160,7 @@ module Send = struct
         | Combo of combo
         | String of string
         | Button
+      [@@deriving equal, compare, sexp]
 
       let to_string = function
         | Spin {default; min; max} ->
@@ -113,27 +172,66 @@ module Send = struct
           sprintf "type combo %s" @@ String.concat (default :: var) ~sep:" "
         | String default -> sprintf "type string default %s" default
         | Button -> "type button"
+
+      let of_string s =
+        let open Monad.Option.Syntax in
+        match String.split s ~on:' ' with
+        | ["type"; "spin"; "default"; default; "min"; min; "max"; max] ->
+          int_of_string_opt default >>= fun default ->
+          int_of_string_opt min >>= fun min ->
+          int_of_string_opt max >>| fun max ->
+          Spin {default; min; max}
+        | ["type"; "check"; "default"; default] ->
+          bool_of_string_opt default >>| fun default -> Check default
+        | "type" :: "combo" :: "default" :: default :: var ->
+          let rec aux acc = function
+            | [] -> Some (List.rev acc)
+            | "var" :: var :: rest -> aux (var :: acc) rest
+            | _ -> None in
+          aux [] var >>| fun var -> Combo {default; var}
+        | ["type"; "string"; "default"; default] -> Some (String default)
+        | ["type"; "button"] -> Some Button
+        | _ -> None
     end
 
     type t = {
       name : string;
       typ : Type.t;
-    }
+    } [@@deriving equal, compare, sexp]
 
     let to_string {name; typ} =
       sprintf "name %s %s" name @@ Type.to_string typ
+
+    let of_string s =
+      let open Monad.Option.Syntax in
+      match String.split s ~on:' ' with
+      | ("name" as c) :: name :: _ ->
+        let n = String.length c + String.length name + 2 in
+        let s = String.drop_prefix s n in
+        Type.of_string s >>| fun typ -> {name; typ}
+      | _ -> None
   end
 
   module Bestmove = struct
     type t = {
       move : Move.t;
       ponder : Move.t option;
-    }
+    } [@@deriving equal, compare, sexp]
 
     let to_string = function
-      | {move; ponder = None} -> Format.asprintf "bestmove %a" Move.pp move
+      | {move; ponder = None} -> Format.asprintf "%a" Move.pp move
       | {move; ponder = Some ponder} ->
-        Format.asprintf "bestmove %a ponder %a" Move.pp move Move.pp ponder
+        Format.asprintf "%a ponder %a" Move.pp move Move.pp ponder
+
+    let of_string s =
+      let open Monad.Option.Syntax in
+      match String.split s ~on:' ' with
+      | [move; "ponder"; ponder] ->
+        Move.of_string move >>= fun move ->
+        Move.of_string ponder >>| fun ponder ->
+        {move; ponder = Some ponder}
+      | [move] -> Move.of_string move >>| fun move -> {move; ponder = None}
+      | _ -> None
   end
 
   module Info = struct
@@ -141,12 +239,12 @@ module Send = struct
       cp : float;
       mate : int;
       bound : [`lower | `upper];
-    }
+    } [@@deriving equal, compare, sexp]
 
     type currline = {
       cpunr : int;
       moves : Move.t list;
-    }
+    } [@@deriving equal, compare, sexp]
 
     type t =
       | Depth of int
@@ -166,6 +264,7 @@ module Send = struct
       | String of string
       | Refutation of Move.t list
       | Currline of currline
+    [@@deriving equal, compare, sexp]
 
     let string_of_bound = function
       | `lower -> "lowerbound"
@@ -176,21 +275,62 @@ module Send = struct
       | Seldepth n -> sprintf "seldepth %d" n
       | Time t -> sprintf "time %d" t
       | Nodes n -> sprintf "nodes %d" n
-      | Pv moves -> "pv " ^ string_of_moves moves
+      | Pv moves -> sprintf "pv %s" @@ string_of_moves moves
       | Multipv n -> sprintf "multipv %d" n
       | Score {cp; mate; bound} ->
-        sprintf "score cp %f mate %d %s" cp mate (string_of_bound bound)
-      | Currmove move -> "currmove " ^ Move.to_string move
+        sprintf "score cp %f mate %d %s" cp mate @@ string_of_bound bound
+      | Currmove move -> sprintf "currmove %s" @@ Move.to_string move
       | Currmovenumber n -> sprintf "currmovenumber %d" n
       | Hashfull n -> sprintf "hashfull %d" n
       | Nps n -> sprintf "nps %d" n
       | Tbhits n -> sprintf "tbhits %d" n
       | Sbhits n -> sprintf "sbhits %d" n
       | Cpuload n -> sprintf "cpuload %d" n
-      | String s -> "string " ^ s
-      | Refutation moves -> "refutation " ^ string_of_moves moves
+      | String s -> sprintf "string %s" s
+      | Refutation moves -> sprintf "refutation %s" @@ string_of_moves moves
       | Currline {cpunr; moves} ->
-        sprintf "currline %d %s" cpunr (string_of_moves moves)
+        sprintf "currline %d %s" cpunr @@ string_of_moves moves
+
+    let of_string s =
+      let open Monad.Option.Syntax in
+      match String.split s ~on:' ' with
+      | ["depth"; n] -> int_of_string_opt n >>| fun n -> Depth n
+      | ["seldepth"; n] -> int_of_string_opt n >>| fun n -> Seldepth n
+      | ["time"; t] -> int_of_string_opt t >>| fun t -> Time t
+      | ["nodes"; n] -> int_of_string_opt n >>| fun n -> Nodes n
+      | "pv" :: moves ->
+        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
+          | [] -> None | moves -> Some (Pv moves)
+        end
+      | ["multipv"; n] -> int_of_string_opt n >>| fun n -> Multipv n
+      | ["score"; "cp"; cp; "mate"; mate; bound] ->
+        float_of_string_opt cp >>= fun cp ->
+        int_of_string_opt mate >>= fun mate ->
+        begin match bound with
+          | "lowerbound" -> Some `lower
+          | "upperbound" -> Some `upper
+          | _ -> None
+        end >>| fun bound -> Score {cp; mate; bound}
+      | ["currmove"; move] ->
+        Move.of_string move >>| fun move -> Currmove move
+      | ["currmovenumber"; n] ->
+        int_of_string_opt n >>| fun n -> Currmovenumber n
+      | ["hashfull"; n] -> int_of_string_opt n >>| fun n -> Hashfull n
+      | ["nps"; n] -> int_of_string_opt n >>| fun n -> Nps n
+      | ["tbhits"; n] -> int_of_string_opt n >>| fun n -> Tbhits n
+      | ["sbhits"; n] -> int_of_string_opt n >>| fun n -> Sbhits n
+      | ["cpuload"; n] -> int_of_string_opt n >>| fun n -> Cpuload n
+      | ["string"; s] -> Some (String s)
+      | "refutation" :: moves ->
+        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
+          | [] -> None | moves -> Some (Refutation moves)
+        end
+      | "currline" :: cpunr :: moves ->
+        int_of_string_opt cpunr >>= fun cpunr ->
+        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
+          | [] -> None | moves -> Some (Currline {cpunr; moves})
+        end
+      | _ -> None
   end
 
   type t =
@@ -202,6 +342,7 @@ module Send = struct
     | Registration of [`checking | `ok | `error]
     | Info of Info.t list
     | Option of Option.t
+  [@@deriving equal, compare, sexp]
 
   let to_string = function
     | Id (`name name) -> "id name " ^ name
@@ -220,10 +361,116 @@ module Send = struct
       String.concat ~sep:" " @@
       List.map info ~f:Info.to_string
     | Option opt -> "option " ^ Option.to_string opt
+
+  let of_string s =
+    let open Monad.Option.Syntax in
+    match String.split s ~on:' ' with
+    | ["id"; "name"; name] -> Some (Id (`name name))
+    | ["id"; "author"; author] -> Some (Id (`author author))
+    | ["uciok"] -> Some Uciok
+    | ["readyok"] -> Some Readyok
+    | ("bestmove" as c) :: _ ->
+      let n = String.length c + 1 in
+      let s = String.drop_prefix s n in
+      Bestmove.of_string s >>| fun bestmove ->
+      Bestmove bestmove
+    | ["copyprotection"; "checking"] -> Some (Copyprotection `checking)
+    | ["copyprotection"; "ok"] -> Some (Copyprotection `ok)
+    | ["copyprotection"; "error"] -> Some (Copyprotection `error)
+    | ["registration"; "checking"] -> Some (Registration `checking)
+    | ["registration"; "ok"] -> Some (Registration `ok)
+    | ["registration"; "error"] -> Some (Registration `error)
+    | "info" :: rest ->
+      (* We have to write a special version of the `Info` parser that will
+         keep looking ahead for more tokens. *)
+      let open Info in
+      let rec moves_aux acc = function
+        | [] -> Some (List.rev acc, [])
+        | move :: rest -> match Move.of_string move with
+          | None -> Some (List.rev acc, rest)
+          | Some move -> moves_aux (move :: acc) rest in
+      let rec aux acc = function
+        | [] -> Some (List.rev acc)
+        | "depth" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Depth n :: acc) rest
+        | "seldepth" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Seldepth n :: acc) rest
+        | "time" :: t :: rest ->
+          int_of_string_opt t >>= fun t ->
+          aux (Time t :: acc) rest
+        | "nodes" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Nodes n :: acc) rest
+        | "pv" :: rest -> moves_aux [] rest >>= begin function
+            | [], _ -> None | res -> Some res
+          end >>= fun (moves, rest) ->
+          aux (Pv moves :: acc) rest
+        | "multipv" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Multipv n :: acc) rest
+        | "score" :: "cp" :: cp :: "mate" :: mate :: bound :: rest ->
+          float_of_string_opt cp >>= fun cp ->
+          int_of_string_opt mate >>= fun mate ->
+          begin match bound with
+            | "lowerbound" -> Some `lower
+            | "upperbound" -> Some `upper
+            | _ -> None
+          end >>= fun bound ->
+          aux (Score {cp; mate; bound} :: acc) rest
+        | "currmove" :: move :: rest ->
+          Move.of_string move >>= fun move ->
+          aux (Currmove move :: acc) rest
+        | "currmovenumber" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Currmovenumber n :: acc) rest
+        | "hashfull" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Hashfull n :: acc) rest
+        | "nps" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Nps n :: acc) rest
+        | "tbhits" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Tbhits n :: acc) rest
+        | "sbhits" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Sbhits n :: acc) rest
+        | "cpuload" :: n :: rest ->
+          int_of_string_opt n >>= fun n ->
+          aux (Cpuload n :: acc) rest
+        | "string" :: s :: rest -> aux (String s :: acc) rest
+        | "refutation" :: rest -> moves_aux [] rest >>= begin function
+            | [], _ -> None | res -> Some res
+          end >>= fun (moves, rest) ->
+          aux (Refutation moves :: acc) rest
+        | "currline" :: cpunr :: rest ->
+          int_of_string_opt cpunr >>= fun cpunr ->
+          moves_aux [] rest >>= begin function
+            | [], _ -> None | res -> Some res
+          end >>= fun (moves, rest) ->
+          aux (Currline {cpunr; moves} :: acc) rest
+        | _ -> None in
+      aux [] rest >>= begin function
+        | [] -> None | rest -> Some rest
+      end >>| fun info -> Info info
+    | ("option" as c) :: _ ->
+      let n = String.length c + 1 in
+      let s = String.drop_prefix s n in
+      Option.of_string s >>| fun opt -> Option opt
+    | _ -> None
 end
 
-type t = Recv of Recv.t | Send of Send.t
+type t =
+  | Recv of Recv.t
+  | Send of Send.t
+[@@deriving equal, compare, sexp]
 
 let to_string = function
   | Recv recv -> Recv.to_string recv
   | Send send -> Send.to_string send
+
+let of_string s = match Recv.of_string s with
+  | None -> Send.of_string s |> Option.map ~f:(fun send -> Send send)
+  | Some recv -> Some (Recv recv)

@@ -10,9 +10,10 @@ module Recv : sig
     type t = {
       name : string;
       value : string option;
-    }
+    } [@@deriving equal, compare, sexp]
 
     val to_string : t -> string
+    val of_string : string -> t option
   end
 
   (** Start calculating on the current position. *)
@@ -30,8 +31,10 @@ module Recv : sig
       | Mate of int
       | Movetime of int
       | Infinite
+    [@@deriving equal, compare, sexp]
 
     val to_string : t -> string
+    val of_string : string -> t option
   end
 
   (** The commands that the engine may receive. *)
@@ -42,14 +45,19 @@ module Recv : sig
     | Setoption of Setoption.t
     | Register of [`later | `namecode of string * string]
     | Ucinewgame
-    | Position of [`fen of string | `startpos] * Move.t list
+    | Position of [`fen of Position.t | `startpos] * Move.t list
     | Go of Go.t
     | Stop
     | Ponderhit
     | Quit
+  [@@deriving equal, compare, sexp]
 
   (** Textual representation of the command. *)
   val to_string : t -> string
+
+  (** Attempts to parse the textual representation of the command,
+      returning [None] if the command is ill-formed. *)
+  val of_string : string -> t option
 end
 
 (** This submodule implements the datatypes for commands that are sent to the
@@ -63,12 +71,13 @@ module Send : sig
         default : int;
         min : int;
         max : int;
-      }
+      } [@@deriving equal, compare, sexp]
+
 
       type combo = {
         default : string;
         var : string list;
-      }
+      } [@@deriving equal, compare, sexp]
 
       type t =
         | Spin of spin
@@ -76,16 +85,19 @@ module Send : sig
         | Combo of combo
         | String of string
         | Button
+      [@@deriving equal, compare, sexp]
 
       val to_string : t -> string
+      val of_string : string -> t option
     end
 
     type t = {
       name : string;
       typ : Type.t;
-    }
+    } [@@deriving equal, compare, sexp]
 
     val to_string : t -> string
+    val of_string : string -> t option
   end
 
   (** The best move of the current position, returned by the engine when the
@@ -94,9 +106,10 @@ module Send : sig
     type t = {
       move : Move.t;
       ponder : Move.t option;
-    }
+    } [@@deriving equal, compare, sexp]
 
     val to_string : t -> string
+    val of_string : string -> t option
   end
 
   (** Information that the engine sends to the GUI about the search. *)
@@ -105,12 +118,12 @@ module Send : sig
       cp : float;
       mate : int;
       bound : [`lower | `upper];
-    }
+    } [@@deriving equal, compare, sexp]
 
     type currline = {
       cpunr : int;
       moves : Move.t list;
-    }
+    } [@@deriving equal, compare, sexp]
 
     type t =
       | Depth of int
@@ -130,8 +143,10 @@ module Send : sig
       | String of string
       | Refutation of Move.t list
       | Currline of currline
+    [@@deriving equal, compare, sexp]
 
     val to_string : t -> string
+    val of_string : string -> t option
   end
 
   (** The commands that the engine may send. *)
@@ -144,14 +159,26 @@ module Send : sig
     | Registration of [`checking | `ok | `error]
     | Info of Info.t list
     | Option of Option.t
+  [@@deriving equal, compare, sexp]
 
   (** Textual representation of the command. *)
   val to_string : t -> string
+
+  (** Attempts to parse the textual representation of the command,
+      returning [None] if the command is ill-formed. *)
+  val of_string : string -> t option
 end
 
 (** A UCI command, partitioned into whether the command is sent to the engine
     or from the engine. *)
-type t = Recv of Recv.t | Send of Send.t
+type t =
+  | Recv of Recv.t
+  | Send of Send.t
+[@@deriving equal, compare, sexp]
 
 (** Textual representation of the command. *)
 val to_string : t -> string
+
+(** Attempts to parse the textual representation of the command,
+    returning [None] if the command is ill-formed. *)
+val of_string : string -> t option
