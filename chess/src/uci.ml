@@ -429,7 +429,8 @@ module Send = struct
         moves_aux rest >>= fun (moves, rest) ->
         aux (Currline {cpunr; moves} :: acc) rest
       | _ -> None in
-    aux [] infos
+    aux [] infos >>= function
+    | [] -> None | infos -> Some infos
 
   let of_string s =
     let open Monad.Option.Syntax in
@@ -449,9 +450,7 @@ module Send = struct
     | ["registration"; "checking"] -> Some (Registration `checking)
     | ["registration"; "ok"] -> Some (Registration `ok)
     | ["registration"; "error"] -> Some (Registration `error)
-    | "info" :: rest -> parse_infos rest >>= begin function
-        | [] -> None | rest -> Some rest
-      end >>| fun info -> Info info
+    | "info" :: rest -> parse_infos rest >>| fun info -> Info info
     | ("option" as c) :: _ ->
       let n = String.length c + 1 in
       let s = String.drop_prefix s n in
