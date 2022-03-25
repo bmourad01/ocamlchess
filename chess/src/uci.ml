@@ -270,6 +270,11 @@ module Send = struct
       | `lower -> "lowerbound"
       | `upper -> "upperbound"
 
+    let bound_of_string = function
+      | "lowerbound" -> Some `lower
+      | "upperbound" -> Some `upper
+      | _ -> None
+
     let to_string = function
       | Depth n -> sprintf "depth %d" n
       | Seldepth n -> sprintf "seldepth %d" n
@@ -293,24 +298,21 @@ module Send = struct
 
     let of_string s =
       let open Monad.Option.Syntax in
+      let moves_aux moves =
+        Monad.Option.List.map moves ~f:Move.of_string >>= function
+        | [] -> None | moves -> Some moves in
       match String.split s ~on:' ' with
       | ["depth"; n] -> int_of_string_opt n >>| fun n -> Depth n
       | ["seldepth"; n] -> int_of_string_opt n >>| fun n -> Seldepth n
       | ["time"; t] -> int_of_string_opt t >>| fun t -> Time t
       | ["nodes"; n] -> int_of_string_opt n >>| fun n -> Nodes n
-      | "pv" :: moves ->
-        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
-          | [] -> None | moves -> Some (Pv moves)
-        end
+      | "pv" :: moves -> moves_aux moves >>| fun moves -> Pv moves
       | ["multipv"; n] -> int_of_string_opt n >>| fun n -> Multipv n
       | ["score"; "cp"; cp; "mate"; mate; bound] ->
         float_of_string_opt cp >>= fun cp ->
         int_of_string_opt mate >>= fun mate ->
-        begin match bound with
-          | "lowerbound" -> Some `lower
-          | "upperbound" -> Some `upper
-          | _ -> None
-        end >>| fun bound -> Score {cp; mate; bound}
+        bound_of_string bound >>| fun bound ->
+        Score {cp; mate; bound}
       | ["currmove"; move] ->
         Move.of_string move >>| fun move -> Currmove move
       | ["currmovenumber"; n] ->
@@ -322,14 +324,11 @@ module Send = struct
       | ["cpuload"; n] -> int_of_string_opt n >>| fun n -> Cpuload n
       | ["string"; s] -> Some (String s)
       | "refutation" :: moves ->
-        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
-          | [] -> None | moves -> Some (Refutation moves)
-        end
+        moves_aux moves >>| fun moves -> Refutation moves
       | "currline" :: cpunr :: moves ->
         int_of_string_opt cpunr >>= fun cpunr ->
-        Monad.Option.List.map moves ~f:Move.of_string >>= begin function
-          | [] -> None | moves -> Some (Currline {cpunr; moves})
-        end
+        moves_aux moves >>| fun moves ->
+        Currline {cpunr; moves}
       | _ -> None
   end
 
@@ -362,6 +361,76 @@ module Send = struct
       List.map info ~f:Info.to_string
     | Option opt -> "option " ^ Option.to_string opt
 
+  (* We have to write a special version of the `Info` parser that will
+     keep looking ahead for more tokens. *)
+  let parse_infos infos =
+    let open Info in
+    let open Monad.Option.Syntax in
+    let moves_aux moves =
+      let rec aux acc = function
+        | [] -> Some (List.rev acc, [])
+        | move :: rest -> match Move.of_string move with
+          | None -> Some (List.rev acc, rest)
+          | Some move -> aux (move :: acc) rest in
+      aux [] moves >>= function
+      | [], _ -> None | res -> Some res in
+    let rec aux acc = function
+      | [] -> Some (List.rev acc)
+      | "depth" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Depth n :: acc) rest
+      | "seldepth" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Seldepth n :: acc) rest
+      | "time" :: t :: rest ->
+        int_of_string_opt t >>= fun t ->
+        aux (Time t :: acc) rest
+      | "nodes" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Nodes n :: acc) rest
+      | "pv" :: rest ->
+        moves_aux rest >>= fun (moves, rest) ->
+        aux (Pv moves :: acc) rest
+      | "multipv" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Multipv n :: acc) rest
+      | "score" :: "cp" :: cp :: "mate" :: mate :: bound :: rest ->
+        float_of_string_opt cp >>= fun cp ->
+        int_of_string_opt mate >>= fun mate ->
+        bound_of_string bound >>= fun bound ->
+        aux (Score {cp; mate; bound} :: acc) rest
+      | "currmove" :: move :: rest ->
+        Move.of_string move >>= fun move ->
+        aux (Currmove move :: acc) rest
+      | "currmovenumber" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Currmovenumber n :: acc) rest
+      | "hashfull" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Hashfull n :: acc) rest
+      | "nps" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Nps n :: acc) rest
+      | "tbhits" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Tbhits n :: acc) rest
+      | "sbhits" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Sbhits n :: acc) rest
+      | "cpuload" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Cpuload n :: acc) rest
+      | "string" :: s :: rest -> aux (String s :: acc) rest
+      | "refutation" :: rest ->
+        moves_aux rest >>= fun (moves, rest) ->
+        aux (Refutation moves :: acc) rest
+      | "currline" :: cpunr :: rest ->
+        int_of_string_opt cpunr >>= fun cpunr ->
+        moves_aux rest >>= fun (moves, rest) ->
+        aux (Currline {cpunr; moves} :: acc) rest
+      | _ -> None in
+    aux [] infos
+
   let of_string s =
     let open Monad.Option.Syntax in
     match String.split s ~on:' ' with
@@ -380,79 +449,7 @@ module Send = struct
     | ["registration"; "checking"] -> Some (Registration `checking)
     | ["registration"; "ok"] -> Some (Registration `ok)
     | ["registration"; "error"] -> Some (Registration `error)
-    | "info" :: rest ->
-      (* We have to write a special version of the `Info` parser that will
-         keep looking ahead for more tokens. *)
-      let open Info in
-      let rec moves_aux acc = function
-        | [] -> Some (List.rev acc, [])
-        | move :: rest -> match Move.of_string move with
-          | None -> Some (List.rev acc, rest)
-          | Some move -> moves_aux (move :: acc) rest in
-      let rec aux acc = function
-        | [] -> Some (List.rev acc)
-        | "depth" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Depth n :: acc) rest
-        | "seldepth" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Seldepth n :: acc) rest
-        | "time" :: t :: rest ->
-          int_of_string_opt t >>= fun t ->
-          aux (Time t :: acc) rest
-        | "nodes" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Nodes n :: acc) rest
-        | "pv" :: rest -> moves_aux [] rest >>= begin function
-            | [], _ -> None | res -> Some res
-          end >>= fun (moves, rest) ->
-          aux (Pv moves :: acc) rest
-        | "multipv" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Multipv n :: acc) rest
-        | "score" :: "cp" :: cp :: "mate" :: mate :: bound :: rest ->
-          float_of_string_opt cp >>= fun cp ->
-          int_of_string_opt mate >>= fun mate ->
-          begin match bound with
-            | "lowerbound" -> Some `lower
-            | "upperbound" -> Some `upper
-            | _ -> None
-          end >>= fun bound ->
-          aux (Score {cp; mate; bound} :: acc) rest
-        | "currmove" :: move :: rest ->
-          Move.of_string move >>= fun move ->
-          aux (Currmove move :: acc) rest
-        | "currmovenumber" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Currmovenumber n :: acc) rest
-        | "hashfull" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Hashfull n :: acc) rest
-        | "nps" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Nps n :: acc) rest
-        | "tbhits" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Tbhits n :: acc) rest
-        | "sbhits" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Sbhits n :: acc) rest
-        | "cpuload" :: n :: rest ->
-          int_of_string_opt n >>= fun n ->
-          aux (Cpuload n :: acc) rest
-        | "string" :: s :: rest -> aux (String s :: acc) rest
-        | "refutation" :: rest -> moves_aux [] rest >>= begin function
-            | [], _ -> None | res -> Some res
-          end >>= fun (moves, rest) ->
-          aux (Refutation moves :: acc) rest
-        | "currline" :: cpunr :: rest ->
-          int_of_string_opt cpunr >>= fun cpunr ->
-          moves_aux [] rest >>= begin function
-            | [], _ -> None | res -> Some res
-          end >>= fun (moves, rest) ->
-          aux (Currline {cpunr; moves} :: acc) rest
-        | _ -> None in
-      aux [] rest >>= begin function
+    | "info" :: rest -> parse_infos rest >>= begin function
         | [] -> None | rest -> Some rest
       end >>| fun info -> Info info
     | ("option" as c) :: _ ->
