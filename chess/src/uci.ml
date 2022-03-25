@@ -383,7 +383,7 @@ module Send = struct
       let rec aux acc = function
         | [] -> Some (List.rev acc, [])
         | move :: rest -> match Move.of_string move with
-          | None -> Some (List.rev acc, rest)
+          | None -> Some (List.rev acc, move :: rest)
           | Some move -> aux (move :: acc) rest in
       aux [] moves >>= function
       | [], _ -> None | res -> Some res in
