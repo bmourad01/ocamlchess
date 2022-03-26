@@ -1,6 +1,6 @@
 open Chess
 
-(** [go pos ~white ~black ~delay] starts the GUI with position [pos].
+(** [run pos ~white ~black ~delay] starts the GUI with position [pos].
 
     [white] and [black] are optional AI players. If either are none, then
     they are human players and thus require manual interaction with the GUI.
@@ -9,7 +9,7 @@ open Chess
     in between halfmoves. This is useful for when AI players are playing
     against eachother, and thus may make moves very quickly.
 *)
-val go :
+val run :
   Position.t ->
   white:Player.e option ->
   black:Player.e option ->

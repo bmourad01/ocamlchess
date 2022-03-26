@@ -255,7 +255,7 @@ let assets = Sys.getenv "HOME" ^ "/.local/share/ocamlchess/assets/"
 let piece_font = assets ^ "FreeSerif.ttf"
 let text_font = assets ^ "FreeSans.ttf"
 
-let go pos ~white ~black ~delay =
+let run pos ~white ~black ~delay =
   init_fonts piece_font text_font;
   init_named_values ();
   let window = Window.create window_size window_size "chess" in

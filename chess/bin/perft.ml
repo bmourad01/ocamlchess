@@ -10,7 +10,7 @@ let rec perft pos depth =
     Position.legal_moves pos |> List.fold ~init:0L ~f:(fun acc m ->
         Int64.(acc + perft (Legal.new_position m) depth))
 
-let go depth pos =
+let run depth pos =
   let t = Time.now () in
   let roots = Position.legal_moves pos in
   let n =

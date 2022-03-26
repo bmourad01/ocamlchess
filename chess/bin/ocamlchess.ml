@@ -27,7 +27,7 @@ module Perft = struct
   let go depth pos no_validate =
     let validate = not no_validate in
     if depth < 1 then Core_kernel.invalid_argf "Invalid depth value %d" depth ()
-    else Perft.go depth @@ Chess.Position.Fen.of_string_exn pos ~validate
+    else Perft.run depth @@ Chess.Position.Fen.of_string_exn pos ~validate
 
   let depth =
     let doc = "The depth to search in the game tree." in
@@ -70,7 +70,7 @@ module Gui = struct
         let t' = Time.now () in
         let sec = Time.(Span.to_sec @@ diff t' t) in
         printf "Loaded book %s in %fs\n\n%!" filename sec);
-    Gui.go pos ~white ~black ~delay
+    Gui.run pos ~white ~black ~delay
 
   let pos =
     let doc = "The position to play from, represented as a FEN string." in
@@ -130,7 +130,13 @@ module Gui = struct
 end
 
 module Uci = struct
-  let go debug = Uci.go ~debug
+  let go debug = Uci.run ~debug
+
+  let debug =
+    let doc = "Enables debug logging to stderr." in
+    Arg.(value & flag (info ["debug"] ~doc))
+
+  let t = Term.(const go $ debug)
 
   let info =
     let doc = "Runs the UCI loop with the 'caml' player." in
@@ -139,12 +145,6 @@ module Uci = struct
       ~doc
       ~exits:Cmd.Exit.defaults
       ~man:[]
-
-  let debug =
-    let doc = "Enables debug logging to stdout." in
-    Arg.(value & flag (info ["debug"] ~doc))
-
-  let t = Term.(const go $ debug)
 
   let cmd = Cmd.v info t
 end
