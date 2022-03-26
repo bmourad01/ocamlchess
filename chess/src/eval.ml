@@ -224,19 +224,19 @@ module Pawns = struct
     (* Given a pawn's square and color, get the squares left, right, and
        center for all the ranks that are ahead of it. *)
     let masks =
-      let east b = Bb.((b << 1) - file_a) in
-      let west b = Bb.((b >> 1) - file_h) in
-      let wf, wl, wr = Precalculated.Mask.north, east, west in
-      let bf, bl, br = Precalculated.Mask.south, west, east in
       let tbl =
         let len = Piece.Color.count * Square.count in
         Array.create ~len Bb.empty in
       for i = 0 to Square.count - 1 do
+        let open Bb in
         let sq = Square.of_int_exn i in
-        let w = wf sq in
-        let b = bf sq in
-        tbl.(idx Piece.Color.white i) <- Bb.(w + wl w + wr w);
-        tbl.(idx Piece.Color.black i) <- Bb.(w + bl b + br b);
+        let n = Pre.Mask.north sq in
+        let s = Pre.Mask.south sq in
+        let a, h = file_a, file_h in
+        let w = n + ((n << 1) - a) + ((n >> 1) - h) in
+        let b = s + ((s >> 1) - h) + ((s << 1) - a) in
+        tbl.(idx Piece.Color.white i) <- w;
+        tbl.(idx Piece.Color.black i) <- b;
       done;
       tbl
 
