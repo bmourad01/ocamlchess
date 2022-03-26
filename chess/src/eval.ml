@@ -326,8 +326,7 @@ module Pawns = struct
   (* Evaluate the pawn structure. *)
   let advantage pos phase =
     let key = Position.pawn_hash pos in
-    let start, end_ =
-      match Hashtbl.find table key with
+    let start, end_ = match Hashtbl.find table key with
       | Some entry -> entry
       | None ->
         let start =
