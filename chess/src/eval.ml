@@ -335,8 +335,8 @@ module Pawns = struct
 
   (* Evaluate the pawn structure. *)
   let advantage pos phase =
-    let key = Position.pawn_hash pos in
-    let start, end_ = Hashtbl.find_or_add table key ~default:(fun () ->
+    let start, end_ =
+      let default () =
         let start =
           Passed.advantage pos Opening +
           Doubled.advantage pos Opening +
@@ -346,7 +346,8 @@ module Pawns = struct
           Doubled.advantage pos Endgame +
           Isolated.advantage pos Endgame +
           Center.advantage pos in
-        start, end_) in
+        start, end_ in
+      Position.pawn_hash pos |> Hashtbl.find_or_add table ~default in
     (* To be able to cache these entries, we calculate them from white's
        perspective. If black is active, then it is as simple as negating
        the score. *)
