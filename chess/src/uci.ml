@@ -132,7 +132,7 @@ module Recv = struct
     | ["ucinewgame"] -> Some Ucinewgame
     | "position" :: "fen" :: p :: c :: cr :: ep :: h :: f :: rest ->
       let fen = String.concat ~sep:" " [p; c; cr; ep; h; f] in
-      Position.Fen.of_string fen |> Result.ok >>= fun pos ->
+      Position.Fen.of_string fen ~validate:false |> Result.ok >>= fun pos ->
       begin match rest with
         | [] -> Some []
         | "moves" :: moves -> Monad.Option.List.map moves ~f:Move.of_string

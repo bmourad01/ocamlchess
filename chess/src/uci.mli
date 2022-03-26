@@ -37,7 +37,11 @@ module Recv : sig
     val of_string : string -> t option
   end
 
-  (** The commands that the engine may receive. *)
+  (** The commands that the engine may receive. 
+
+      Note that the FEN provided for [Position] may refer to an illegal
+      osition.
+  *)
   type t =
     | Uci
     | Debug of [`on | `off]
