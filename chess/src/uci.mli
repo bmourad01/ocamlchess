@@ -40,7 +40,7 @@ module Recv : sig
   (** The commands that the engine may receive. 
 
       Note that the FEN provided for [Position] may refer to an illegal
-      osition.
+      position.
   *)
   type t =
     | Uci
