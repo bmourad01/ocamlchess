@@ -108,6 +108,12 @@ val minus : t -> t -> t
     [y]. *)
 val diff : t -> t -> t
 
+(** [shl x n] shifts [x] left by [n] bits. *)
+val shl : t -> int -> t
+
+(** [shr x n] shifts [x] right by [n] bits. *)
+val shr : t -> int -> t
+
 (** [count b] returns the number of occupied squares in [b]. *)
 val count : t -> int
 
@@ -231,6 +237,12 @@ module Syntax : sig
 
   (** [b -- sq] is equivalent to [clear b sq]. *)
   val (--) : t -> Square.t -> t
+
+  (** [x << n] is equivalent to [shl x n]. *)
+  val (<<) : t -> int -> t
+
+  (** [x >> n] is equivalent to [shr x n]. *)
+  val (>>) : t -> int -> t
 
   (** [sq @ b] is equivalent to [mem b sq]. *)
   val (@) : Square.t -> t -> bool

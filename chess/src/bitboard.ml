@@ -68,6 +68,8 @@ let inter = Int64.bit_and
 let union = Int64.bit_or
 let compl = Int64.bit_not
 let diff  = Int64.bit_xor
+let shl   = Int64.shift_left
+let shr   = Int64.shift_right_logical
 
 let[@inline] minus x y = inter x @@ compl y
 let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
@@ -212,6 +214,8 @@ module Syntax = struct
   let (!!) = singleton
   let (++) = set
   let (--) = clear
+  let (<<) = shl
+  let (>>) = shr
   let[@inline] (@) sq b = mem b sq
 end
 
