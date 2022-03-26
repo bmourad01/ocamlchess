@@ -531,8 +531,9 @@ module Mop_up = struct
   let go pos c =
     let us = Position.board_of_color pos c in
     let them = Position.board_of_color pos @@ Piece.Color.opposite c in
-    let our_king = Bb.(first_set_exn (us & Position.king pos)) in
-    let their_king = Bb.(first_set_exn (them & Position.king pos)) in
+    let king = Position.king pos in
+    let our_king = Bb.(first_set_exn (us & king)) in
+    let their_king = Bb.(first_set_exn (them & king)) in
     let mc = Square.manhattan_center their_king in
     let md = Square.manhattan our_king their_king  in
     (mc * 10) + (14 - md) * 4
