@@ -70,6 +70,9 @@ val file_h : t
 (** [edges] is the union of [file_a], [file_h], [rank_1], and [rank_8]. *)
 val edges : t
 
+(** [center] is the four center squares: d4, e4, d5, and e5. *)
+val center : t
+
 (** [black] is the set of black squares. *)
 val black : t
 

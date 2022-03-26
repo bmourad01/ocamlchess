@@ -318,6 +318,16 @@ module Pawns = struct
     let advantage pos phase = go pos phase White - go pos phase Black
   end
 
+  (* Give a bonus for pawns in the center. *)
+  module Center = struct
+    let go pos c =
+      let us = Position.board_of_color pos c in
+      let pawn = Position.pawn pos in
+      Bb.(count (center & us & pawn))
+
+    let advantage pos = go pos White - go pos Black
+  end
+
   (* The pawn structure evaluations are static, therefore they aren't specific
      to any particular game or search history. Given this property, we can
      safely cache these results globally. *)
@@ -334,7 +344,8 @@ module Pawns = struct
         let end_ = 
           Passed.advantage pos Endgame +
           Doubled.advantage pos Endgame +
-          Isolated.advantage pos Endgame in
+          Isolated.advantage pos Endgame +
+          Center.advantage pos in
         start, end_) in
     (* To be able to cache these entries, we calculate them from white's
        perspective. If black is active, then it is as simple as negating
