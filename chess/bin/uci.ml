@@ -86,13 +86,10 @@ let recv cmd =
 (* Main loop. *)
 let rec loop () = match In_channel.(input_line stdin) with
   | None -> return ()
+  | Some "" -> loop ()
   | Some line ->
     let open Uci.Recv in
     match of_string line with
-    | exception exn ->
-      return @@
-      Debug.printf "Exception in Uci.Recv.of_string: %s\n%!" @@
-      Exn.to_string exn
     | None ->
       printf "Unknown command: %s\n%!" line;
       loop ()
