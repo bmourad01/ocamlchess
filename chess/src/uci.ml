@@ -448,8 +448,10 @@ module Send = struct
   let of_string s =
     let open Monad.Option.Syntax in
     match tokens s with
-    | ["id"; "name"; name] -> Some (Id (`name name))
-    | ["id"; "author"; author] -> Some (Id (`author author))
+    | "id" :: "name" :: name ->
+      Some (Id (`name (String.concat name ~sep:" ")))
+    | "id" :: "author" :: author ->
+      Some (Id (`author (String.concat author ~sep:" ")))
     | ["uciok"] -> Some Uciok
     | ["readyok"] -> Some Readyok
     | "bestmove" :: rest ->
