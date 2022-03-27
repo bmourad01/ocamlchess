@@ -17,7 +17,7 @@ module Recv = struct
     } [@@deriving equal, compare, sexp]
 
     let to_string = function
-      | {name; value = None} -> name
+      | {name; value = None} -> sprintf "name %s" name
       | {name; value = Some value} -> sprintf "name %s value %s" name value
 
     let of_tokens tok = match tok with
