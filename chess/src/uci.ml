@@ -231,8 +231,8 @@ module Send = struct
             | s :: rest -> aux_var (s :: acc) rest in
           aux_var [] var >>| fun () ->
           Combo {default; var = List.rev !vars}
-        | "type" :: "string" :: "default" :: [] -> None
         | "type" :: "string" :: "default" :: default ->
+          (* Note: this value could be the empty string. *)
           Some (String (concat default))
         | ["type"; "button"] -> Some Button
         | _ -> None
