@@ -91,7 +91,7 @@ let rec loop () = match In_channel.(input_line stdin) with
     let open Uci.Recv in
     match of_string line with
     | None ->
-      printf "Unknown command: %s\n%!" line;
+      printf "Invalid command: %s\n%!" line;
       loop ()
     | Some cmd ->
       Debug.printf "Received command: %s\n%!" @@ to_string cmd;
