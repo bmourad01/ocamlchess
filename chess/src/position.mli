@@ -378,6 +378,10 @@ val null_move : t -> t
 
 (** Implements SAN (Standard Algebraic Notation). *)
 module San : sig
-  (** Returns a string representing the legal move in SAN. *)
+  (** [of_legal legal] returns a string representing the legal move in SAN. *)
   val of_legal : legal -> string
+
+  (** [of_string s pos] returns the legal move of string [s] given the
+      position [pos], if it exists. *)
+  val of_string : string -> t -> legal option
 end

@@ -1547,6 +1547,10 @@ module San = struct
     else if num_checkers = 1 then addc '+'
     else if num_checkers = 2 then adds "++";
     Buffer.contents buf
+
+  let of_string s pos =
+    legal_moves pos |> List.find ~f:(fun legal ->
+        String.(s = of_legal legal))
 end
 
 include Comparable.Make(T)
