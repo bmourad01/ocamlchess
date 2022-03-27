@@ -119,9 +119,9 @@ module Send : sig
   (** Information that the engine sends to the GUI about the search. *)
   module Info : sig
     type score = {
-      cp : float;
-      mate : int;
-      bound : [`lower | `upper];
+      cp : int;
+      mate : int option;
+      bound : [`lower | `upper] option;
     } [@@deriving equal, compare, sexp]
 
     type currline = {
