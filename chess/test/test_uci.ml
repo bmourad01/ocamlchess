@@ -26,6 +26,10 @@ let test_combo_1 () = test_parse
           });
       })))
 
+let test_combo_2 () = test_parse
+    "option name Style type combo default Normal var var Normal var Risky"
+    ~expected:None
+
 let test_setoption_1 () = test_parse
     "setoption name UCI_Opponent value GM 2800 human Gary Kasparow"
     ~expected:Uci.(Some (Recv (Setoption Recv.Setoption.{
@@ -38,6 +42,13 @@ let test_setoption_2 () =
 
 let test_setoption_3 () =
   test_parse "setoption name Name value" ~expected:None
+
+let test_setoption_4 () = test_parse
+    "setoption name Bart Simpson"
+    ~expected:Uci.(Some (Recv (Setoption Recv.Setoption.{
+        name = "Bart Simpson";
+        value = None;
+      })))
 
 let test_info_1 () = test_parse
     "info depth 2 score cp 214 time 1242 nodes 2124 nps 34928 pv e2e4 e7e5 g1f3"
@@ -52,9 +63,11 @@ let test_info_1 () = test_parse
 
 let suite = "Test uci" >::: [
     ("Test combo option 1" >:: fun _ -> test_combo_1 ());
+    ("Test combo option 2" >:: fun _ -> test_combo_2 ());
     ("Test setoption 1" >:: fun _ -> test_setoption_1 ());
     ("Test setoption 2" >:: fun _ -> test_setoption_2 ());
     ("Test setoption 3" >:: fun _ -> test_setoption_3 ());
+    ("Test setoption 4" >:: fun _ -> test_setoption_4 ());
     ("Test info 1" >:: fun _ -> test_info_1 ());
   ]
 

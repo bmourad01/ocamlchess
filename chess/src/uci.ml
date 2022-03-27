@@ -221,6 +221,7 @@ module Send = struct
           let rec aux_var acc = function
             | [] -> Some (vars := concat_rev acc :: !vars)
             | "var" :: [] -> None
+            | "var" :: "var" :: _ -> None
             | "var" :: v :: rest ->
               begin match acc with
                 | [] -> ()
