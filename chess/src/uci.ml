@@ -25,8 +25,14 @@ module Recv = struct
         let rec aux acc = function
           | [] -> Some {name = concat_rev acc; value = None}
           | "value" :: [] -> None
-          | "value" :: rest ->
-            Some {name = concat_rev acc; value = Some (concat rest)}
+          | "value" :: rest -> begin
+              match acc with
+              | [] -> None
+              | acc -> Some {
+                  name = concat_rev acc;
+                  value = Some (concat rest);
+                }
+            end
           | s :: rest -> aux (s :: acc) rest in
         aux [] tok
       | _ -> None
