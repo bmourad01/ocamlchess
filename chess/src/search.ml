@@ -158,6 +158,30 @@ type t = {
   tt      : Tt.t;
 } [@@deriving fields]
 
+let create ~limits ~root ~history ~tt =
+  let history =
+    (* Make sure that the root position is in our history. *)
+    Position.hash root |> Map.update history ~f:(function
+        | Some n -> n | None -> 1) in
+  Fields.create ~limits ~root ~history ~tt
+
+let with_limits search limits = {search with limits}
+
+let with_root search root =
+  let history = Int64.Map.empty in
+  {search with root; history; tt = Tt.create ()}
+
+let new_game search =
+  let root = Position.start in
+  let history = Int64.Map.empty in
+  {search with root; history; tt = Tt.create ()}
+
+let add_history search pos =
+  let history =
+    Position.hash pos |> Map.update search.history ~f:(function
+        | Some n -> n + 1 | None -> 1) in
+  {search with history}
+
 module Result = struct
   type t = {
     pv    : Position.legal list;

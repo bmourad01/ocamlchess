@@ -5,15 +5,27 @@ open Monads.Std
 module State = struct
   module T = struct
     type t = {
-      position : Position.t;
-      tt : Search.Tt.t;
+      search : Search.t;
     } [@@deriving fields]
   end
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
 
-  let set_position position = update @@ fun st -> {st with position}
+  let add_history pos = update @@ fun st -> {
+      search = Search.add_history st.search pos;
+    }
+
+  let set_position pos = update @@ fun st -> {
+      search = Search.with_root st.search pos;
+    }
+
+  let set_limits limits = update @@ fun st -> {
+      search = Search.with_limits st.search limits;
+    }
+
+  let position st = Search.root st.search
+  let tt st = Search.tt st.search
 end
 
 open State.Syntax
@@ -44,10 +56,9 @@ let uci =
 
 let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
 
-let ucinewgame =
-  State.update @@ fun st ->
-  Search.Tt.clear st.tt;
-  {st with position = Position.start}
+let ucinewgame = State.update @@ fun st -> {
+    search = Search.new_game st.search;
+  }
 
 let position pos moves =
   let rec apply = function
@@ -61,9 +72,13 @@ let position pos moves =
         finish ()
       | legal ->
         let pos = Position.Legal.new_position legal in
+        State.add_history pos >>= fun () ->
         State.set_position pos >>= fun () -> apply rest in
   match Position.Valid.check pos with
-  | Ok () -> State.set_position pos >>= fun () -> apply moves
+  | Ok () ->
+    State.add_history pos >>= fun () ->
+    State.set_position pos >>= fun () ->
+    apply moves
   | Error err ->
     Debug.printf "Received invalid position %s: %s\n%!"
       (Position.Fen.to_string pos) (Position.Valid.Error.to_string err);
@@ -103,7 +118,12 @@ let rec loop () = match In_channel.(input_line stdin) with
 (* Entry point. *)
 let run ~debug =
   Debug.set debug;
-  let position = Position.start in
-  let tt = Search.Tt.create () in
+  let search =
+    let open Search in
+    create
+      ~root:Position.start
+      ~limits:Limits.infinite
+      ~tt:(Tt.create ())
+      ~history:Int64.Map.empty in
   Monad.State.eval (loop ()) @@
-  State.Fields.create ~position ~tt
+  State.Fields.create ~search

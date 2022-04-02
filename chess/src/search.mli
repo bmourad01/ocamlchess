@@ -130,6 +130,18 @@ val create :
   tt:Tt.t ->
   t
 
+(** Returns the search with updated limits. *)
+val with_limits : t -> limits -> t
+
+(** Resets the search for a new game. *)
+val new_game : t -> t
+
+(** Sets the root position of the search. *)
+val with_root : t -> Position.t -> t
+
+(** Updates the position history with a new position. *)
+val add_history : t -> Position.t -> t
+
 (** The callback function for each iteration of the search.
 
     - [pv]: the principal variation (guaranteed to be non-empty).
