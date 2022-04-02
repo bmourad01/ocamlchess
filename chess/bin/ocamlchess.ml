@@ -1,5 +1,7 @@
 open Cmdliner
 
+let version = Format.sprintf "%d.%d" Version.major Version.minor
+
 let man_players () =
   Players.register Caml_player.name Caml_player.create;
   Elo_world.init ();  
@@ -44,7 +46,7 @@ module Perft = struct
   let info =
     let doc = "Runs the performance test; enumerates move paths." in
     Cmd.info "perft"
-      ~version:"%%VERSION%%"
+      ~version
       ~doc
       ~exits:Cmd.Exit.defaults
       ~man:[]
@@ -121,7 +123,7 @@ module Gui = struct
   let info =
     let doc = "Runs the testing GUI." in
     Cmd.info "gui"
-      ~version:"%%VERSION%%"
+      ~version
       ~doc
       ~exits:Cmd.Exit.defaults
       ~man:[]
@@ -141,7 +143,7 @@ module Uci = struct
   let info =
     let doc = "Runs the UCI loop with the 'caml' player." in
     Cmd.info "uci"
-      ~version:"%%VERSION%%"
+      ~version
       ~doc
       ~exits:Cmd.Exit.defaults
       ~man:[]
@@ -154,7 +156,11 @@ let default = Term.(ret @@ const @@ `Help (`Pager, None))
 let info =
   let man = man_players () in
   let doc = "A UCI-compatible chess engine." in
-  Cmd.info "ocamlchess" ~doc ~exits:Cmd.Exit.defaults ~man
+  Cmd.info "ocamlchess"
+    ~doc
+    ~version
+    ~man
+    ~exits:Cmd.Exit.defaults
 
 let () = exit @@ Cmd.eval @@ Cmd.group ~default info [
     Perft.cmd;

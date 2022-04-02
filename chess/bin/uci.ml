@@ -47,7 +47,7 @@ let finish () = return false
 let uci =
   let open Uci.Send in
   let response = [
-    Id (`name "ocamlchess v0.1");
+    Id (`name (sprintf "ocamlchess v%d.%d" Version.major Version.minor));
     Id (`author "Benjamin Mourad");
     Uciok;
   ] in
