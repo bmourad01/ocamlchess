@@ -54,7 +54,7 @@ let test_info_1 () = test_parse
     "info depth 2 score cp 214 time 1242 nodes 2124 nps 34928 pv e2e4 e7e5 g1f3"
     ~expected:Uci.(Some (Send (Info Send.Info.[
         Depth 2;
-        Score {cp = 214; mate = None; bound = None};
+        Score (Cp (214, None));
         Time 1242;
         Nodes 2124;
         Nps 34928;

@@ -118,11 +118,10 @@ module Send : sig
 
   (** Information that the engine sends to the GUI about the search. *)
   module Info : sig
-    type score = {
-      cp    : int;
-      mate  : int option;
-      bound : [`lower | `upper] option;
-    } [@@deriving equal, compare, sexp]
+    type score =
+      | Mate of int
+      | Cp of int * [`lower | `upper] option
+    [@@deriving equal, compare, sexp]
 
     type currline = {
       cpunr : int;

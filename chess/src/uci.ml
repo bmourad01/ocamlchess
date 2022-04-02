@@ -339,11 +339,10 @@ module Send = struct
   end
 
   module Info = struct
-    type score = {
-      cp    : int;
-      mate  : int option;
-      bound : [`lower | `upper] option;
-    } [@@deriving equal, compare, sexp]
+    type score =
+      | Mate of int
+      | Cp of int * [`lower | `upper] option
+    [@@deriving equal, compare, sexp]
 
     type currline = {
       cpunr : int;
@@ -386,14 +385,12 @@ module Send = struct
       | Nodes n -> sprintf "nodes %d" n
       | Pv moves -> sprintf "pv %s" @@ string_of_moves moves
       | Multipv n -> sprintf "multipv %d" n
-      | Score {cp; mate; bound} ->
-        let mate = match mate with
-          | Some mate -> sprintf " mate %d" mate
-          | None -> "" in
+      | Score (Mate n) -> sprintf " mate %d" n
+      | Score (Cp (cp, bound)) ->
         let bound = match bound with
           | Some bound -> sprintf " bound %s" @@ string_of_bound bound
           | None -> "" in
-        sprintf "score cp %d%s%s" cp mate bound
+        sprintf "score cp %d%s" cp bound
       | Currmove move -> sprintf "currmove %s" @@ Move.to_string move
       | Currmovenumber n -> sprintf "currmovenumber %d" n
       | Hashfull n -> sprintf "hashfull %d" n
@@ -418,26 +415,16 @@ module Send = struct
       | ["nodes"; n] -> int_of_string_opt n >>| fun n -> Nodes n
       | "pv" :: moves -> moves_aux moves >>| fun moves -> Pv moves
       | ["multipv"; n] -> int_of_string_opt n >>| fun n -> Multipv n
-      | "score" :: "cp" :: cp :: rest ->
+      | ["score"; "mate"; n] ->
+        int_of_string_opt n >>| fun n ->
+        Score (Mate n)
+      | ["score"; "cp"; cp] ->
+        int_of_string_opt cp >>| fun cp ->
+        Score (Cp (cp, None))
+      | ["score"; "cp"; cp; "bound"; bound] ->
         int_of_string_opt cp >>= fun cp ->
-        begin match rest with
-          | [] -> Some (None, None)
-          | ["mate"; mate; "bound"; bound] ->
-            int_of_string_opt mate >>= fun mate ->
-            bound_of_string bound >>| fun bound ->
-            Some mate, Some bound
-          | ["bound"; bound; "mate"; mate] ->
-            int_of_string_opt mate >>= fun mate ->
-            bound_of_string bound >>| fun bound ->
-            Some mate, Some bound
-          | ["mate"; mate] ->
-            int_of_string_opt mate >>| fun mate ->
-            Some mate, None
-          | ["bound"; bound] ->
-            bound_of_string bound >>| fun bound ->
-            None, Some bound
-          | _ -> None
-        end >>| fun (mate, bound) -> Score {cp; mate; bound}
+        bound_of_string bound >>| fun bound ->
+        Score (Cp (cp, Some bound))
       | ["currmove"; move] ->
         Move.of_string move >>| fun move -> Currmove move
       | ["currmovenumber"; n] ->
@@ -518,27 +505,19 @@ module Send = struct
       | "multipv" :: n :: rest ->
         int_of_string_opt n >>= fun n ->
         aux (Multipv n :: acc) rest
+      | "score" :: "mate" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Score (Mate n) :: acc) rest
       | "score" :: "cp" :: cp :: rest ->
         int_of_string_opt cp >>= fun cp ->
         begin match rest with
-          | [] -> Some (None, None, [])
-          | "mate" :: mate :: "bound" :: bound :: rest ->
-            int_of_string_opt mate >>= fun mate ->
-            bound_of_string bound >>| fun bound ->
-            Some mate, Some bound, rest
-          | "bound" :: bound :: "mate" :: mate :: rest ->
-            int_of_string_opt mate >>= fun mate ->
-            bound_of_string bound >>| fun bound ->
-            Some mate, Some bound, rest
-          | "mate" :: mate :: rest ->
-            int_of_string_opt mate >>| fun mate ->
-            Some mate, None, rest
+          | [] -> Some (None, [])
           | "bound" :: bound :: rest ->
             bound_of_string bound >>| fun bound ->
-            None, Some bound, rest
-          | rest -> Some (None, None, rest)
-        end >>= fun (mate, bound, rest) ->
-        aux (Score {cp; mate; bound} :: acc) rest
+            Some bound, rest
+          | rest -> Some (None, rest)
+        end >>= fun (bound, rest) ->
+        aux (Score (Cp (cp, bound)) :: acc) rest
       | "currmove" :: move :: rest ->
         Move.of_string move >>= fun move ->
         aux (Currmove move :: acc) rest
