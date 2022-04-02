@@ -149,6 +149,9 @@ val add_history : t -> Position.t -> t
     - [depth]: the depth of the search.
     - [nodes]: the number of nodes that were evaluated.
     - [time]: the time taken to complete the search, in milliseconds.
+
+    A return value of [false] will stop the search prematurely. Otherwise,
+    the search will continue normally.
 *)
 type iter =
   pv:Position.legal list ->
@@ -156,7 +159,7 @@ type iter =
   depth:int ->
   nodes:int ->
   time:int ->
-  unit
+  bool
 
 (** [go search ~iter] runs the game tree search and returns the search
     result. Raises [Invalid_argument] if there are no legal moves.

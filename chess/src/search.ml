@@ -713,9 +713,9 @@ type iter =
   depth:int ->
   nodes:int ->
   time:int ->
-  unit
+  bool
 
-let default_iter : iter = fun ~pv:_ ~score:_ ~depth:_ ~nodes:_ ~time:_ -> ()
+let default_iter : iter = fun ~pv:_ ~score:_ ~depth:_ ~nodes:_ ~time:_ -> true
 
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
@@ -737,13 +737,13 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   (* Extract the current PV. *)
   let pv = Tt.pv st.search.tt st.search.root limit in
   (* Invoke the callback for this iteration. *)
-  iter ~pv ~score ~depth ~nodes:st.nodes
-    ~time:(int_of_float @@ Time.(Span.to_ms @@ diff t' t));
+  let continue = iter ~pv ~score ~depth ~nodes:st.nodes
+      ~time:(int_of_float @@ Time.(Span.to_ms @@ diff t' t)) in
   (* Check the depth limit. If it doesn't exist we can just use the largest
      positive integer since it will never reach that depth in our lifetime.
      Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  if score = max_score || depth >= limit || too_long then
+  if not continue || score = max_score || depth >= limit || too_long then
     Result.Fields.create ~pv ~score ~evals:st.nodes ~depth
   else iterdeep ~iter ~depth:(depth + 1) ~moves ~limit @@ State.new_iter st
 
