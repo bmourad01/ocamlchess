@@ -142,13 +142,13 @@ module Tt = struct
     | _ -> Second (alpha, beta)
 
   (* Extract the principal variation from the table. *)
-  let pv tt m n =
+  let pv tt pos n =
     let rec aux i acc pos =
       match Hashtbl.find tt @@ Position.hash pos with
       | Some {best; _} when n > i ->
         aux (i + 1) (best :: acc) @@ Legal.new_position best
       | _ -> List.rev acc in
-    aux 0 [m] @@ Legal.new_position m
+    aux 0 [] pos
 end
 
 type t = {
@@ -160,12 +160,13 @@ type t = {
 
 module Result = struct
   type t = {
-    best  : Position.legal;
     pv    : Position.legal list;
     score : int;
     evals : int;
     depth : int;
   } [@@deriving fields]
+
+  let best {pv; _} = List.hd_exn pv
 end
 
 type result = Result.t
@@ -478,9 +479,9 @@ end
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
   let drawn search pos =
-    check_repetition search pos
-    || Position.halfmove pos >= 100
-    || Position.is_insufficient_material pos
+    check_repetition search pos ||
+    Position.halfmove pos >= 100 ||
+    Position.is_insufficient_material pos
 
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth =
@@ -656,7 +657,7 @@ module Main = struct
   and razor_margin = Piece.Kind.value Rook * Eval.material_weight
 
   (* The search we start from the root position. *)
-  and root moves ~depth =
+  let root moves ~depth =
     let open Continue_or_stop in
     State.(gets search) >>= fun search ->
     let pos = search.root in
@@ -677,10 +678,9 @@ module Main = struct
           Plysearch.better ps m score;
           if score = max_score then Stop score else Continue ())
     >>| fun score ->
-    (* Update the transposition table and return the results. *)
-    let best = ps.best in
-    Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
-    best, score
+    (* Update the transposition table and return the score. *)
+    Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:Exact;
+    score
 end
 
 type iter =
@@ -698,8 +698,7 @@ let default_iter : iter = fun ~pv:_ ~score:_ ~depth:_ ~nodes:_ ~time:_ -> ()
    each successive iteration. *)
 let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   let t = Time.now () in
-  let (best, score), st =
-    Monad.State.run (Main.root moves ~depth) st in
+  let score, st = Monad.State.run (Main.root moves ~depth) st in
   let t' = Time.now () in
   (* Last iteration may have eaten up at least half the allocated time,
      so the next (deeper) iteration is likely to take longer. Thus, we
@@ -712,7 +711,7 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
       elapsed * 2 >= n
     | _ -> false in
   (* Extract the current PV. *)
-  let pv = Tt.pv st.search.tt best limit in
+  let pv = Tt.pv st.search.tt st.search.root limit in
   (* Invoke the callback for this iteration. *)
   iter ~pv ~score ~depth ~nodes:st.nodes
     ~time:(int_of_float @@ Time.(Span.to_ms @@ diff t' t));
@@ -721,7 +720,7 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
      Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
   if score = max_score || depth >= limit || too_long then
-    Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth
+    Result.Fields.create ~pv ~score ~evals:st.nodes ~depth
   else iterdeep ~iter ~depth:(depth + 1) ~moves ~limit @@ State.new_iter st
 
 let go ?(iter = default_iter) search =

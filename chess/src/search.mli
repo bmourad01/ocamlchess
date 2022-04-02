@@ -132,7 +132,7 @@ val create :
 
 (** The callback function for each iteration of the search.
 
-    - [pv]: the principal variation.
+    - [pv]: the principal variation (guaranteed to be non-empty).
     - [score]: the score returned by the search.
     - [depth]: the depth of the search.
     - [nodes]: the number of nodes that were evaluated.
