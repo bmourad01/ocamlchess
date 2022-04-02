@@ -56,14 +56,7 @@ let uci =
       printf "%s\n%!" @@ to_string cmd)
 
 let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
-
-let start_history = Int64.Map.singleton Position.(hash start) 1
-
-let ucinewgame = State.update @@ fun st -> {
-    st with
-    pos = Position.start;
-    history = start_history;
-  }
+let ucinewgame = State.set_position Position.start
 
 let position pos moves =
   let rec apply = function
@@ -125,5 +118,5 @@ let run ~debug =
   Monad.State.eval (loop ()) @@
   State.Fields.create
     ~pos:Position.start
-    ~history:start_history
-    ~tt:Search.Tt.(create ())
+    ~history:(Int64.Map.singleton Position.(hash start) 1)
+    ~tt:(Search.Tt.create ())
