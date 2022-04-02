@@ -715,7 +715,7 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
     | Time n -> time * 2 >= n
     | _ -> false in
   (* Extract the current PV. *)
-  let pv = Tt.pv st.search.tt st.search.root limit in
+  let pv = Tt.pv st.search.tt st.search.root depth in
   (* The result for this iteration. *)
   let result = 
     Result.Fields.create ~pv ~score ~nodes:st.nodes ~depth ~time in
