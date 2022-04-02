@@ -5,27 +5,28 @@ open Monads.Std
 module State = struct
   module T = struct
     type t = {
-      search : Search.t;
+      pos : Position.t;
+      history : int Int64.Map.t;
+      tt : Search.Tt.t;
     } [@@deriving fields]
   end
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
 
-  let add_history pos = update @@ fun st -> {
-      search = Search.add_history st.search pos;
-    }
+  (* Update the position and history after a move has been made. *)
+  let update_position pos = update @@ fun st ->
+    let history =
+      Position.hash pos |> Map.update st.history ~f:(function
+          | None -> 1 | Some n -> n + 1) in
+    {st with pos; history}
 
-  let set_position pos = update @@ fun st -> {
-      search = Search.with_root st.search pos;
-    }
+  (* Set the new starting position and history. *)
+  let set_position pos = update @@ fun st ->
+    let history = Int64.Map.singleton (Position.hash pos) 1 in
+    {st with pos; history}
 
-  let set_limits limits = update @@ fun st -> {
-      search = Search.with_limits st.search limits;
-    }
-
-  let position st = Search.root st.search
-  let tt st = Search.tt st.search
+  let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
 end
 
 open State.Syntax
@@ -56,15 +57,19 @@ let uci =
 
 let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
 
+let start_history = Int64.Map.singleton Position.(hash start) 1
+
 let ucinewgame = State.update @@ fun st -> {
-    search = Search.new_game st.search;
+    st with
+    pos = Position.start;
+    history = start_history;
   }
 
 let position pos moves =
   let rec apply = function
     | [] -> cont ()
     | m :: rest ->
-      State.(gets position) >>= fun pos ->
+      State.(gets pos) >>= fun pos ->
       match Position.make_move pos m with
       | exception _ ->
         Debug.printf "Received illegal move %s for position %s\n%!"
@@ -72,11 +77,10 @@ let position pos moves =
         finish ()
       | legal ->
         let pos = Position.Legal.new_position legal in
-        State.add_history pos >>= fun () ->
-        State.set_position pos >>= fun () -> apply rest in
+        State.update_position pos >>= fun () ->
+        apply rest in
   match Position.Valid.check pos with
   | Ok () ->
-    State.add_history pos >>= fun () ->
     State.set_position pos >>= fun () ->
     apply moves
   | Error err ->
@@ -118,12 +122,8 @@ let rec loop () = match In_channel.(input_line stdin) with
 (* Entry point. *)
 let run ~debug =
   Debug.set debug;
-  let search =
-    let open Search in
-    create
-      ~root:Position.start
-      ~limits:Limits.infinite
-      ~tt:(Tt.create ())
-      ~history:Int64.Map.empty in
   Monad.State.eval (loop ()) @@
-  State.Fields.create ~search
+  State.Fields.create
+    ~pos:Position.start
+    ~history:start_history
+    ~tt:Search.Tt.(create ())

@@ -47,8 +47,7 @@ let choice (history, tt, in_book) moves =
   | Some (m, history) -> m, (history, tt, true)
   | None ->
     let limits = Option.value_exn !limits in
-    let search = Search.create ~limits ~root ~history ~tt in
-    let res = Search.go search in
+    let res = Search.go ~root ~limits ~history ~tt () in
     let m = Search.Result.best res in
     print_res res;
     let new_pos = Position.Legal.new_position m in

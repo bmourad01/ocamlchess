@@ -61,10 +61,7 @@ end
 (** The search limits. *)
 type limits = Limits.t
 
-(** The search information. *)
-type t
-
-(** Returns [true] if the score is a mating winfor the active player. *)
+(** Returns [true] if the score is a mating win for the active player. *)
 val is_mate : int -> bool
 
 (** Returns [true] if the score is a mating loss for the active player. *)
@@ -109,42 +106,6 @@ end
 (** The search result. *)
 type result = Result.t
 
-(** Returns the search limits. *)
-val limits : t -> limits
-
-(** Returns the position to begin searching from. *)
-val root : t -> Position.t
-
-(** Returns the transposition table. *)
-val tt : t -> Tt.t
-
-(** Creates the search information.
-
-    [history] is the history of positions, indexed by their
-    Zobrist keys, coupled with the number of times they have occurred
-    so far in the game.
-
-    [tt] is the transposition table, used to cache search results.
-*)
-val create :
-  limits:limits ->
-  root:Position.t ->
-  history:int Core_kernel.Int64.Map.t ->
-  tt:Tt.t ->
-  t
-
-(** Returns the search with updated limits. *)
-val with_limits : t -> limits -> t
-
-(** Resets the search for a new game. *)
-val new_game : t -> t
-
-(** Sets the root position of the search. *)
-val with_root : t -> Position.t -> t
-
-(** Updates the position history with a new position. *)
-val add_history : t -> Position.t -> t
-
 (** The callback function for each iteration of the search.
 
     A return value of [false] will stop the search prematurely. Otherwise,
@@ -152,10 +113,24 @@ val add_history : t -> Position.t -> t
 *)
 type iter = result -> bool
 
-(** [go search ~iter] runs the game tree search and returns the search
-    result. Raises [Invalid_argument] if there are no legal moves.
+(** [go () ~root ~limits ~history ~tt ~iter] runs the game tree search and
+    returns the search result. Raises [Invalid_argument] if there are no
+    legal moves.
+
+    - [root]: the position to start the search from.
+    - [limits]: the search limits.
+    - [history]: the history of how many times a position, indexed by 
+      its Zobrist key, has occurred.
+    - [tt]: the transposition table.
 
     An optional callback [iter] can be provided, which is invoked for each
     iteration of the search. By default, it will do nothing and return [true].
 *)
-val go : ?iter:iter -> t -> result
+val go :
+  ?tt:Tt.t ->
+  ?iter:iter ->
+  root:Position.t ->
+  limits:limits ->
+  history:int Core_kernel.Int64.Map.t ->
+  unit ->
+  result

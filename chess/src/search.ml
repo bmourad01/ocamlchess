@@ -165,23 +165,6 @@ let create ~limits ~root ~history ~tt =
         | Some n -> n | None -> 1) in
   Fields.create ~limits ~root ~history ~tt
 
-let with_limits search limits = {search with limits}
-
-let with_root search root =
-  let history = Int64.Map.empty in
-  {search with root; history; tt = Tt.create ()}
-
-let new_game search =
-  let root = Position.start in
-  let history = Int64.Map.empty in
-  {search with root; history; tt = Tt.create ()}
-
-let add_history search pos =
-  let history =
-    Position.hash pos |> Map.update search.history ~f:(function
-        | Some n -> n + 1 | None -> 1) in
-  {search with history}
-
 module Result = struct
   type t = {
     pv    : Position.legal list;
@@ -742,11 +725,19 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   || too_long
   then result else next @@ State.new_iter st
 
-let go ?(iter = default_iter) search =
-  match Position.legal_moves search.root with
+let go
+    ?(tt = Tt.create ())
+    ?(iter = default_iter)
+    ~root
+    ~limits
+    ~history
+    () =
+  match Position.legal_moves root with
   | [] -> invalid_arg "No legal moves"
   | moves ->
-    let limit = match search.limits.kind with
+    let limit = match limits.Limits.kind with
       | Depth n -> n
       | _ -> Int.max_value in
-    iterdeep ~iter ~moves ~limit @@ State.create search
+    iterdeep ~iter ~moves ~limit @@
+    State.create @@
+    create ~root ~limits ~history ~tt
