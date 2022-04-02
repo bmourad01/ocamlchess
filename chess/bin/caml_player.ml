@@ -8,7 +8,7 @@ let update_history m pos =
       | Some n -> n + 1
       | None -> 1)
 
-let print_res res sec =
+let print_res res =
   let pv =
     Search.Result.pv res |>
     List.map ~f:(fun m -> Position.San.of_legal m) |>
@@ -18,7 +18,7 @@ let print_res res sec =
     if Search.is_mate s then "win"
     else if Search.is_mated s then "lose"
     else Int.to_string s in
-  printf "Time taken: %fs\n%!" sec;
+  printf "Time taken: %dms\n%!" @@ Search.Result.time res;
   printf "Principal variation: %s\n%!" pv;
   printf "Depth: %d\n%!" @@ Search.Result.depth res;
   printf "Nodes evaluated: %d\n%!" @@ Search.Result.nodes res;
@@ -48,12 +48,9 @@ let choice (history, tt, in_book) moves =
   | None ->
     let limits = Option.value_exn !limits in
     let search = Search.create ~limits ~root ~history ~tt in
-    let t = Time.now () in
     let res = Search.go search in
-    let t' = Time.now () in
-    let sec = Time.(Span.to_sec @@ diff t' t) in
     let m = Search.Result.best res in
-    print_res res sec;
+    print_res res;
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
     m, (history, tt, false)
