@@ -9,8 +9,8 @@ module Limits : sig
   (** The limit on the number of positions that may be evaluated. *)
   val nodes : t -> int option
 
-  (** A search that never terminates unless interrupted. *)
-  val infinite : t
+  (** Returns [true] if the search is infinite. *)
+  val infinite : t -> bool
 
   (** The depth limit for the search, if any. *)
   val depth : t -> int option
@@ -18,8 +18,10 @@ module Limits : sig
   (** The time limit (in milliseconds) for the search, if any. *)
   val time : t -> int option
 
-  (** Returns [true] if the search is infinite. *)
-  val is_infinite : t -> bool
+  (** A search that never terminates unless interrupted, with an optional
+      number of [nodes] that may be evaluated per iteration. Raises
+      [Invalid_argument] on invalid inputs. *)
+  val of_infinite : ?nodes:int option -> unit -> t
 
   (** [of_depth depth ~nodes] will limit the depth of the search by [depth],
       and optionally the number of [nodes] that may be evaluated. Raises

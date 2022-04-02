@@ -145,7 +145,7 @@ let go g =
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
   let limits = Option.try_with @@ fun () ->
-    if !infinite then Search.Limits.infinite
+    if !infinite then Search.Limits.of_infinite ~nodes ()
     else match !depth with
       | Some n -> Search.Limits.of_depth n ~nodes
       | None -> match !movetime with

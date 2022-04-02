@@ -16,7 +16,6 @@ module Limits = struct
   }
 
   let nodes {nodes; _} = nodes
-  let infinite = {nodes = None; kind = Infinite}
 
   let depth = function
     | {kind = Depth n; _} -> Some n
@@ -26,7 +25,7 @@ module Limits = struct
     | {kind = Time n; _} -> Some n
     | _ -> None
 
-  let is_infinite = function
+  let infinite = function
     | {kind = Infinite; _} -> true
     | _ -> false
 
@@ -35,6 +34,10 @@ module Limits = struct
     | Some n when n >= 1 -> ()
     | Some n ->
       invalid_argf "Invalid node limit %d, must be greater than 0" n ()
+
+  let of_infinite ?(nodes = None) () =
+    check_nodes nodes;
+    {nodes; kind = Infinite}
 
   let of_depth ?(nodes = None) = function
     | n when n < 1 ->
