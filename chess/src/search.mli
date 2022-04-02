@@ -165,6 +165,6 @@ type iter =
     result. Raises [Invalid_argument] if there are no legal moves.
 
     An optional callback [iter] can be provided, which is invoked for each
-    iteration of the search. By default, it will do nothing.
+    iteration of the search. By default, it will do nothing and return [true].
 *)
 val go : ?iter:iter -> t -> result
