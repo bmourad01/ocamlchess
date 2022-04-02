@@ -31,6 +31,10 @@ end
 
 open State.Syntax
 
+let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
+    "ClearHash", Button;
+  ]
+
 (* Debug logging. *)
 module Debug = struct
   let enabled = ref false
@@ -52,10 +56,29 @@ let uci =
     Id (`author "Benjamin Mourad");
     Uciok;
   ] in
-  fun () -> List.iter response ~f:(fun cmd ->
-      printf "%s\n%!" @@ to_string cmd)
+  fun () ->
+    List.iter response ~f:(fun cmd ->
+        printf "%s\n%!" @@ to_string cmd);
+    Hashtbl.iteri options ~f:(fun ~key:name ~data:typ ->
+        printf "%s\n%!" @@ to_string (Option Option.{name; typ} ))
 
 let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
+
+let setoption opt =
+  let open Uci.Recv.Setoption in
+  match Hashtbl.find options opt.name with
+  | None ->
+    Debug.printf "Invalid option %s\n%!" opt.name;
+    finish ()
+  | Some Button -> begin
+      match opt.name with
+      | "ClearHash" ->
+        State.clear_tt >>= fun () ->
+        cont ()
+      | _ -> cont ()
+    end
+  | Some _ -> cont ()
+
 let ucinewgame = State.set_position Position.start
 
 let position pos moves =
@@ -185,6 +208,7 @@ let recv cmd =
   match cmd with
   | Uci -> uci (); cont ()
   | Isready -> isready (); cont ()
+  | Setoption opt -> setoption opt
   | Ucinewgame -> ucinewgame >>= cont
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves

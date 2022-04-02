@@ -77,7 +77,6 @@ module Send : sig
         max     : int;
       } [@@deriving equal, compare, sexp]
 
-
       type combo = {
         default : string;
         var     : string list;
