@@ -81,8 +81,7 @@ module Limits = struct
       | Some n -> our_time / (n + 3)
       | None ->
         let ratio =
-          let r = our_time / their_time in
-          Float.(min (max (of_int r) 1.0) 2.0) in
+          Float.(min (max (of_int our_time / of_int their_time) 1.0) 2.0) in
         our_time / int_of_float (20.0 *. ratio) in
     {nodes; kind = Time (time + our_inc)}
 end
@@ -269,6 +268,8 @@ end
 
 open State.Syntax
 
+let return = State.return
+
 let check_limits =
   (* Update the counter for how often we should check the limits. *)
   begin State.update @@ fun st ->
@@ -288,7 +289,7 @@ let check_limits =
     | _ -> match limits.kind with
       | Infinite | Depth _ -> false
       | Time t -> elapsed >= t
-  else State.return false
+  else return false
 
 (* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
@@ -394,7 +395,7 @@ module Ordering = struct
           else 0)
 end
 
-let negm = Fn.compose State.return Int.neg
+let negm = Fn.compose return Int.neg
 
 (* Quiescence search is used when we reach our maximum depth for the main
    search. The goal is then to keep searching only "noisy" positions, until
@@ -406,24 +407,24 @@ module Quiescence = struct
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
     check_limits >>= function
-    | true -> State.return 0
+    | true -> return 0
     | false ->
       let moves = Position.legal_moves pos in
       let check = Position.in_check pos in
       if List.is_empty moves
-      then State.return @@ if check then -max_score else 0
+      then return @@ if check then -max_score else 0
       else with_moves pos moves ~alpha ~beta ~ply
 
   and with_moves pos moves ~alpha ~beta ~ply =
     State.(update inc_nodes) >>= fun () ->
     let score = Eval.go pos in
-    if score >= beta then State.return beta
+    if score >= beta then return beta
     else if score + margin < alpha && not @@ Eval.is_endgame pos
-    then State.return alpha
+    then return alpha
     else let open Continue_or_stop in
       State.(gets search) >>= fun {tt; _} ->
       let init = max score alpha in
-      let finish = State.return in
+      let finish = return in
       List.filter moves ~f:is_noisy |> Ordering.qsort |>
       State.List.fold_until ~init ~finish ~f:(fun alpha m ->
           Legal.new_position m |>
@@ -480,16 +481,16 @@ module Main = struct
     (* Check if we reached the search limits, as well as for positions
        where a player may claim a draw. *)
     check_limits >>= function
-    | true -> State.return 0
-    | false when drawn search pos -> State.return 0
+    | true -> return 0
+    | false when drawn search pos -> return 0
     | false -> (* Find if we evaluated this position previously. *)
       match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
-      | First score -> State.return score
+      | First score -> return score
       | Second (alpha, beta) ->
         let moves = Position.legal_moves pos in
         let check = Position.in_check pos in
         if List.is_empty moves
-        then State.return @@ if check then -max_score else 0
+        then return @@ if check then -max_score else 0
         else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
 
   (* Principal variation search. *)
@@ -503,9 +504,9 @@ module Main = struct
         ~depth:(depth - 1) >>= negm in
     let alpha = if ps.full_window then -beta else (-ps.alpha) - 1 in
     f alpha >>= function
-    | score when ps.full_window -> State.return score
+    | score when ps.full_window -> return score
     | score when score > ps.alpha && score < beta -> f (-beta)
-    | score -> State.return score
+    | score -> return score
 
   (* Amount to reduce the depth by. *)
   and reduction_factor = 2
@@ -520,21 +521,21 @@ module Main = struct
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
-      | true -> State.return None
+      | true -> return None
       | false ->
         Legal.new_position m |> go
           ~alpha:((-ps.alpha) - 1)
           ~beta:(-ps.alpha)
           ~ply:(ply + 1)
           ~depth:(depth - reduction_factor) >>= negm >>| Option.some
-    else State.return None
+    else return None
 
   (* Combine LMR and PVS. *)
   and lmr_pvs ps pos m ~beta ~ply ~depth ~check =
     let pvs () = Legal.new_position m |> pvs ps ~beta ~ply ~depth in
     lmr ps pos m ~beta ~ply ~depth ~check >>= function
     | Some score when score > ps.alpha -> pvs ()
-    | Some score -> State.return score
+    | Some score -> return score
     | None -> pvs ()
 
   (* The actual search, given all the legal moves. *)
@@ -549,20 +550,20 @@ module Main = struct
       let score = Eval.go pos in
       reduce pos moves
         ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
-      | Some score -> State.return score
+      | Some score -> return score
       | None -> let open Continue_or_stop in
         iid pos moves ~alpha ~beta ~ply ~depth ~check >>= fun () ->
         State.(gets search) >>= fun search ->
         let ps = Plysearch.create moves ~alpha in
         Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
-        let finish () = State.return ps.alpha in
+        let finish () = return ps.alpha in
         State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
             if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
-            then State.return @@ Continue ()
+            then return @@ Continue ()
             else lmr_pvs ps pos m ~beta ~ply ~depth ~check >>= fun score ->
               if score >= beta
               then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-              else State.return @@ Continue (Plysearch.better ps m score))
+              else return @@ Continue (Plysearch.better ps m score))
         >>| fun score ->
         Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
         score
@@ -593,16 +594,16 @@ module Main = struct
         ~ply
         ~depth:(depth - 2)
         ~check >>| ignore
-    end else State.return ()
+    end else return ()
 
   (* Try to reduce the depth. *)
   and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     if beta - alpha > 1 || check || null
-    then State.return None
+    then return None
     else match rfp ~depth ~score ~beta with
-      | Some _ as score -> State.return score
+      | Some _ as score -> return score
       | None -> nmr pos ~score ~beta ~ply ~depth >>= function
-        | Some _ as beta -> State.return beta
+        | Some _ as beta -> return beta
         | None -> razor pos moves ~score ~alpha ~beta ~ply ~depth
 
   (* Reverse futility pruning.
@@ -631,7 +632,7 @@ module Main = struct
         ~depth:(depth - 1 - reduction_factor)
         ~null:true >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
-    else State.return None
+    else return None
 
   (* Razoring.
 
@@ -642,7 +643,7 @@ module Main = struct
     if depth = 1 && score + razor_margin <= alpha then
       Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun qscore ->
       Option.some_if (qscore <= alpha) qscore
-    else State.return None
+    else return None
 
   and razor_margin = Piece.Kind.value Rook * Eval.material_weight
 
@@ -653,7 +654,7 @@ module Main = struct
     let pos = search.root in
     Ordering.sort moves ~ply:0 ~pos ~tt:search.tt >>= fun moves ->
     let ps = Plysearch.create moves in
-    let finish () = State.return ps.alpha in
+    let finish () = return ps.alpha in
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
         pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
