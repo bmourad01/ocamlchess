@@ -50,7 +50,7 @@ module Recv : sig
     | Register of [`later | `namecode of string * string]
     | Ucinewgame
     | Position of [`fen of Position.t | `startpos] * Move.t list
-    | Go of Go.t
+    | Go of Go.t list
     | Stop
     | Ponderhit
     | Quit

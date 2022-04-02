@@ -81,6 +81,8 @@ module Recv = struct
       | ["ponder"] -> Some Ponder
       | ["wtime"; t] -> int_of_string_opt t >>| fun t -> Wtime t
       | ["btime"; t] -> int_of_string_opt t >>| fun t -> Btime t
+      | ["winc"; n] -> int_of_string_opt n >>| fun n -> Winc n
+      | ["binc"; n] -> int_of_string_opt n >>| fun n -> Binc n
       | ["movestogo"; n] -> int_of_string_opt n >>| fun n -> Movestogo n
       | ["depth"; n] -> int_of_string_opt n >>| fun n -> Depth n
       | ["nodes"; n] -> int_of_string_opt n >>| fun n -> Nodes n
@@ -100,7 +102,7 @@ module Recv = struct
     | Register of [`later | `namecode of string * string]
     | Ucinewgame
     | Position of [`fen of Position.t | `startpos] * Move.t list
-    | Go of Go.t
+    | Go of Go.t list
     | Stop
     | Ponderhit
     | Quit
@@ -126,10 +128,59 @@ module Recv = struct
         let s = string_of_moves moves in
         if String.is_empty s then s else sprintf " moves %s" s in
       sprintf "position startpos%s" moves
-    | Go go -> sprintf "go %s" @@ Go.to_string go
+    | Go go ->
+      sprintf "go %s" @@ concat @@ List.map go ~f:Go.to_string
     | Stop -> "stop"
     | Ponderhit -> "ponderhit"
     | Quit -> "quit"
+
+  let parse_gos gos =
+    let open Go in
+    let open Monad.Option.Syntax in
+    let moves_aux moves =
+      let rec aux acc = function
+        | [] -> Some (List.rev acc, [])
+        | move :: rest -> match Move.of_string move with
+          | None -> Some (List.rev acc, move :: rest)
+          | Some move -> aux (move :: acc) rest in
+      aux [] moves >>= function
+      | [], _ -> None | res -> Some res in
+    let rec aux acc = function
+      | [] -> Some (List.rev acc)
+      | "searchmoves" :: rest ->
+        moves_aux rest >>= fun (moves, rest) ->
+        aux (Searchmoves moves :: acc) rest
+      | "ponder" :: rest -> aux (Ponder :: acc) rest
+      | "wtime" :: t :: rest ->
+        int_of_string_opt t >>= fun t ->
+        aux (Wtime t :: acc) rest
+      | "btime" :: t :: rest ->
+        int_of_string_opt t >>= fun t ->
+        aux (Btime t :: acc) rest
+      | "winc" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Winc n :: acc) rest
+      | "binc" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Binc n :: acc) rest
+      | "movestogo" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Movestogo n :: acc) rest
+      | "depth" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Depth n :: acc) rest
+      | "nodes" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Nodes n :: acc) rest
+      | "mate" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Mate n :: acc) rest
+      | "movetime" :: n :: rest ->
+        int_of_string_opt n >>= fun n ->
+        aux (Movetime n :: acc) rest
+      | "infinite" :: rest -> aux (Infinite :: acc) rest
+      | _ -> None in
+    aux [] gos
 
   let of_string s =
     let open Monad.Option.Syntax in
@@ -161,7 +212,7 @@ module Recv = struct
     | "position" :: "startpos" :: "moves" :: moves ->
       Monad.Option.List.map moves ~f:Move.of_string >>| fun moves ->
       Position (`startpos, moves)
-    | "go" :: rest -> Go.of_tokens rest >>| fun go -> Go go
+    | "go" :: gos -> parse_gos gos >>| fun go -> Go go
     | ["stop"] -> Some Stop
     | ["ponderhit"] -> Some Ponderhit
     | ["quit"] -> Some Quit

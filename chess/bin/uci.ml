@@ -85,14 +85,15 @@ let position pos moves =
 let recv cmd =
   let open Uci.Recv in
   match cmd with
-  | Quit -> finish ()
   | Uci -> uci (); cont ()
   | Isready -> isready (); cont ()
   | Ucinewgame -> ucinewgame >>= cont
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves
+  | Quit -> finish ()
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
+    printf "what?\n%!";
     cont ()
 
 (* Main loop. *)
