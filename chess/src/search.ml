@@ -5,20 +5,86 @@ module Bb = Bitboard
 module Legal = Position.Legal
 
 module Limits = struct
+  type kind =
+    | Infinite
+    | Depth of int
+    | Time of int
+
   type t = {
-    depth : int;
     nodes : int option;
-  } [@@deriving fields]
+    kind : kind;
+  }
 
-  let create ?(nodes = None) ~depth () =
-    if depth < 1 then invalid_argf "Invalid depth limit %d" depth ()
-    else match nodes with
-      | Some n when n < 1 -> invalid_argf "Invalid node limit %d" n ()
-      | _ -> Fields.create ~depth ~nodes
+  let nodes {nodes; _} = nodes
+  let infinite = {nodes = None; kind = Infinite}
 
-  let is_max_nodes n = function
-    | {nodes = Some nodes; _} -> n >= nodes
+  let depth = function
+    | {kind = Depth n; _} -> Some n
+    | _ -> None
+
+  let time = function
+    | {kind = Time n; _} -> Some n
+    | _ -> None
+
+  let is_infinite = function
+    | {kind = Infinite; _} -> true
     | _ -> false
+
+  let check_nodes = function
+    | None -> ()
+    | Some n when n >= 1 -> ()
+    | Some n ->
+      invalid_argf "Invalid node limit %d, must be greater than 0" n ()
+
+  let of_depth ?(nodes = None) = function
+    | n when n < 1 ->
+      invalid_argf "Invalid depth limit %d, must be greater than 0" n ()
+    | n ->
+      check_nodes nodes;
+      {nodes; kind = Depth n}
+
+  let of_search_time ?(nodes = None) = function
+    | n when n < 1 ->
+      invalid_argf "Invalid search time %d, must be greater than 0" n ()
+    | n ->
+      check_nodes nodes;
+      {nodes; kind = Time n}
+
+  let of_game_time
+      ?(nodes = None)
+      ?(moves_to_go = None)
+      ~wtime
+      ~winc
+      ~btime
+      ~binc
+      ~active
+      () =
+    (* Validate inputs. *)
+    check_nodes nodes;
+    if wtime < 1 then
+      invalid_argf "Invalid white time %d, must be greater than 0" wtime ();
+    if winc < 0 then
+      invalid_argf "Invalid white increment %d, must be positive" winc ();
+    if btime < 1 then
+      invalid_argf "Invalid black time %d, must be greater than 0" btime ();
+    if binc < 0 then
+      invalid_argf "Invalid black increment %d, must be positive" binc ();
+    Option.iter moves_to_go ~f:(function
+        | n when n < 0 ->
+          invalid_argf "Invalid number of moves to go %d, must be positive" n ()
+        | _ -> ());
+    (* Calculate the amount of time to search. *)
+    let our_time, our_inc, their_time = match active with
+      | Piece.White -> wtime, winc, btime
+      | Piece.Black -> btime, binc, wtime in
+    let time = match moves_to_go with
+      | Some n -> our_time / (n + 3)
+      | None ->
+        let ratio =
+          let r = our_time / their_time in
+          Float.(min (max (of_int r) 1.0) 2.0) in
+        our_time / int_of_float (20.0 *. ratio) in
+    {nodes; kind = Time (time + our_inc)}
 end
 
 type limits = Limits.t
@@ -119,16 +185,22 @@ let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
+  let max_limit_check = 4096
+
   module T = struct
     type t = {
-      nodes   : int;
-      search  : search;
-      killer1 : Position.legal Int.Map.t;
-      killer2 : Position.legal Int.Map.t;
-      history : int array;
+      start_time   : Time.t;
+      limit_checks : int;
+      nodes        : int;
+      search       : search;
+      killer1      : Position.legal Int.Map.t;
+      killer2      : Position.legal Int.Map.t;
+      history      : int array;
     } [@@deriving fields]
 
     let create search = {
+      start_time = Time.now ();
+      limit_checks = 0;
       nodes = 0;
       search;
       killer1 = Int.Map.empty;
@@ -196,6 +268,27 @@ module State = struct
 end
 
 open State.Syntax
+
+let check_limits =
+  (* Update the counter for how often we should check the limits. *)
+  begin State.update @@ fun st ->
+    let limit_checks = st.limit_checks + 1 in
+    {st with limit_checks}
+  end >>= fun () ->
+  State.(gets limit_checks) >>= fun limit_checks ->
+  if limit_checks > State.max_limit_check then
+    (* Check the limits. *)
+    State.get () >>| fun {start_time; search; nodes; _} ->
+    let elapsed =
+      int_of_float @@
+      Time.(Span.to_ms @@ diff (now ()) start_time) in
+    let limits = search.limits in
+    match limits.nodes with
+    | Some n when nodes >= n -> true
+    | _ -> match limits.kind with
+      | Infinite | Depth _ -> false
+      | Time t -> elapsed >= t
+  else State.return false
 
 (* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
@@ -312,9 +405,9 @@ module Quiescence = struct
   let rec go pos ~alpha ~beta ~ply =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
-    if Limits.is_max_nodes nodes search.limits
-    then State.return 0
-    else
+    check_limits >>= function
+    | true -> State.return 0
+    | false ->
       let moves = Position.legal_moves pos in
       let check = Position.in_check pos in
       if List.is_empty moves
@@ -375,17 +468,21 @@ end
 (* The main search of the position. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
+  let drawn search pos =
+    check_repetition search pos
+    || Position.halfmove pos >= 100
+    || Position.is_insufficient_material pos
+
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth =
     State.(gets nodes) >>= fun nodes ->
     State.(gets search) >>= fun search ->
     (* Check if we reached the search limits, as well as for positions
        where a player may claim a draw. *)
-    if Limits.is_max_nodes nodes search.limits
-    || check_repetition search pos
-    || Position.halfmove pos >= 100
-    || Position.is_insufficient_material pos then State.return 0
-    else (* Find if we evaluated this position previously. *)
+    check_limits >>= function
+    | true -> State.return 0
+    | false when drawn search pos -> State.return 0
+    | false -> (* Find if we evaluated this position previously. *)
       match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
       | First score -> State.return score
       | Second (alpha, beta) ->
@@ -560,17 +657,17 @@ module Main = struct
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
         pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
-        State.(gets nodes) >>| fun nodes ->
-        if Limits.is_max_nodes nodes search.limits then begin
+        check_limits >>| function
+        | true ->
           (* We could've reached the limit without getting a chance
              to improve alpha. *)
           if ps.full_window then Plysearch.better ps m score;
           Stop ps.alpha
-        end else begin
+        | false ->
           (* Stop if we've found a mating sequence. *)
           Plysearch.better ps m score;
-          if score = max_score then Stop score else Continue ()
-        end) >>| fun score ->
+          if score = max_score then Stop score else Continue ())
+    >>| fun score ->
     (* Update the transposition table and return the results. *)
     let best = ps.best in
     Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
@@ -583,9 +680,13 @@ end
 let rec iterdeep ?(depth = 1) st ~moves =
   let (best, score), st =
     Monad.State.run (Main.root moves ~depth) st in
-  (* If we found a mating sequence, then there's no reason to iterate
+  (* Check the depth limit. If it doesn't exist we can just use the largest
+     positive integer since it will never reach that depth in our lifetime.
+     Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  let n = st.search.limits.depth in
+  let n = match st.search.limits.kind with
+    | Depth n -> n
+    | _ -> Int.max_value in
   if score = max_score || depth >= n then
     let pv = Tt.pv st.search.tt best n in
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth

@@ -6,20 +6,56 @@ module Limits : sig
   (** The search limits. *)
   type t
 
-  (** Creates the search limits. Raises [Invalid_argument] on invalid
-      inputs. *)
-  val create :
-    ?nodes:int option ->
-    depth:int ->
-    unit ->
-    t
-
-  (** The number of halfmoves that will be searched (e.g. the depth of
-      the game tree). *)
-  val depth : t -> int
-
   (** The limit on the number of positions that may be evaluated. *)
   val nodes : t -> int option
+
+  (** A search that never terminates unless interrupted. *)
+  val infinite : t
+
+  (** The depth limit for the search, if any. *)
+  val depth : t -> int option
+
+  (** The time limit (in milliseconds) for the search, if any. *)
+  val time : t -> int option
+
+  (** Returns [true] if the search is infinite. *)
+  val is_infinite : t -> bool
+
+  (** [of_depth depth ~nodes] will limit the depth of the search by [depth],
+      and optionally the number of [nodes] that may be evaluated. Raises
+      [Invalid_argument] on invalid inputs. *)
+  val of_depth : ?nodes:int option -> int -> t
+
+  (** [of_search_time t ~nodes] will limit the time allocated for the search
+      by [t] milliseconds, and optionally the number of [nodes] that may be
+      evaluated. Raises [Invalid_argument] on invalid inputs. *)
+  val of_search_time : ?nodes:int option -> int -> t
+
+  (** [of_game_time () ~wtime ~winc ~btime ~binc ~active ~nodes ~moves_to_go]
+      will limit the time allocated for the search according to the following
+      parameters (all times are in milliseconds):
+
+      - [wtime]: the amount of time left on the clock for white.
+      - [winc]: the time increment for white.
+      - [btime]: the amount of time left on the clock for black.
+      - [binc]: the time increment for black.
+      - [active]: the active player.
+      - [moves_to_go]: the (optional) number of moves left until the next time
+        control.
+
+      Additionally, the number of [nodes] to be evaluated may be limited.
+      Raises [Invalid_argument] on invalid inputs.
+  *)
+  val of_game_time :
+    ?nodes:int option ->
+    ?moves_to_go:int option ->
+    wtime:int ->
+    winc:int ->
+    btime:int ->
+    binc:int ->
+    active:Piece.color ->
+    unit ->
+    t
 end
 
 (** The search limits. *)
