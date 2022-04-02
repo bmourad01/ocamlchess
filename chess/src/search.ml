@@ -186,8 +186,9 @@ module Result = struct
   type t = {
     pv    : Position.legal list;
     score : int;
-    evals : int;
+    nodes : int;
     depth : int;
+    time  : int;
   } [@@deriving fields]
 
   let best {pv; _} = List.hd_exn pv
@@ -707,45 +708,40 @@ module Main = struct
     score
 end
 
-type iter =
-  pv:Position.legal list ->
-  score:int ->
-  depth:int ->
-  nodes:int ->
-  time:int ->
-  bool
+type iter = result -> bool
 
-let default_iter : iter = fun ~pv:_ ~score:_ ~depth:_ ~nodes:_ ~time:_ -> true
+let default_iter : iter = fun _ -> true
 
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
 let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
-  let t = Time.now () in
+  let next = iterdeep ~iter ~depth:(depth + 1) ~moves ~limit in
   let score, st = Monad.State.run (Main.root moves ~depth) st in
-  let t' = Time.now () in
+  let time =
+    int_of_float @@
+    Time.(Span.to_ms @@ diff (now ()) st.start_time) in
   (* Last iteration may have eaten up at least half the allocated time,
      so the next (deeper) iteration is likely to take longer. Thus, we
      should abort the search. *)
   let too_long = match st.search.limits.kind with
-    | Time n ->
-      let elapsed =
-        int_of_float @@
-        Time.(Span.to_ms @@ diff t' st.start_time) in
-      elapsed * 2 >= n
+    | Time n -> time * 2 >= n
     | _ -> false in
   (* Extract the current PV. *)
   let pv = Tt.pv st.search.tt st.search.root limit in
   (* Invoke the callback for this iteration. *)
-  let continue = iter ~pv ~score ~depth ~nodes:st.nodes
-      ~time:(int_of_float @@ Time.(Span.to_ms @@ diff t' t)) in
+  let result = 
+    Result.Fields.create ~pv ~score ~nodes:st.nodes ~depth ~time in
+  let continue = iter result in
   (* Check the depth limit. If it doesn't exist we can just use the largest
      positive integer since it will never reach that depth in our lifetime.
      Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  if not continue || score = max_score || depth >= limit || too_long then
-    Result.Fields.create ~pv ~score ~evals:st.nodes ~depth
-  else iterdeep ~iter ~depth:(depth + 1) ~moves ~limit @@ State.new_iter st
+  if not continue
+  || score = max_score
+  || depth >= limit
+  || too_long
+  then result else next @@ State.new_iter st
 
 let go ?(iter = default_iter) search =
   match Position.legal_moves search.root with

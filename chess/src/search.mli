@@ -97,10 +97,13 @@ module Result : sig
   val score : t -> int
 
   (** The number of positions that were evaluated. *)
-  val evals : t -> int
+  val nodes : t -> int
 
   (** The depth that was searched to in order to obtain the result. *)
   val depth : t -> int
+
+  (** The total time (in milliseconds) taken to complete the search.. *)
+  val time : t -> int
 end
 
 (** The search result. *)
@@ -144,22 +147,10 @@ val add_history : t -> Position.t -> t
 
 (** The callback function for each iteration of the search.
 
-    - [pv]: the principal variation (guaranteed to be non-empty).
-    - [score]: the score returned by the search.
-    - [depth]: the depth of the search.
-    - [nodes]: the number of nodes that were evaluated.
-    - [time]: the time taken to complete the search, in milliseconds.
-
     A return value of [false] will stop the search prematurely. Otherwise,
     the search will continue normally.
 *)
-type iter =
-  pv:Position.legal list ->
-  score:int ->
-  depth:int ->
-  nodes:int ->
-  time:int ->
-  bool
+type iter = result -> bool
 
 (** [go search ~iter] runs the game tree search and returns the search
     result. Raises [Invalid_argument] if there are no legal moves.
