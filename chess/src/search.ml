@@ -121,10 +121,7 @@ module Tt = struct
   let store tt pos ~depth ~score ~best ~bound =
     let key = Position.hash pos in
     let data = Entry.Fields.create ~depth ~score ~best ~bound in
-    Hashtbl.update tt key ~f:(function
-        | Some old when Entry.depth old <= depth -> data
-        | Some old -> old
-        | None -> data)
+    Hashtbl.set tt ~key ~data
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
@@ -150,8 +147,7 @@ module Tt = struct
 
   (* Extract the principal variation from the table. *)
   let pv tt pos n =
-    let rec aux i acc pos =
-      match Hashtbl.find tt @@ Position.hash pos with
+    let rec aux i acc pos = match find tt pos with
       | Some Entry.{best; _} when n > i ->
         aux (i + 1) (best :: acc) @@ Legal.new_position best
       | _ -> List.rev acc in
@@ -427,10 +423,7 @@ let negm = Fn.compose return Int.neg
 module Quiescence = struct
   let margin = Piece.Kind.value Queen * Eval.material_weight
 
-  let rec go pos ~alpha ~beta ~ply =
-    State.(gets nodes) >>= fun nodes ->
-    State.(gets search) >>= fun search ->
-    check_limits >>= function
+  let rec go pos ~alpha ~beta ~ply = check_limits >>= function
     | true -> return 0
     | false ->
       let moves = Position.legal_moves pos in
@@ -681,7 +674,7 @@ module Main = struct
     let finish () = return ps.alpha in
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
-        pvs ps ~ply:1 ~depth:(depth - 1) ~beta:inf >>= fun score ->
+        pvs ps ~ply:1 ~depth ~beta:inf >>= fun score ->
         check_limits >>| function
         | true ->
           (* We could've reached the limit without getting a chance
