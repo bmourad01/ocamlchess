@@ -32,7 +32,7 @@ end
 open State.Syntax
 
 let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
-    "ClearHash", Button;
+    "Clear Hash", Button;
   ]
 
 (* Debug logging. *)
@@ -68,11 +68,11 @@ let setoption opt =
   let open Uci.Recv.Setoption in
   match Hashtbl.find options opt.name with
   | None ->
-    Debug.printf "Invalid option %s\n%!" opt.name;
-    finish ()
+    printf "No such option: %s\n%!" opt.name;
+    cont ()
   | Some Button -> begin
       match opt.name with
-      | "ClearHash" ->
+      | "Clear Hash" ->
         State.clear_tt >>= fun () ->
         cont ()
       | _ -> cont ()
