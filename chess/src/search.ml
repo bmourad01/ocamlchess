@@ -92,15 +92,21 @@ type limits = Limits.t
 module Tt = struct
   type bound = Lower | Upper | Exact
 
-  type entry = {
-    depth : int;
-    score : int;
-    best  : Position.legal;
-    bound : bound;
-  }
+  module Entry = struct
+    type t = {
+      depth : int;
+      score : int;
+      best  : Position.legal;
+      bound : bound;
+    } [@@deriving fields]
 
+    let position {best; _} = Position.Legal.parent best
+  end
+
+  type entry = Entry.t
   type t = (int64, entry) Hashtbl.t
 
+  let find tt pos = Hashtbl.find tt @@ Position.hash pos
   let create () = Hashtbl.create (module Int64)
   let clear = Hashtbl.clear
 
@@ -111,9 +117,9 @@ module Tt = struct
   *)
   let store tt pos ~depth ~score ~best ~bound =
     let key = Position.hash pos in
-    let data = {depth; score; best; bound} in
+    let data = Entry.Fields.create ~depth ~score ~best ~bound in
     Hashtbl.update tt key ~f:(function
-        | Some old when old.depth <= depth -> data
+        | Some old when Entry.depth old <= depth -> data
         | Some old -> old
         | None -> data)
 
@@ -129,23 +135,21 @@ module Tt = struct
 
      - Exact: the score is an exact evaluation for this position.
   *)
-  let lookup tt ~pos ~depth ~alpha ~beta =
-    match Hashtbl.find tt @@ Position.hash pos with
-    | Some {depth = depth'; score; bound; _} when depth' >= depth -> begin
-        match bound with
-        | Lower when score >= beta -> First beta
-        | Lower -> Second (max alpha score, beta)
-        | Upper when score <= alpha -> First alpha
-        | Upper -> Second (alpha, min beta score)
-        | Exact -> First score
-      end
-    | _ -> Second (alpha, beta)
+  let lookup tt ~pos ~depth ~alpha ~beta = match find tt pos with
+    | None -> Second (alpha, beta)
+    | Some entry when Entry.depth entry < depth -> Second (alpha, beta)
+    | Some Entry.{score; bound; _} -> match bound with
+      | Lower when score >= beta -> First beta
+      | Lower -> Second (max alpha score, beta)
+      | Upper when score <= alpha -> First alpha
+      | Upper -> Second (alpha, min beta score)
+      | Exact -> First score
 
   (* Extract the principal variation from the table. *)
   let pv tt pos n =
     let rec aux i acc pos =
       match Hashtbl.find tt @@ Position.hash pos with
-      | Some {best; _} when n > i ->
+      | Some Entry.{best; _} when n > i ->
         aux (i + 1) (best :: acc) @@ Legal.new_position best
       | _ -> List.rev acc in
     aux 0 [] pos
@@ -346,8 +350,8 @@ module Ordering = struct
     let best =
       Position.hash pos |> Hashtbl.find tt |>
       Option.bind ~f:(fun entry ->
-          match entry.Tt.bound with
-          | Exact -> Some entry.Tt.best
+          match Tt.Entry.bound entry with
+          | Exact -> Some (Tt.Entry.best entry)
           | _ -> None) in
     fun m -> Option.exists best ~f:(Legal.same m)
 

@@ -69,6 +69,32 @@ val is_mated : int -> bool
 
 (** The transposition table. *)
 module Tt : sig
+  (** The bound for the score. *)
+  type bound = Lower | Upper | Exact
+
+  (** An entry in the table. *)
+  module Entry : sig
+    type t
+
+    (** The depth that this entry was stored at. *)
+    val depth : t -> int
+
+    (** The score given for the position. *)
+    val score : t -> int
+
+    (** The best move for the position. *)
+    val best : t -> Position.legal
+
+    (** The bound for the score. *)
+    val bound : t -> bound
+
+    (** The position that this entry corresponds to. *)
+    val position : t -> Position.t
+  end
+
+  (** An entry in the table. *)
+  type entry = Entry.t
+
   (** The transposition table. *)
   type t
 
@@ -77,6 +103,9 @@ module Tt : sig
 
   (** Clears the table. *)
   val clear : t -> unit
+
+  (** Returns the entry for a given position, if it exists *)
+  val find : t -> Position.t -> entry option
 end
 
 (** The search result. *)
