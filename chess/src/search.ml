@@ -693,9 +693,9 @@ type iter =
 
 let default_iter : iter = fun ~pv:_ ~score:_ ~depth:_ ~nodes:_ ~time:_ -> ()
 
-(* Use iterative deepening to optimize the search. This relies on previous
-   evaluations stored in the transposition table to prune more nodes with
-   each successive iteration. *)
+(* Use iterative deepening to optimize the search. This works by using TT
+   entries from shallower searches in the move ordering for deeper searches,
+   which makes pruning more effective. *)
 let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   let t = Time.now () in
   let score, st = Monad.State.run (Main.root moves ~depth) st in
