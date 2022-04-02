@@ -176,6 +176,9 @@ let create = Fields.create
 let inf = 65535
 let max_score = inf / 2
 
+let is_mate score = score = max_score
+let is_mated score = score = (-max_score)
+
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
   Option.is_none @@ Move.promote @@ Legal.move m
@@ -675,24 +678,52 @@ module Main = struct
     best, score
 end
 
+type iter =
+  pv:Position.legal list ->
+  score:int ->
+  depth:int ->
+  nodes:int ->
+  time:int ->
+  unit
+
+let default_iter : iter = fun ~pv:_ ~score:_ ~depth:_ ~nodes:_ ~time:_ -> ()
+
 (* Use iterative deepening to optimize the search. This relies on previous
    evaluations stored in the transposition table to prune more nodes with
    each successive iteration. *)
-let rec iterdeep ?(depth = 1) st ~moves =
+let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
+  let t = Time.now () in
   let (best, score), st =
     Monad.State.run (Main.root moves ~depth) st in
+  let t' = Time.now () in
+  (* Last iteration may have eaten up at least half the allocated time,
+     so the next (deeper) iteration is likely to take longer. Thus, we
+     should abort the search. *)
+  let too_long = match st.search.limits.kind with
+    | Time n ->
+      let elapsed =
+        int_of_float @@
+        Time.(Span.to_ms @@ diff t' st.start_time) in
+      elapsed * 2 >= n
+    | _ -> false in
+  (* Extract the current PV. *)
+  let pv = Tt.pv st.search.tt best limit in
+  (* Invoke the callback for this iteration. *)
+  iter ~pv ~score ~depth ~nodes:st.nodes
+    ~time:(int_of_float @@ Time.(Span.to_ms @@ diff t' t));
   (* Check the depth limit. If it doesn't exist we can just use the largest
      positive integer since it will never reach that depth in our lifetime.
      Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  let n = match st.search.limits.kind with
-    | Depth n -> n
-    | _ -> Int.max_value in
-  if score = max_score || depth >= n then
-    let pv = Tt.pv st.search.tt best n in
+  if score = max_score || depth >= limit || too_long then
     Result.Fields.create ~best ~pv ~score ~evals:st.nodes ~depth
-  else iterdeep ~depth:(depth + 1) ~moves @@ State.new_iter st
+  else iterdeep ~iter ~depth:(depth + 1) ~moves ~limit @@ State.new_iter st
 
-let go search = match Position.legal_moves search.root with
+let go ?(iter = default_iter) search =
+  match Position.legal_moves search.root with
   | [] -> invalid_arg "No legal moves"
-  | moves -> iterdeep ~moves @@ State.create search
+  | moves ->
+    let limit = match search.limits.kind with
+      | Depth n -> n
+      | _ -> Int.max_value in
+    iterdeep ~iter ~moves ~limit @@ State.create search

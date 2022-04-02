@@ -15,13 +15,13 @@ let print_res res sec =
     String.concat ~sep:" " in
   let score =
     let s = Search.Result.score res in
-    if s = Search.max_score then "win"
-    else if s = -Search.max_score then "lose"
+    if Search.is_mate s then "win"
+    else if Search.is_mated s then "lose"
     else Int.to_string s in
   printf "Time taken: %fs\n%!" sec;
   printf "Principal variation: %s\n%!" pv;
   printf "Depth: %d\n%!" @@ Search.Result.depth res;
-  printf "Nodes searched: %d\n%!" @@ Search.Result.evals res;
+  printf "Nodes evaluated: %d\n%!" @@ Search.Result.evals res;
   printf "Score: %s\n%!" score;
   printf "\n%!"
 

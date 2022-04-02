@@ -64,8 +64,11 @@ type limits = Limits.t
 (** The search information. *)
 type t
 
-(** The maximum score for a move. *)
-val max_score : int
+(** Returns [true] if the score is a mating winfor the active player. *)
+val is_mate : int -> bool
+
+(** Returns [true] if the score is a mating loss for the active player. *)
+val is_mated : int -> bool
 
 (** The transposition table. *)
 module Tt : sig
@@ -127,6 +130,26 @@ val create :
   tt:Tt.t ->
   t
 
-(** [go search ~clear] runs the game tree search and returns the search
-    result. Raises [Invalid_argument] if there are no legal moves. *)
-val go : t -> result
+(** The callback function for each iteration of the search.
+
+    - [pv]: the principal variation.
+    - [score]: the score returned by the search.
+    - [depth]: the depth of the search.
+    - [nodes]: the number of nodes that were evaluated.
+    - [time]: the time taken to complete the search, in milliseconds.
+*)
+type iter =
+  pv:Position.legal list ->
+  score:int ->
+  depth:int ->
+  nodes:int ->
+  time:int ->
+  unit
+
+(** [go search ~iter] runs the game tree search and returns the search
+    result. Raises [Invalid_argument] if there are no legal moves.
+
+    An optional callback [iter] can be provided, which is invoked for each
+    iteration of the search. By default, it will do nothing.
+*)
+val go : ?iter:iter -> t -> result
