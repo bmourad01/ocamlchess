@@ -729,15 +729,14 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
     | _ -> false in
   (* Extract the current PV. *)
   let pv = Tt.pv st.search.tt st.search.root limit in
-  (* Invoke the callback for this iteration. *)
+  (* The result for this iteration. *)
   let result = 
     Result.Fields.create ~pv ~score ~nodes:st.nodes ~depth ~time in
-  let continue = iter result in
   (* Check the depth limit. If it doesn't exist we can just use the largest
      positive integer since it will never reach that depth in our lifetime.
      Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  if not continue
+  if not (iter result)
   || score = max_score
   || depth >= limit
   || too_long
