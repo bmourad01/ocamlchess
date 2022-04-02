@@ -12,7 +12,7 @@ module Limits = struct
 
   type t = {
     nodes : int option;
-    kind : kind;
+    kind  : kind;
   }
 
   let nodes {nodes; _} = nodes
