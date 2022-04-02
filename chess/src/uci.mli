@@ -8,7 +8,7 @@ module Recv : sig
       engine. *)
   module Setoption : sig
     type t = {
-      name : string;
+      name  : string;
       value : string option;
     } [@@deriving equal, compare, sexp]
 
@@ -73,14 +73,14 @@ module Send : sig
     module Type : sig
       type spin = {
         default : int;
-        min : int;
-        max : int;
+        min     : int;
+        max     : int;
       } [@@deriving equal, compare, sexp]
 
 
       type combo = {
         default : string;
-        var : string list;
+        var     : string list;
       } [@@deriving equal, compare, sexp]
 
       type t =
@@ -97,7 +97,7 @@ module Send : sig
 
     type t = {
       name : string;
-      typ : Type.t;
+      typ  : Type.t;
     } [@@deriving equal, compare, sexp]
 
     val to_string : t -> string
@@ -108,7 +108,7 @@ module Send : sig
       search has completed. *)
   module Bestmove : sig
     type t = {
-      move : Move.t;
+      move   : Move.t;
       ponder : Move.t option;
     } [@@deriving equal, compare, sexp]
 
@@ -119,8 +119,8 @@ module Send : sig
   (** Information that the engine sends to the GUI about the search. *)
   module Info : sig
     type score = {
-      cp : int;
-      mate : int option;
+      cp    : int;
+      mate  : int option;
       bound : [`lower | `upper] option;
     } [@@deriving equal, compare, sexp]
 

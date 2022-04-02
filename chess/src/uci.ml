@@ -12,7 +12,7 @@ let tokens s =
 module Recv = struct
   module Setoption = struct
     type t = {
-      name : string;
+      name  : string;
       value : string option;
     } [@@deriving equal, compare, sexp]
 
@@ -173,13 +173,13 @@ module Send = struct
     module Type = struct
       type spin = {
         default : int;
-        min : int;
-        max : int;
+        min     : int;
+        max     : int;
       } [@@deriving equal, compare, sexp]
 
       type combo = {
         default : string;
-        var : string list;
+        var     : string list;
       } [@@deriving equal, compare, sexp]
 
       type t =
@@ -242,7 +242,7 @@ module Send = struct
 
     type t = {
       name : string;
-      typ : Type.t;
+      typ  : Type.t;
     } [@@deriving equal, compare, sexp]
 
     let to_string {name; typ} =
@@ -265,7 +265,7 @@ module Send = struct
 
   module Bestmove = struct
     type t = {
-      move : Move.t;
+      move   : Move.t;
       ponder : Move.t option;
     } [@@deriving equal, compare, sexp]
 
@@ -289,8 +289,8 @@ module Send = struct
 
   module Info = struct
     type score = {
-      cp : int;
-      mate : int option;
+      cp    : int;
+      mate  : int option;
       bound : [`lower | `upper] option;
     } [@@deriving equal, compare, sexp]
 
