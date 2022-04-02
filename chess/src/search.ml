@@ -187,28 +187,34 @@ let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
-  let max_limit_check = 4096
+  let max_limit = 4096
 
   module T = struct
     type t = {
-      start_time   : Time.t;
-      limit_checks : int;
-      nodes        : int;
-      search       : search;
-      killer1      : Position.legal Int.Map.t;
-      killer2      : Position.legal Int.Map.t;
-      history      : int array;
+      start_time : Time.t;
+      limit      : int;
+      nodes      : int;
+      search     : search;
+      killer1    : Position.legal Int.Map.t;
+      killer2    : Position.legal Int.Map.t;
+      history    : int array;
     } [@@deriving fields]
 
     let create search = {
       start_time = Time.now ();
-      limit_checks = 0;
+      limit = 0;
       nodes = 0;
       search;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
       history = Array.create ~len:Square.(count * count) 0;
     }
+
+    (* Reset the limit check counter. *)
+    let new_limit st = {st with limit = 0}
+
+    (* Increment the limit check counter. *)
+    let inc_limit st = {st with limit = st.limit + 1}
 
     (* Start a new search while reusing the transposition table. *)
     let new_iter st = {st with nodes = 0}
@@ -274,13 +280,12 @@ open State.Syntax
 let return = State.return
 
 let check_limits =
-  (* Update the counter for how often we should check the limits. *)
-  begin State.update @@ fun st ->
-    let limit_checks = st.limit_checks + 1 in
-    {st with limit_checks}
-  end >>= fun () ->
-  State.(gets limit_checks) >>= fun limit_checks ->
-  if limit_checks > State.max_limit_check then
+  (* Update the counter and see if we should check the limits. *)
+  State.(update inc_limit) >>= fun () ->
+  State.(gets limit) >>= fun limit ->
+  if limit >= State.max_limit then
+    (* Reset the counter *)
+    State.(update new_limit) >>= fun () ->
     (* Check the limits. *)
     State.get () >>| fun {start_time; search; nodes; _} ->
     let elapsed =
