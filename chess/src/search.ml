@@ -528,7 +528,7 @@ module Main = struct
     if futile m ~score ~alpha:t.alpha ~beta ~depth ~check
     then return @@ Continue ()
     else (* Get the score. *)
-      lmr_pvs t pos m ~beta ~ply ~depth ~check >>= fun score ->
+      lmr_pvs t m ~beta ~ply ~depth ~check >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score ~depth >>= fun () ->
       if score >= beta then
@@ -632,7 +632,7 @@ module Main = struct
   and reduction_factor = 2
 
   (* Late move reduction. *)
-  and lmr t pos m ~beta ~ply ~depth ~check =
+  and lmr t m ~beta ~ply ~depth ~check =
     (* Least expensive checks first. *)
     if not check
     && not t.full_window
@@ -651,9 +651,9 @@ module Main = struct
     else return None
 
   (* Combine LMR and PVS. *)
-  and lmr_pvs t pos m ~beta ~ply ~depth ~check =
+  and lmr_pvs t m ~beta ~ply ~depth ~check =
     let pvs () = Legal.new_position m |> pvs t ~beta ~ply ~depth in
-    lmr t pos m ~beta ~ply ~depth ~check >>= function
+    lmr t m ~beta ~ply ~depth ~check >>= function
     | Some score when score > t.alpha -> pvs ()
     | Some score -> return score
     | None -> pvs ()
