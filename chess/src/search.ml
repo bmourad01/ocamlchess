@@ -468,7 +468,7 @@ module Plysearch = struct
     end else return ()
 end
 
-(* The main search of the position. The core of it is the negamax algorithm
+(* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
   let drawn search pos =
@@ -517,7 +517,10 @@ module Main = struct
                 if score >= beta then
                   Plysearch.cutoff ps m ~ply >>| fun () -> Stop beta
                 else return @@ Continue ()) >>| fun score ->
-          Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+          (* To be safe, don't cache the results of a null move. *)
+          if not null then
+            Tt.store search.tt pos ~depth ~score
+              ~best:ps.best ~bound:ps.bound;
           score
 
   (* Mate distance pruning. *)
@@ -558,7 +561,6 @@ module Main = struct
     let active = Position.active_board pos in
     if score >= beta
     && depth > reduction_factor
-    && not @@ Eval.is_endgame pos
     && Bb.(((pawn + king) & active) <> active) then
       let r = 4 + (depth / 6) in
       let r = r + min 3 ((score - beta) / 3000) in
@@ -620,10 +622,11 @@ module Main = struct
   (* Late move reduction. *)
   and lmr ps pos m ~beta ~ply ~depth ~check =
     let open Plysearch in
-    if beta - ps.alpha <= 1
+    (* Least expensive checks first. *)
+    if not check
     && not ps.full_window
     && depth > reduction_factor
-    && not check
+    && beta - ps.alpha <= 1
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
@@ -644,7 +647,14 @@ module Main = struct
     | Some score -> return score
     | None -> pvs ()
 
-  (* The search we start from the root position. *)
+  (* Search from the root position. This follows slightly different rules than
+     the generic search:
+
+     1. There is no need to consider beta cutoff. Instead, we cut off the
+        search when a mate is found.
+     2. We drop straight down into PVS.
+     3. In addition to the score, we return the best move.
+  *)
   let root moves ~depth =
     let open Continue_or_stop in
     State.(gets search) >>= fun search ->
@@ -691,6 +701,10 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   let mate = is_mate score in
   let mated = is_mated score in
   let pv = Tt.pv st.search.tt depth best ~mate:(mate || mated) in
+  (* For debugging, make sure that the PV is a legal sequence of moves. *)
+  ignore @@ List.fold pv ~init:moves ~f:(fun moves m ->
+      assert (List.exists moves ~f:(Legal.same m));
+      Position.legal_moves @@ Legal.new_position m);
   let score =
     let open Uci.Send.Info in
     let len = List.length pv in

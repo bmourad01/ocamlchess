@@ -63,12 +63,6 @@ end
 (** The search limits. *)
 type limits = Limits.t
 
-(** Returns [true] if the score is a mating win for the active player. *)
-val is_mate : int -> bool
-
-(** Returns [true] if the score is a mating loss for the active player. *)
-val is_mated : int -> bool
-
 (** The transposition table. *)
 module Tt : sig
   (** The bound for the score. *)
