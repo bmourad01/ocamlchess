@@ -125,6 +125,8 @@ let info_of_result root tt result =
     ])
 
 let search ~root ~limits ~history ~tt ~stop =
+  (* Make sure that we don't start a search that will stop immediately. *)
+  stop := false;
   let result =
     Search.go () ~root ~limits ~history ~tt ~stop ~iter:(fun result ->
         (* For each iteration, send a UCI `info` command about the search. *)
@@ -187,7 +189,6 @@ let go g =
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
     State.(gets stop) >>= fun stop ->
-    stop := false;
     ignore @@ Thread.create (fun () ->
         search ~root ~limits ~history ~tt ~stop) ();
     cont ()
