@@ -217,8 +217,6 @@ module State = struct
       killer1      : Position.legal Int.Map.t;
       killer2      : Position.legal Int.Map.t;
       move_history : int array;
-      pv           : Position.legal Int.Map.t;
-      pvlen        : int array;
     } [@@deriving fields]
 
     let create search = {
@@ -228,8 +226,6 @@ module State = struct
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
       move_history = Array.create ~len:Square.(count * count) 0;
-      pv = Int.Map.empty;
-      pvlen = Array.create ~len:max_ply 0;
     }
 
     (* Start a new search while reusing the transposition table. *)
