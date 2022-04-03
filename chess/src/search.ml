@@ -509,8 +509,8 @@ module Main = struct
                   ~check ~depth ~null >>= function
                 | Some score -> return score
                 | None -> let open Continue_or_stop in
-                  let ps = Plysearch.create moves ~alpha in
                   Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
+                  let ps = Plysearch.create moves ~alpha in
                   let finish () = return ps.alpha in
                   State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
                       (* Skip this move if it has no chance of improving alpha. *)
