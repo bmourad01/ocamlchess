@@ -313,7 +313,7 @@ let check_repetition search pos =
    pruning. We use some heuristics to determine which moves are likely
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
-module Ordering = struct
+module Order = struct
   let capture_bonus = 4000
   let promote_bonus = 3000
   let killer1_bonus = 2000
@@ -429,7 +429,7 @@ module Quiescence = struct
       else let open Continue_or_stop in
         State.(gets search) >>= fun {tt; _} ->
         let init = max score alpha in
-        List.filter moves ~f:is_noisy |> Ordering.qsort |>
+        List.filter moves ~f:is_noisy |> Order.qsort |>
         State.List.fold_until ~init ~finish:return ~f:(fun alpha m ->
             Legal.new_position m |>
             go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
@@ -483,50 +483,56 @@ module Main = struct
     check_limits >>= function
     | true -> return 0
     | false -> State.(gets search) >>= fun search ->
+      (* Will the position lead to a draw? *)
       if drawn search pos then return 0
+      (* Find a cached evaluation of the position. *)
       else match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
         | First score -> return score
         | Second (alpha, beta) ->
           let moves = Position.legal_moves pos in
           let check = Position.in_check pos in
+          (* Checkmate or stalemate. *)
           if List.is_empty moves
           then return @@ if check then -mate_score + ply else 0
-          else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
-
-  (* The actual search, given all the legal moves. *)
-  and with_moves ?(null = false) pos moves ~alpha ~beta ~ply ~depth ~check =
-    let open Continue_or_stop in
-    (* Check extension. *)
-    let depth = depth + Bool.to_int check in
-    if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta ~ply
-    else match mate_distance ~alpha ~beta ~ply with
-      | First alpha -> return alpha
-      | Second (alpha, beta) ->
-        let score = Eval.go pos in
-        reduce pos moves
-          ~score ~alpha ~beta ~ply ~depth
-          ~check ~depth ~null >>= function
-        | Some score -> return score
-        | None -> State.(gets search) >>= fun search ->
-          let ps = Plysearch.create moves ~alpha in
-          Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
-          let finish () = return ps.alpha in
-          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-              if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
-              then return @@ Continue ()
-              else lmr_pvs ps pos m ~beta ~ply ~depth ~check >>= fun score ->
-                Plysearch.better ps m ~score ~depth >>= fun () ->
-                if score >= beta then
-                  Plysearch.cutoff ps m ~ply >>| fun () -> Stop beta
-                else return @@ Continue ()) >>| fun score ->
-          (* To be safe, don't cache the results of a null move. *)
-          if not null then
-            Tt.store search.tt pos ~depth ~score
-              ~best:ps.best ~bound:ps.bound;
-          score
+          (* Check extension. *)
+          else let depth = depth + Bool.to_int check in
+            if depth <= 0 then
+              Quiescence.with_moves pos moves ~alpha ~beta ~ply
+            else match mdp ~alpha ~beta ~ply with
+              | First alpha -> return alpha
+              | Second (alpha, beta) ->
+                (* Use the null move hypothesis to reduce the depth of the
+                   search. *)
+                let score = Eval.go pos in
+                reduce pos moves
+                  ~score ~alpha ~beta ~ply ~depth
+                  ~check ~depth ~null >>= function
+                | Some score -> return score
+                | None -> let open Continue_or_stop in
+                  let ps = Plysearch.create moves ~alpha in
+                  Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
+                  let finish () = return ps.alpha in
+                  State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+                      (* Skip this move if it has no chance of improving alpha. *)
+                      if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
+                      then return @@ Continue ()
+                      else (* Get the score. *)
+                        lmr_pvs ps pos m
+                          ~beta ~ply ~depth ~check >>= fun score ->
+                        (* Update alpha if needed. *)
+                        Plysearch.better ps m ~score ~depth >>= fun () ->
+                        if score >= beta then
+                          (* Move was too good. *)
+                          Plysearch.cutoff ps m ~ply >>| fun () -> Stop beta
+                        else return @@ Continue ()) >>| fun score ->
+                  (* To be safe, don't cache the results of a null move. *)
+                  if not null then
+                    Tt.store search.tt pos ~depth ~score
+                      ~best:ps.best ~bound:ps.bound;
+                  score
 
   (* Mate distance pruning. *)
-  and mate_distance ~alpha ~beta ~ply =
+  and mdp ~alpha ~beta ~ply =
     let alpha = max alpha (-mate_score + ply) in
     let beta = min beta (mate_score - ply) in
     if alpha >= beta then First alpha
@@ -663,7 +669,7 @@ module Main = struct
     let pos = search.root in
     let ply = 0 in
     let beta = inf in
-    Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
+    Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
     let ps = Plysearch.create moves in
     let finish () = return ps.alpha in
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
