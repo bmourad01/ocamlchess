@@ -654,12 +654,14 @@ module Main = struct
     let open Continue_or_stop in
     State.(gets search) >>= fun search ->
     let pos = search.root in
-    Ordering.sort moves ~ply:0 ~pos ~tt:search.tt >>= fun moves ->
+    let ply = 0 in
+    let beta = inf in
+    Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
     let ps = Plysearch.create moves in
     let finish () = return ps.alpha in
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
-        pvs ps ~ply:1 ~depth ~beta:inf >>= fun score ->
+        pvs ps ~ply ~depth ~beta >>= fun score ->
         Plysearch.better ps m ~score ~depth >>= fun () ->
         check_limits >>| function
         | true -> Stop ps.alpha
