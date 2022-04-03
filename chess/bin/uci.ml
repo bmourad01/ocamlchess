@@ -8,6 +8,7 @@ module State = struct
       pos : Position.t;
       history : int Int64.Map.t;
       tt : Search.Tt.t;
+      stop : bool ref;
     } [@@deriving fields]
   end
 
@@ -123,6 +124,18 @@ let info_of_result root tt result =
       Pv pv;
     ])
 
+let search ~root ~limits ~history ~tt ~stop =
+  let result =
+    Search.go () ~root ~limits ~history ~tt ~stop ~iter:(fun result ->
+        (* For each iteration, send a UCI `info` command about the search. *)
+        info_of_result root tt result) in
+  stop := false;
+  (* Send the bestmove. *)
+  let move = Position.Legal.move @@ Search.Result.best result in
+  printf "%s\n%!" @@
+  Uci.Send.to_string @@
+  Uci.Send.(Bestmove Bestmove.{move; ponder = None})
+
 let go g =
   (* Parse the search limits. *)
   let infinite = ref false in
@@ -173,15 +186,10 @@ let go g =
     (* Start the search. *)
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
-    let result =
-      Search.go () ~root ~limits ~history ~tt ~iter:(fun result ->
-          (* For each iteration, send a UCI `info` command about the search. *)
-          info_of_result root tt result) in
-    (* Send the bestmove. *)
-    let move = Position.Legal.move @@ Search.Result.best result in
-    printf "%s\n%!" @@
-    Uci.Send.to_string @@
-    Uci.Send.(Bestmove Bestmove.{move; ponder = None});
+    State.(gets stop) >>= fun stop ->
+    stop := false;
+    ignore @@ Thread.create (fun () ->
+        search ~root ~limits ~history ~tt ~stop) ();
     cont ()
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
@@ -195,7 +203,14 @@ let recv cmd =
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves
   | Go g -> go g
-  | Quit -> finish ()
+  | Stop ->
+    State.(gets stop) >>= fun stop ->
+    stop := true;
+    cont ()
+  | Quit ->
+    State.(gets stop) >>= fun stop ->
+    stop := true;
+    finish ()
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
     printf "what?\n%!";
@@ -226,3 +241,4 @@ let run ~debug =
     ~pos:Position.start
     ~history:(Int64.Map.singleton Position.(hash start) 1)
     ~tt:(Search.Tt.create ())
+    ~stop:(ref false)
