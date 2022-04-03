@@ -118,17 +118,12 @@ module Tt = struct
 
      https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
 
-     If the position already exists in the table, then prefer the entry from
-     the deeper search, since it is likely to be more accurate than one from
-     a shallower search. Likewise, replace the entry if the depths are the same.
+     For the same position, prefer the more recent search.
   *)
   let store tt pos ~depth ~score ~best ~bound =
     let key = Position.hash pos in
     let data = Entry.Fields.create ~depth ~score ~best ~bound in
-    Hashtbl.update tt key ~f:(function
-        | Some old when old.Entry.depth > depth -> old
-        | Some _ -> data
-        | None -> data)
+    Hashtbl.set tt ~key ~data
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
@@ -699,8 +694,8 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   let score =
     let open Uci.Send.Info in
     let len = List.length pv in
-    if len <= limit && mate then Mate len
-    else if len <= limit && mated then Mate (-len)
+    if mate then Mate len
+    else if mated then Mate (-len)
     else match Tt.find st.search.tt st.search.root with
       | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
       | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
