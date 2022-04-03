@@ -122,7 +122,7 @@ module Result : sig
   val pv : t -> Position.legal list
 
   (** The score that was given to the best move. *)
-  val score : t -> int
+  val score : t -> Uci.Send.Info.score
 
   (** The number of positions that were evaluated. *)
   val nodes : t -> int
@@ -137,12 +137,8 @@ end
 (** The search result. *)
 type result = Result.t
 
-(** The callback function for each iteration of the search.
-
-    A return value of [false] will stop the search prematurely. Otherwise,
-    the search will continue normally.
-*)
-type iter = result -> bool
+(** The callback function for each iteration of the search. *)
+type iter = result -> unit
 
 (** [go () ~root ~limits ~history ~tt ~iter] runs the game tree search and
     returns the search result. Raises [Invalid_argument] if there are no
@@ -155,7 +151,7 @@ type iter = result -> bool
     - [tt]: the transposition table.
 
     An optional callback [iter] can be provided, which is invoked for each
-    iteration of the search. By default, it will do nothing and return [true].
+    iteration of the search. By default, it will do nothing.
 *)
 val go :
   ?tt:Tt.t ->

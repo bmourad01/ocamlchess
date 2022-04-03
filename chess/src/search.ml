@@ -117,11 +117,18 @@ module Tt = struct
      be made for the replacement strategy:
 
      https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
+
+     If the position already exists in the table, then prefer the entry from
+     the deeper search, since it is likely to be more accurate than one from
+     a shallower search. Likewise, replace the entry if the depths are the same.
   *)
   let store tt pos ~depth ~score ~best ~bound =
     let key = Position.hash pos in
     let data = Entry.Fields.create ~depth ~score ~best ~bound in
-    Hashtbl.set tt ~key ~data
+    Hashtbl.update tt key ~f:(function
+        | Some old when old.Entry.depth > depth -> old
+        | Some _ -> data
+        | None -> data)
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
@@ -146,14 +153,32 @@ module Tt = struct
       | Exact -> First score
 
   (* Extract the principal variation from the table. *)
-  let pv tt pos n =
+  let pv ?(mate = false) tt pos n =
     let rec aux i acc pos = match find tt pos with
-      | Some Entry.{best; _} when n > i ->
-        aux (i + 1) (best :: acc) @@ Legal.new_position best
+      | None -> List.rev acc
+      | Some Entry.{best; _} when mate || n > i ->
+        let i = i + 1 in
+        let acc = best :: acc in
+        aux i acc @@ Legal.new_position best
       | _ -> List.rev acc in
     aux 0 [] pos
 end
 
+module Result = struct
+  type t = {
+    pv    : Position.legal list;
+    score : Uci.Send.Info.score;
+    nodes : int;
+    depth : int;
+    time  : int;
+  } [@@deriving fields]
+
+  let best {pv; _} = List.hd_exn pv
+end
+
+type result = Result.t
+
+(* The input parameters to the search. *)
 type t = {
   limits  : limits;
   root    : Position.t;
@@ -168,28 +193,12 @@ let create ~limits ~root ~history ~tt =
         | Some n -> n | None -> 1) in
   Fields.create ~limits ~root ~history ~tt
 
-module Result = struct
-  type t = {
-    pv    : Position.legal list;
-    score : int;
-    nodes : int;
-    depth : int;
-    time  : int;
-  } [@@deriving fields]
-
-  let best {pv; _} = List.hd_exn pv
-end
-
-type result = Result.t
-type search = t
-
-let create = Fields.create
-
+(* Constants. *)
 let inf = 65535
-let max_score = inf / 2
-
-let is_mate score = score = max_score
-let is_mated score = score = (-max_score)
+let mate_score = inf / 2
+let max_ply = 64
+let is_mate score = score >= mate_score - max_ply
+let is_mated score = score <= (-mate_score) + max_ply
 
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
@@ -199,34 +208,30 @@ let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
-  let max_limit = 4096
+  type search = t
 
   module T = struct
     type t = {
-      start_time : Time.t;
-      limit      : int;
-      nodes      : int;
-      search     : search;
-      killer1    : Position.legal Int.Map.t;
-      killer2    : Position.legal Int.Map.t;
-      history    : int array;
+      start_time   : Time.t;
+      nodes        : int;
+      search       : search;
+      killer1      : Position.legal Int.Map.t;
+      killer2      : Position.legal Int.Map.t;
+      move_history : int array;
+      pv           : Position.legal Int.Map.t;
+      pvlen        : int array;
     } [@@deriving fields]
 
     let create search = {
       start_time = Time.now ();
-      limit = 0;
       nodes = 0;
       search;
       killer1 = Int.Map.empty;
       killer2 = Int.Map.empty;
-      history = Array.create ~len:Square.(count * count) 0;
+      move_history = Array.create ~len:Square.(count * count) 0;
+      pv = Int.Map.empty;
+      pvlen = Array.create ~len:max_ply 0;
     }
-
-    (* Reset the limit check counter. *)
-    let new_limit st = {st with limit = 0}
-
-    (* Increment the limit check counter. *)
-    let inc_limit st = {st with limit = st.limit + 1}
 
     (* Start a new search while reusing the transposition table. *)
     let new_iter st = {st with nodes = 0}
@@ -235,12 +240,10 @@ module State = struct
     let inc_nodes st = {st with nodes = st.nodes + 1}
 
     (* Get the first killer move. *)
-    let killer1 ply st =
-      if ply > 0 then Map.find st.killer1 ply else None
+    let killer1 ply st = Map.find st.killer1 ply
 
     (* Get the second killer move. *)
-    let killer2 ply st =
-      if ply > 0 then Map.find st.killer2 ply else None
+    let killer2 ply st = Map.find st.killer2 ply
 
     (* Is `m` a killer move? *)
     let is_killer m ply st =
@@ -251,7 +254,7 @@ module State = struct
 
     (* Update the killer move for a particular ply. *)
     let killer ply m st =
-      if ply > 0 then
+      if is_quiet m then
         let killer2 = match Map.find st.killer1 ply with
           | Some data -> Map.set st.killer2 ~key:ply ~data
           | None -> st.killer2 in
@@ -259,15 +262,15 @@ module State = struct
         {st with killer1; killer2}
       else st
 
-    (* Update the history score. *)
-    let quiet m depth st =
+    (* Update the move history heuristic. *)
+    let history m depth st =
       if is_quiet m then
         let m = Legal.move m in
         let src = Square.to_int @@ Move.src m in
         let dst = Square.to_int @@ Move.dst m in
         let i = src + dst * Square.count in
-        let d = Array.unsafe_get st.history i + (depth * depth) in
-        Array.unsafe_set st.history i d
+        let d = Array.unsafe_get st.move_history i + (depth * depth) in
+        Array.unsafe_set st.move_history i d
   end
 
   include T
@@ -292,24 +295,17 @@ open State.Syntax
 let return = State.return
 
 let check_limits =
-  (* Update the counter and see if we should check the limits. *)
-  State.(update inc_limit) >>= fun () ->
-  State.(gets limit) >>= fun limit ->
-  if limit >= State.max_limit then
-    (* Reset the counter *)
-    State.(update new_limit) >>= fun () ->
-    (* Check the limits. *)
-    State.get () >>| fun {start_time; search; nodes; _} ->
-    let elapsed =
-      int_of_float @@
-      Time.(Span.to_ms @@ diff (now ()) start_time) in
-    let limits = search.limits in
-    match limits.nodes with
-    | Some n when nodes >= n -> true
-    | _ -> match limits.kind with
-      | Infinite | Depth _ -> false
-      | Time t -> elapsed >= t
-  else return false
+  State.get () >>| fun {start_time; search; nodes; _} ->
+  let limits = search.limits in
+  match limits.nodes with
+  | Some n when nodes >= n -> true
+  | _ -> match limits.kind with
+    | Infinite | Depth _ -> false
+    | Time t ->
+      let elapsed =
+        int_of_float @@
+        Time.(Span.to_ms @@ diff (now ()) start_time) in
+      elapsed >= t
 
 (* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
@@ -380,7 +376,7 @@ module Ordering = struct
     let best = is_best pos tt in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
-    State.(gets history) >>| fun history ->
+    State.(gets move_history) >>| fun move_history ->
     let killer m = match killer1, killer2 with
       | Some k, _ when Legal.same m k -> killer1_bonus
       | _, Some k when Legal.same m k -> killer2_bonus
@@ -390,17 +386,14 @@ module Ordering = struct
       let src = Square.to_int @@ Move.src m in
       let dst = Square.to_int @@ Move.dst m in
       let i = src + dst * Square.count in
-      Array.unsafe_get history i in
+      Array.unsafe_get move_history i in
     sort_aux moves ~eval:(fun m ->
-        if best m then max_score
-        else
-          let capture = capture m in
+        if best m then mate_score + ply
+        else let capture = capture m in
           if capture <> 0 then capture
-          else
-            let promote = promote m in
+          else let promote = promote m in
             if promote <> 0 then promote
-            else
-              let killer = killer m in
+            else let killer = killer m in
               if killer <> 0 then killer
               else history m)
 
@@ -409,8 +402,7 @@ module Ordering = struct
     sort_aux moves ~eval:(fun m ->
         let capture = capture m in
         if capture <> 0 then capture
-        else
-          let promote = promote m in
+        else let promote = promote m in
           if promote <> 0 then promote
           else 0)
 end
@@ -427,7 +419,7 @@ module Quiescence = struct
     let moves = Position.legal_moves pos in
     let check = Position.in_check pos in
     if List.is_empty moves
-    then return @@ if check then -max_score else 0
+    then return @@ if check then -mate_score + ply else 0
     else with_moves pos moves ~alpha ~beta ~ply
 
   and with_moves pos moves ~alpha ~beta ~ply = check_limits >>= function
@@ -440,9 +432,8 @@ module Quiescence = struct
       else let open Continue_or_stop in
         State.(gets search) >>= fun {tt; _} ->
         let init = max score alpha in
-        let finish = return in
         List.filter moves ~f:is_noisy |> Ordering.qsort |>
-        State.List.fold_until ~init ~finish ~f:(fun alpha m ->
+        State.List.fold_until ~init ~finish:return ~f:(fun alpha m ->
             Legal.new_position m |>
             go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
             negm >>| fun score -> if score >= beta
@@ -466,20 +457,20 @@ module Plysearch = struct
   }
 
   (* Beta cutoff. *)
-  let cutoff ps ply depth m =
-    State.(update @@ killer ply m) >>= fun () ->
-    State.(gets @@ quiet m depth) >>| fun () ->
+  let cutoff ps m ~ply =
     ps.best <- m;
-    ps.bound <- Tt.Lower
+    ps.bound <- Tt.Lower;
+    State.(update @@ killer ply m)
 
   (* Alpha may have improved. *)
-  let better ps m score =
+  let better ps m ~score ~depth =
     if score > ps.alpha then begin
       ps.best <- m;
       ps.alpha <- score;
       ps.full_window <- false;
       ps.bound <- Tt.Exact;
-    end
+      State.(gets @@ history m depth)
+    end else return ()
 end
 
 (* The main search of the position. The core of it is the negamax algorithm
@@ -492,17 +483,126 @@ module Main = struct
 
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth =
-    State.(gets nodes) >>= fun nodes ->
-    State.(gets search) >>= fun search ->
-    if drawn search pos then return 0
-    else match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
-      | First score -> return score
+    check_limits >>= function
+    | true -> return 0
+    | false -> State.(gets search) >>= fun search ->
+      if drawn search pos then return 0
+      else match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
+        | First score -> return score
+        | Second (alpha, beta) ->
+          let moves = Position.legal_moves pos in
+          let check = Position.in_check pos in
+          if List.is_empty moves
+          then return @@ if check then -mate_score + ply else 0
+          else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
+
+  (* The actual search, given all the legal moves. *)
+  and with_moves ?(null = false) pos moves ~alpha ~beta ~ply ~depth ~check =
+    let open Continue_or_stop in
+    (* Check extension. *)
+    let depth = depth + Bool.to_int check in
+    if depth <= 0 then Quiescence.with_moves pos moves ~alpha ~beta ~ply
+    else match mate_distance ~alpha ~beta ~ply with
+      | First alpha -> return alpha
       | Second (alpha, beta) ->
-        let moves = Position.legal_moves pos in
-        let check = Position.in_check pos in
-        if List.is_empty moves
-        then return @@ if check then -max_score else 0
-        else with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~null
+        let score = Eval.go pos in
+        reduce pos moves
+          ~score ~alpha ~beta ~ply ~depth
+          ~check ~depth ~null >>= function
+        | Some score -> return score
+        | None -> State.(gets search) >>= fun search ->
+          let ps = Plysearch.create moves ~alpha in
+          Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
+          let finish () = return ps.alpha in
+          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+              if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
+              then return @@ Continue ()
+              else lmr_pvs ps pos m ~beta ~ply ~depth ~check >>= fun score ->
+                Plysearch.better ps m ~score ~depth >>= fun () ->
+                if score >= beta then
+                  Plysearch.cutoff ps m ~ply >>| fun () -> Stop beta
+                else return @@ Continue ()) >>| fun score ->
+          Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
+          score
+
+  (* Mate distance pruning. *)
+  and mate_distance ~alpha ~beta ~ply =
+    let alpha = max alpha (-mate_score + ply) in
+    let beta = min beta (mate_score - ply) in
+    if alpha >= beta then First alpha
+    else Second (alpha, beta)
+
+  (* Try to reduce the depth. *)
+  and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
+    if beta - alpha > 1 || check || null
+    then return None
+    else match rfp ~depth ~score ~beta with
+      | Some _ as score -> return score
+      | None -> nmr pos ~score ~beta ~ply ~depth >>= function
+        | Some _ as beta -> return beta
+        | None -> razor pos moves ~score ~alpha ~beta ~ply ~depth
+
+  (* Reverse futility pruning.
+
+     If our score is within a margin above beta, then it is likely too
+     good, and should cause a cutoff.
+  *)
+  and rfp ~depth ~score ~beta =
+    let score = score - 70 * depth in
+    Option.some_if (depth <= futility_limit && score >= beta) score
+
+  (* Null move reduction.
+
+     If we forfeit our right to play a move and our opponent's best
+     response still produces a beta cutoff, then we know this position
+     is unlikely.
+  *)
+  and nmr pos ~score ~beta ~ply ~depth =
+    let pawn = Position.pawn pos in
+    let king = Position.king pos in
+    let active = Position.active_board pos in
+    if score >= beta
+    && depth > reduction_factor
+    && not @@ Eval.is_endgame pos
+    && Bb.(((pawn + king) & active) <> active) then
+      let r = 4 + (depth / 6) in
+      let r = r + min 3 ((score - beta) / 3000) in
+      Position.null_move_unsafe pos |> go
+        ~alpha:(-beta)
+        ~beta:((-beta) + 1)
+        ~ply:(ply + 1)
+        ~depth:(depth - r)
+        ~null:true >>= negm >>| fun score ->
+      Option.some_if (score >= beta) beta
+    else return None
+
+  (* Razoring.
+
+     Drop down to quescience search if we're approaching the horizon and we 
+     have little chance to improve alpha.
+  *)
+  and razor pos moves ~score ~alpha ~beta ~ply ~depth =
+    if depth = 1 && score + razor_margin <= alpha then
+      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun qscore ->
+      Option.some_if (qscore <= alpha) qscore
+    else return None
+
+  and razor_margin = Piece.Kind.value Rook * Eval.material_weight
+
+  (* Futility pruning.
+
+     If our score is within a margin below alpha, then skip searching
+     quiet moves (since they are likely to be "futile" in improving alpha).
+  *)
+  and futile m ~score ~alpha ~beta ~depth ~check =
+    not check &&
+    beta - alpha <= 1 &&
+    is_quiet m &&
+    not (Position.in_check @@ Legal.new_position m) &&
+    depth <= futility_limit &&
+    score + 115 + 90 * depth <= alpha
+
+  and futility_limit = 6
 
   (* Principal variation search. *)
   and pvs ps pos ~beta ~ply ~depth =
@@ -549,118 +649,6 @@ module Main = struct
     | Some score -> return score
     | None -> pvs ()
 
-  (* The actual search, given all the legal moves. *)
-  and with_moves ?(null = false) pos moves ~alpha ~beta ~ply ~depth ~check =
-    check_limits >>= function
-    | true -> return 0
-    | false ->
-      (* Extend the depth limit if we're in check. Since the number of
-         responses to a check is typically very low, the search should
-         finish quickly. *)
-      let depth = depth + Bool.to_int check in
-      if depth <= 0
-      then Quiescence.with_moves pos moves ~alpha ~beta ~ply
-      else
-        let score = Eval.go pos in
-        reduce pos moves
-          ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null >>= function
-        | Some score -> return score
-        | None -> let open Continue_or_stop in
-          iid pos moves ~alpha ~beta ~ply ~depth ~check >>= fun () ->
-          State.(gets search) >>= fun search ->
-          let ps = Plysearch.create moves ~alpha in
-          Ordering.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
-          let finish () = return ps.alpha in
-          State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
-              if futile m ~score ~alpha:ps.alpha ~beta ~depth ~check
-              then return @@ Continue ()
-              else lmr_pvs ps pos m ~beta ~ply ~depth ~check >>= fun score ->
-                if score >= beta
-                then Plysearch.cutoff ps ply depth m >>| fun () -> Stop beta
-                else return @@ Continue (Plysearch.better ps m score))
-          >>| fun score ->
-          Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:ps.bound;
-          score
-
-  (* Futility pruning.
-
-     If our score is within a margin below alpha, then skip searching
-     quiet moves (since they are likely to be "futile" in improving alpha).
-  *)
-  and futile m ~score ~alpha ~beta ~depth ~check =
-    not check &&
-    beta - alpha <= 1 &&
-    is_quiet m &&
-    not (Position.in_check @@ Legal.new_position m) &&
-    depth <= futility_limit &&
-    score + 115 + 90 * depth <= alpha
-
-  and futility_limit = 6
-
-  (* Internal iterative deepening. *)
-  and iid pos moves ~alpha ~beta ~ply ~depth ~check =
-    if not check
-    && beta - alpha > 1
-    && depth >= futility_limit then begin
-      with_moves pos moves
-        ~alpha
-        ~beta
-        ~ply
-        ~depth:(depth - 2)
-        ~check >>| ignore
-    end else return ()
-
-  (* Try to reduce the depth. *)
-  and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
-    if beta - alpha > 1 || check || null
-    then return None
-    else match rfp ~depth ~score ~beta with
-      | Some _ as score -> return score
-      | None -> nmr pos ~score ~beta ~ply ~depth >>= function
-        | Some _ as beta -> return beta
-        | None -> razor pos moves ~score ~alpha ~beta ~ply ~depth
-
-  (* Reverse futility pruning.
-
-     If our score is within a margin above beta, then it is likely too
-     good, and should cause a cutoff.
-  *)
-  and rfp ~depth ~score ~beta =
-    let score = score - 70 * depth in
-    Option.some_if (depth <= futility_limit && score >= beta) score
-
-  (* Null move reduction.
-
-     If we forfeit our right to play a move and our opponent's best
-     response still produces a beta cutoff, then we know this position
-     is unlikely.
-  *)
-  and nmr pos ~score ~beta ~ply ~depth =
-    if score >= beta
-    && depth > reduction_factor
-    && not @@ Eval.is_endgame pos then
-      Position.null_move_unsafe pos |> go
-        ~alpha:(-beta)
-        ~beta:((-beta) + 1)
-        ~ply:(ply + 1)
-        ~depth:(depth - 1 - reduction_factor)
-        ~null:true >>= negm >>| fun score ->
-      Option.some_if (score >= beta) beta
-    else return None
-
-  (* Razoring.
-
-     Drop down to quescience search if we're approaching the horizon and we 
-     have little chance to improve alpha.
-  *)
-  and razor pos moves ~score ~alpha ~beta ~ply ~depth =
-    if depth = 1 && score + razor_margin <= alpha then
-      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun qscore ->
-      Option.some_if (qscore <= alpha) qscore
-    else return None
-
-  and razor_margin = Piece.Kind.value Rook * Eval.material_weight
-
   (* The search we start from the root position. *)
   let root moves ~depth =
     let open Continue_or_stop in
@@ -672,25 +660,19 @@ module Main = struct
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
         pvs ps ~ply:1 ~depth ~beta:inf >>= fun score ->
+        Plysearch.better ps m ~score ~depth >>= fun () ->
         check_limits >>| function
-        | true ->
-          (* We could've reached the limit without getting a chance
-             to improve alpha. *)
-          if ps.full_window then Plysearch.better ps m score;
-          Stop ps.alpha
-        | false ->
-          (* Stop if we've found a mating sequence. *)
-          Plysearch.better ps m score;
-          if score = max_score then Stop score else Continue ())
-    >>| fun score ->
+        | true -> Stop ps.alpha
+        | false when is_mate score -> Stop score
+        | false -> Continue ()) >>| fun score ->
     (* Update the transposition table and return the score. *)
     Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:Exact;
     score
 end
 
-type iter = result -> bool
+type iter = result -> unit
 
-let default_iter : iter = fun _ -> true
+let default_iter : iter = fun _ -> ()
 
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
@@ -708,19 +690,27 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
     | Time n -> time * 2 >= n
     | _ -> false in
   (* Extract the current PV. *)
-  let pv = Tt.pv st.search.tt st.search.root depth in
+  let mate = is_mate score in
+  let mated = is_mated score in
+  let pv = Tt.pv st.search.tt st.search.root depth ~mate:(mate || mated) in
+  let score =
+    let open Uci.Send.Info in
+    if mate then Mate (List.length pv)
+    else if mated then Mate (-(List.length pv))
+    else match Tt.find st.search.tt st.search.root with
+      | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
+      | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
+      | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper) in
   (* The result for this iteration. *)
   let result = 
     Result.Fields.create ~pv ~score ~nodes:st.nodes ~depth ~time in
+  iter result;
   (* Check the depth limit. If it doesn't exist we can just use the largest
      positive integer since it will never reach that depth in our lifetime.
      Also, if we found a mating sequence, then there's no reason to iterate
      again since it will most likely return the same result. *)
-  if not (iter result)
-  || score = max_score
-  || depth >= limit
-  || too_long
-  then result else next @@ State.new_iter st
+  if mate || depth >= limit || too_long then result
+  else next @@ State.new_iter st
 
 let go
     ?(tt = Tt.create ())

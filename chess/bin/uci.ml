@@ -112,22 +112,9 @@ let info_of_result root tt result =
      millisecond). *)
   let time = max 1 @@ Search.Result.time result in
   let nps = (nodes * 1000) / time in
-  let score =
-    let open Uci.Send.Info in
-    let cp = Search.Result.score result in
-    if Search.is_mate cp then Mate (List.length pv)
-    else if Search.is_mated cp then Mate (-(List.length pv))
-    else
-      let bound =
-        Search.Tt.find tt root |>
-        Option.bind ~f:(fun entry ->
-            match Search.Tt.Entry.bound entry with
-            | Lower -> Some `lower
-            | Upper -> Some `upper
-            | Exact -> None) in
-      Cp (cp, bound) in
+  let score = Search.Result.score result in
   let pv = List.map pv ~f:Position.Legal.move in
-  Uci.Send.(to_string @@ Info Info.[
+  printf "%s\n%!" @@ Uci.Send.(to_string @@ Info Info.[
       Depth depth;
       Nodes nodes;
       Score score;
@@ -188,13 +175,8 @@ let go g =
     State.(gets tt) >>= fun tt ->
     let result =
       Search.go () ~root ~limits ~history ~tt ~iter:(fun result ->
-          (* For each iteration, send a UCI info command about the search. *)
-          printf "%s\n%!" @@ info_of_result root tt result;
-          (* TODO: when OCaml 5.0 is released, we can run the search in a
-             separate thread. Then, when we receive the `stop` command, 
-             this callback can return false, thus aborting the search.
-             This is inconvenient to do without multithreading. *)
-          true) in
+          (* For each iteration, send a UCI `info` command about the search. *)
+          info_of_result root tt result) in
     (* Send the bestmove. *)
     let move = Position.Legal.move @@ Search.Result.best result in
     printf "%s\n%!" @@

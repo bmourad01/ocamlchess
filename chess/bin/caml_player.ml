@@ -13,11 +13,12 @@ let print_res res =
     Search.Result.pv res |>
     List.map ~f:(fun m -> Position.San.of_legal m) |>
     String.concat ~sep:" " in
-  let score =
-    let s = Search.Result.score res in
-    if Search.is_mate s then "win"
-    else if Search.is_mated s then "lose"
-    else Int.to_string s in
+  let score = match Search.Result.score res with
+    | Mate n when n < 0 -> sprintf "lose (mate in %d ply)" (-n)
+    | Mate n -> sprintf "win (mate in %d ply)" n
+    | Cp (s, None) -> Int.to_string s
+    | Cp (s, Some `lower) -> sprintf "%d (lower-bound)" s
+    | Cp (s, Some `upper) -> sprintf "%d (upper-bound)" s in
   printf "Time taken: %dms\n%!" @@ Search.Result.time res;
   printf "Principal variation: %s\n%!" pv;
   printf "Depth: %d\n%!" @@ Search.Result.depth res;

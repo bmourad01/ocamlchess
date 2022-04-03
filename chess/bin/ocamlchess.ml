@@ -96,7 +96,7 @@ module Gui = struct
   let depth =
     let doc = "Depth limit for search (only used by the 'caml' player). \
                The value must be positive and non-zero." in
-    Arg.(value & opt int 8 (info ["depth"] ~docv:"NUMBER" ~doc))
+    Arg.(value & opt int 7 (info ["depth"] ~docv:"NUMBER" ~doc))
 
   let nodes =
     let doc = "Node limit for search (only used by the 'caml' player). \
