@@ -153,7 +153,7 @@ module Tt = struct
       | Exact -> First score
 
   (* Extract the principal variation from the table. *)
-  let pv ?(mate = false) tt pos n =
+  let pv ?(mate = false) tt n m =
     let rec aux i acc pos = match find tt pos with
       | None -> List.rev acc
       | Some Entry.{best; _} when mate || n > i ->
@@ -161,7 +161,7 @@ module Tt = struct
         let acc = best :: acc in
         aux i acc @@ Legal.new_position best
       | _ -> List.rev acc in
-    aux 0 [] pos
+    aux 1 [m] @@ Legal.new_position m
 end
 
 module Result = struct
@@ -668,8 +668,9 @@ module Main = struct
         | false when is_mate score -> Stop score
         | false -> Continue ()) >>| fun score ->
     (* Update the transposition table and return the score. *)
-    Tt.store search.tt pos ~depth ~score ~best:ps.best ~bound:Exact;
-    score
+    let best = ps.best in
+    Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
+    best, score
 end
 
 type iter = result -> unit
@@ -681,7 +682,7 @@ let default_iter : iter = fun _ -> ()
    which makes pruning more effective. *)
 let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves ~limit in
-  let score, st = Monad.State.run (Main.root moves ~depth) st in
+  let (best, score), st = Monad.State.run (Main.root moves ~depth) st in
   let time =
     int_of_float @@
     Time.(Span.to_ms @@ diff (now ()) st.start_time) in
@@ -694,11 +695,12 @@ let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
   (* Extract the current PV. *)
   let mate = is_mate score in
   let mated = is_mated score in
-  let pv = Tt.pv st.search.tt st.search.root depth ~mate:(mate || mated) in
+  let pv = Tt.pv st.search.tt depth best ~mate:(mate || mated) in
   let score =
     let open Uci.Send.Info in
-    if mate then Mate (List.length pv)
-    else if mated then Mate (-(List.length pv))
+    let len = List.length pv in
+    if len <= limit && mate then Mate len
+    else if len <= limit && mated then Mate (-len)
     else match Tt.find st.search.tt st.search.root with
       | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
       | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
