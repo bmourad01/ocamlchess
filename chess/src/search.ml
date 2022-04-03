@@ -179,14 +179,15 @@ type t = {
   root    : Position.t;
   history : int Int64.Map.t;
   tt      : Tt.t;
+  stop    : bool ref;
 } [@@deriving fields]
 
-let create ~limits ~root ~history ~tt =
+let create ~limits ~root ~history ~tt ~stop =
   let history =
     (* Make sure that the root position is in our history. *)
     Position.hash root |> Map.update history ~f:(function
         | Some n -> n | None -> 1) in
-  Fields.create ~limits ~root ~history ~tt
+  Fields.create ~limits ~root ~history ~tt ~stop
 
 (* Constants. *)
 let inf = 65535
@@ -291,6 +292,7 @@ let return = State.return
 
 let check_limits =
   State.get () >>| fun {start_time; search; nodes; _} ->
+  !(search.stop) ||
   let limits = search.limits in
   match limits.nodes with
   | Some n when nodes >= n -> true
@@ -682,52 +684,67 @@ type iter = result -> unit
 
 let default_iter : iter = fun _ -> ()
 
+let convert_score score tt root ~pv ~mate ~mated =
+  let open Uci.Send.Info in
+  let len = List.length pv in
+  if mate then Mate len
+  else if mated then Mate (-len)
+  else match Tt.find tt root with
+    | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
+    | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
+    | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper)
+
+(* For debugging, make sure that the PV is a legal sequence of moves. *)
+let assert_pv pv moves =
+  ignore @@ List.fold pv ~init:moves ~f:(fun moves m ->
+      assert (List.exists moves ~f:(Legal.same m));
+      Position.legal_moves @@ Legal.new_position m)
+
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
-let rec iterdeep ?(depth = 1) st ~iter ~moves ~limit =
+let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves ~limit in
   let (best, score), st = Monad.State.run (Main.root moves ~depth) st in
+  let nodes = st.nodes in
+  let {tt; root; _} = st.search in
+  (* Record the time. *)
   let time =
     int_of_float @@
     Time.(Span.to_ms @@ diff (now ()) st.start_time) in
-  (* Last iteration may have eaten up at least half the allocated time,
-     so the next (deeper) iteration is likely to take longer. Thus, we
-     should abort the search. *)
-  let too_long = match st.search.limits.kind with
-    | Time n -> time * 2 >= n
-    | _ -> false in
-  (* Extract the current PV. *)
   let mate = is_mate score in
   let mated = is_mated score in
-  let pv = Tt.pv st.search.tt depth best ~mate:(mate || mated) in
-  (* For debugging, make sure that the PV is a legal sequence of moves. *)
-  ignore @@ List.fold pv ~init:moves ~f:(fun moves m ->
-      assert (List.exists moves ~f:(Legal.same m));
-      Position.legal_moves @@ Legal.new_position m);
-  let score =
-    let open Uci.Send.Info in
-    let len = List.length pv in
-    if mate then Mate len
-    else if mated then Mate (-len)
-    else match Tt.find st.search.tt st.search.root with
-      | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
-      | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
-      | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper) in
-  (* The result for this iteration. *)
-  let result = 
-    Result.Fields.create ~pv ~score ~nodes:st.nodes ~depth ~time in
-  iter result;
-  (* Check the depth limit. If it doesn't exist we can just use the largest
-     positive integer since it will never reach that depth in our lifetime.
-     Also, if we found a mating sequence, then there's no reason to iterate
-     again since it will most likely return the same result. *)
-  if mate || depth >= limit || too_long then result
-  else next @@ State.new_iter st
+  (* If the search was stopped, use the previous completed result
+     (if available). *)
+  if !(st.search.stop) then
+    match prev with
+    | Some result -> result
+    | None ->
+      let pv = [best] in
+      let score = convert_score score tt root ~pv ~mate ~mated in
+      Result.Fields.create ~pv ~score ~nodes ~depth ~time
+  else begin
+    (* Last iteration may have eaten up at least half the allocated time,
+       so the next (deeper) iteration is likely to take longer. Thus, we
+       should abort the search. *)
+    let too_long =
+      Limits.time st.search.limits |>
+      Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
+    (* Extract the current PV. *)
+    let pv = Tt.pv tt depth best ~mate:(mate || mated) in
+    assert_pv pv moves;
+    (* The result for this iteration. *)
+    let score = convert_score score tt root ~pv ~mate ~mated in
+    let result = Result.Fields.create ~pv ~score ~nodes ~depth ~time in
+    iter result;
+    if mate || depth >= limit || too_long then result
+    else next ~prev:(Some result) @@ State.new_iter st
+  end
 
 let go
     ?(tt = Tt.create ())
     ?(iter = default_iter)
+    ?(stop = ref false)
     ~root
     ~limits
     ~history
@@ -740,4 +757,4 @@ let go
       | _ -> Int.max_value in
     iterdeep ~iter ~moves ~limit @@
     State.create @@
-    create ~root ~limits ~history ~tt
+    create ~root ~limits ~history ~tt ~stop

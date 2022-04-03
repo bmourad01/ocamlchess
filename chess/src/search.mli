@@ -134,8 +134,8 @@ type result = Result.t
 (** The callback function for each iteration of the search. *)
 type iter = result -> unit
 
-(** [go () ~root ~limits ~history ~tt ~iter] runs the game tree search and
-    returns the search result. Raises [Invalid_argument] if there are no
+(** [go () ~root ~limits ~history ~tt ~iter ~stop] runs the game tree search
+    and returns the search result. Raises [Invalid_argument] if there are no
     legal moves.
 
     - [root]: the position to start the search from.
@@ -146,10 +146,14 @@ type iter = result -> unit
 
     An optional callback [iter] can be provided, which is invoked for each
     iteration of the search. By default, it will do nothing.
+
+    An optional parameter [stop] may be provided to stop the search at an
+    arbitrary point in time.
 *)
 val go :
   ?tt:Tt.t ->
   ?iter:iter ->
+  ?stop:bool ref ->
   root:Position.t ->
   limits:limits ->
   history:int Core_kernel.Int64.Map.t ->
