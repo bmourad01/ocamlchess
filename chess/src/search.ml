@@ -193,6 +193,9 @@ let create ~limits ~root ~history ~tt ~stop =
 let inf = 65535
 let mate_score = inf / 2
 let max_ply = 64
+
+(* Mate scores should be relative to the distance from the root position.
+   Shorter distances are to be preferred. *)
 let is_mate score = score >= mate_score - max_ply
 let is_mated score = score <= (-mate_score) + max_ply
 
