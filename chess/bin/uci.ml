@@ -205,12 +205,8 @@ let recv cmd =
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves
   | Go g -> go g
-  | Stop ->
-    State.(gets stop') >>= fun () ->
-    cont ()
-  | Quit ->
-    State.(gets stop') >>= fun () ->
-    finish ()
+  | Stop -> State.(gets stop') >>= cont
+  | Quit -> State.(gets stop') >>= finish
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
     printf "what?\n%!";
