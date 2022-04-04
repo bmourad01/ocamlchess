@@ -217,6 +217,7 @@ module State = struct
       killer1      : Position.legal Option_array.t;
       killer2      : Position.legal Option_array.t;
       move_history : int array;
+      best_score   : int;
     } [@@deriving fields]
 
     let create search = {
@@ -226,10 +227,11 @@ module State = struct
       killer1 = Option_array.create ~len:max_ply;
       killer2 = Option_array.create ~len:max_ply;
       move_history = Array.create ~len:Square.(count * count) 0;
+      best_score = -inf;
     }
 
     (* Start a new search while reusing the transposition table. *)
-    let new_iter st = {st with nodes = 0}
+    let new_iter best_score st = {st with nodes = 0; best_score}
 
     (* Increment the number of nodes we've evaluated. *)
     let inc_nodes st = {st with nodes = st.nodes + 1}
@@ -423,15 +425,17 @@ module Quiescence = struct
       if score >= beta then return beta
       else if score + margin < alpha && not @@ Eval.is_endgame pos
       then return alpha
-      else let open Continue_or_stop in
-        State.(gets search) >>= fun {tt; _} ->
-        let init = max score alpha in
-        List.filter moves ~f:is_noisy |> Order.qsort |>
-        State.List.fold_until ~init ~finish:return ~f:(fun alpha m ->
-            Legal.new_position m |>
-            go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
-            negm >>| fun score -> if score >= beta
-            then Stop beta else Continue (max score alpha))
+      else List.filter moves ~f:is_noisy |> Order.qsort |>
+           State.List.fold_until
+             ~init:(max score alpha)
+             ~finish:return
+             ~f:(branch ~beta ~ply)
+
+  and branch ~beta ~ply = fun alpha m ->
+    let open Continue_or_stop in
+    Legal.new_position m |>
+    go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>= negm >>| fun score ->
+    if score >= beta then Stop beta else Continue (max score alpha)
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -503,11 +507,11 @@ module Main = struct
                   ~score ~alpha ~beta ~ply ~depth
                   ~check ~depth ~null >>= function
                 | Some score -> return score
-                | None -> let open Continue_or_stop in
+                | None ->
                   Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
                   let t = create moves ~alpha in
                   let finish () = return t.alpha in
-                  let f = branch t ~pos ~score ~beta ~depth ~ply ~check in
+                  let f = branch t ~score ~beta ~depth ~ply ~check in
                   State.List.fold_until moves ~init:() ~finish ~f >>| fun score ->
                   (* To be safe, don't cache the results of a null move. *)
                   if not null then
@@ -516,7 +520,7 @@ module Main = struct
                   score
 
   (* Search a branch of the current node. *)
-  and branch t ~pos ~score ~beta ~depth ~ply ~check = fun () m ->
+  and branch t ~score ~beta ~depth ~ply ~check = fun () m ->
     let open Continue_or_stop in
     (* Skip this move if it has no chance of improving alpha. *)
     if futile m ~score ~alpha:t.alpha ~beta ~depth ~check
@@ -660,14 +664,13 @@ module Main = struct
      2. We drop straight down into PVS.
      3. In addition to the score, we return the best move.
   *)
-  let root moves ~depth =
+  let root moves ~alpha ~beta ~depth =
     let open Continue_or_stop in
     State.(gets search) >>= fun search ->
     let pos = search.root in
     let ply = 0 in
-    let beta = inf in
     Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
-    let t = create moves in
+    let t = create moves ~alpha in
     let finish () = return t.alpha in
     State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
@@ -681,6 +684,25 @@ module Main = struct
     let best = t.best in
     Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
     best, score
+
+  (* Use an aspiration window for the search. The basic idea is that if
+     we have the score from a shallower search, then we can use that value
+     as the basis for a window to search around (the initial values of
+     alpha and beta), and hopefully narrow the search space. *)
+  let rec aspire ?(delta_low = 250) ?(delta_high = 250) moves depth =
+    State.(gets best_score) >>= fun best_score ->
+    let alpha = if depth > 1 then best_score - delta_low  else -inf in
+    let beta  = if depth > 1 then best_score + delta_high else  inf in
+    root moves ~alpha ~beta ~depth >>= fun (best, score) ->
+    State.(gets search) >>= fun {stop; _} ->
+    (* Search was stopped, or we landed inside the window. *)
+    if !stop || (score > alpha && score < beta)
+    then return (best, score)
+    else (* Result was outside the window, so we need to widen a bit. *)
+      let delta_low, delta_high =
+        if score >= beta then delta_low, delta_high * 2
+        else delta_low * 2, delta_high in
+      aspire moves depth ~delta_low ~delta_high
 end
 
 type iter = result -> unit
@@ -698,29 +720,28 @@ let convert_score score tt root ~pv ~mate ~mated =
     | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper)
 
 (* For debugging, make sure that the PV is a legal sequence of moves. *)
-let assert_pv pv moves =
-  ignore @@ List.fold pv ~init:moves ~f:(fun moves m ->
-      assert (List.exists moves ~f:(Legal.same m));
-      Position.legal_moves @@ Legal.new_position m)
+let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
+    if not @@ List.exists moves ~f:(Legal.same m) then
+      failwithf "Found an invalid move %s in the PV"
+        (Position.San.of_legal m) ();
+    Position.legal_moves @@ Legal.new_position m) |> ignore
 
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
 let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves ~limit in
-  let (best, score), st = Monad.State.run (Main.root moves ~depth) st in
-  let nodes = st.nodes in
-  let {tt; root; _} = st.search in
-  (* Record the time. *)
+  let (best, score), st = Monad.State.run (Main.aspire moves depth) st in
   let time =
     int_of_float @@
     Time.(Span.to_ms @@ diff (now ()) st.start_time) in
   let mate = is_mate score in
   let mated = is_mated score in
-  (* If the search was stopped, use the previous completed result
-     (if available). *)
-  if !(st.search.stop) then
-    match prev with
+  let {limits; tt; root; stop; _} = st.search in
+  let nodes = st.nodes in
+  (* If the search was stopped, use the previous completed result, if
+     available. *)
+  if !stop then match prev with
     | Some result -> result
     | None ->
       let pv = [best] in
@@ -731,17 +752,18 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
        so the next (deeper) iteration is likely to take longer. Thus, we
        should abort the search. *)
     let too_long =
-      Limits.time st.search.limits |>
+      Limits.time limits |>
       Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
     (* Extract the current PV. *)
     let pv = Tt.pv tt depth best ~mate:(mate || mated) in
     assert_pv pv moves;
     (* The result for this iteration. *)
-    let score = convert_score score tt root ~pv ~mate ~mated in
-    let result = Result.Fields.create ~pv ~score ~nodes ~depth ~time in
+    let result =
+      let score = convert_score score tt root ~pv ~mate ~mated in
+      Result.Fields.create ~pv ~score ~nodes ~depth ~time in
     iter result;
     if mate || depth >= limit || too_long then result
-    else next ~prev:(Some result) @@ State.new_iter st
+    else next ~prev:(Some result) @@ State.new_iter score st
   end
 
 let go
