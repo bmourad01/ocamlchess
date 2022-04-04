@@ -384,7 +384,7 @@ module Order = struct
       let i = src + dst * Square.count in
       Array.unsafe_get move_history i in
     sort_aux moves ~eval:(fun m ->
-        if best m then mate_score + ply
+        if best m then inf
         else let capture = capture m in
           if capture <> 0 then capture
           else let promote = promote m in
@@ -398,9 +398,7 @@ module Order = struct
     sort_aux moves ~eval:(fun m ->
         let capture = capture m in
         if capture <> 0 then capture
-        else let promote = promote m in
-          if promote <> 0 then promote
-          else 0)
+        else promote m)
 end
 
 let negm = Fn.compose return Int.neg
