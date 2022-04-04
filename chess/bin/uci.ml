@@ -134,10 +134,13 @@ let search ~root ~limits ~history ~tt ~stop =
         info_of_result root tt result) in
   stop := false;
   (* Send the bestmove. *)
+  let ponder = match Search.Result.pv result with
+    | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
+    | _ -> None in
   let move = Position.Legal.move @@ Search.Result.best result in
   printf "%s\n%!" @@
   Uci.Send.to_string @@
-  Uci.Send.(Bestmove Bestmove.{move; ponder = None})
+  Uci.Send.(Bestmove Bestmove.{move; ponder})
 
 let go g =
   (* Parse the search limits. *)
