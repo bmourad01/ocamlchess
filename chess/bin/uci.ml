@@ -28,6 +28,7 @@ module State = struct
     {st with pos; history}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
+  let stop' {stop; _} = stop := true
 end
 
 open State.Syntax
@@ -205,12 +206,10 @@ let recv cmd =
   | Position (`startpos, moves) -> position Position.start moves
   | Go g -> go g
   | Stop ->
-    State.(gets stop) >>= fun stop ->
-    stop := true;
+    State.(gets stop') >>= fun () ->
     cont ()
   | Quit ->
-    State.(gets stop) >>= fun stop ->
-    stop := true;
+    State.(gets stop') >>= fun () ->
     finish ()
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
