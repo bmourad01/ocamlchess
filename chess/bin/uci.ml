@@ -31,6 +31,8 @@ module State = struct
   let stop' {stop; _} = stop := true
 end
 
+let threads = ref []
+
 open State.Syntax
 
 let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
@@ -193,8 +195,9 @@ let go g =
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
     State.(gets stop) >>= fun stop ->
-    ignore @@ Thread.create (fun () ->
-        search ~root ~limits ~history ~tt ~stop) ();
+    let t = Thread.create (fun () ->
+        search ~root ~limits ~history ~tt ~stop) () in
+    threads := t :: !threads;
     cont ()
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
@@ -232,6 +235,13 @@ let rec loop () = match In_channel.(input_line stdin) with
       | false -> return ()
       | true -> loop ()
 
+let rec wait_for_threads () = match !threads with
+  | [] -> ()
+  | t :: rest ->
+    threads := rest;
+        Thread.join t;
+    wait_for_threads ()
+
 (* Entry point. *)
 let run ~debug =
   Debug.set debug;
@@ -240,4 +250,5 @@ let run ~debug =
     ~pos:Position.start
     ~history:(Int64.Map.singleton Position.(hash start) 1)
     ~tt:(Search.Tt.create ())
-    ~stop:(ref false)
+    ~stop:(ref false);
+  wait_for_threads ()
