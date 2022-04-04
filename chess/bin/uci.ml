@@ -239,7 +239,7 @@ let rec wait_for_threads () = match !threads with
   | [] -> ()
   | t :: rest ->
     threads := rest;
-        Thread.join t;
+    Thread.join t;
     wait_for_threads ()
 
 (* Entry point. *)
