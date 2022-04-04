@@ -214,8 +214,8 @@ module State = struct
       start_time   : Time.t;
       nodes        : int;
       search       : search;
-      killer1      : Position.legal Int.Map.t;
-      killer2      : Position.legal Int.Map.t;
+      killer1      : Position.legal Option_array.t;
+      killer2      : Position.legal Option_array.t;
       move_history : int array;
     } [@@deriving fields]
 
@@ -223,8 +223,8 @@ module State = struct
       start_time = Time.now ();
       nodes = 0;
       search;
-      killer1 = Int.Map.empty;
-      killer2 = Int.Map.empty;
+      killer1 = Option_array.create ~len:max_ply;
+      killer2 = Option_array.create ~len:max_ply;
       move_history = Array.create ~len:Square.(count * count) 0;
     }
 
@@ -235,37 +235,37 @@ module State = struct
     let inc_nodes st = {st with nodes = st.nodes + 1}
 
     (* Get the first killer move. *)
-    let killer1 ply st = Map.find st.killer1 ply
+    let killer1 ply st = Option_array.get st.killer1 ply
 
     (* Get the second killer move. *)
-    let killer2 ply st = Map.find st.killer2 ply
+    let killer2 ply st = Option_array.get st.killer2 ply
 
     (* Is `m` a killer move? *)
-    let is_killer m ply st =
-      Map.find st.killer1 ply |>
-      Option.exists ~f:(Legal.same m) ||
-      Map.find st.killer2 ply |>
-      Option.exists ~f:(Legal.same m)
+    let is_killer m ply st = match killer1 ply st with
+      | Some m' when Legal.same m m' -> true
+      | _ -> match killer2 ply st with
+        | Some m' -> Legal.same m m'
+        | None -> false
 
     (* Update the killer move for a particular ply. *)
-    let killer ply m st =
-      if is_quiet m then
-        let killer2 = match Map.find st.killer1 ply with
-          | Some data -> Map.set st.killer2 ~key:ply ~data
-          | None -> st.killer2 in
-        let killer1 = Map.set st.killer1 ~key:ply ~data:m in
-        {st with killer1; killer2}
-      else st
+    let killer ply m st = if is_quiet m then begin
+        begin match killer1 ply st with
+          | None -> ()
+          | Some m ->
+            Option_array.set_some st.killer2 ply m
+        end;
+        Option_array.set_some st.killer1 ply m
+      end
 
     (* Update the move history heuristic. *)
-    let history m depth st =
-      if is_quiet m then
+    let history m depth st = if is_quiet m then begin
         let m = Legal.move m in
         let src = Square.to_int @@ Move.src m in
         let dst = Square.to_int @@ Move.dst m in
         let i = src + dst * Square.count in
         let d = Array.unsafe_get st.move_history i + (depth * depth) in
         Array.unsafe_set st.move_history i d
+      end
   end
 
   include T
@@ -456,7 +456,7 @@ module Main = struct
   let cutoff t m ~ply =
     t.best <- m;
     t.bound <- Tt.Lower;
-    State.(update @@ killer ply m)
+    State.(gets @@ killer ply m)
 
   (* Alpha may have improved. *)
   let better t m ~score ~depth =
