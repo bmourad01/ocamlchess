@@ -192,7 +192,7 @@ let go g =
         | None -> match !wtime, !btime with
           | Some wtime, Some btime ->
             Search.Limits.of_game_time
-              ~wtime ~winc ~btime ~binc ~active ~nodes~mate ~moves_to_go ()
+              ~wtime ~winc ~btime ~binc ~active ~nodes ~mate ~moves_to_go ()
           | _ -> assert false in
   match limits with
   | None ->
