@@ -46,8 +46,8 @@ module Limits : sig
     ?winc:int option ->
     ?btime:int option ->
     ?binc:int option ->
+    ?infinite:bool ->
     active:Piece.color ->
-    infinite:bool ->
     unit ->
     t
 end

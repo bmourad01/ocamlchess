@@ -85,8 +85,9 @@ module Limits = struct
       ?(winc = None)
       ?(btime = None)
       ?(binc = None)
+      ?(infinite = false)
       ~active
-      ~infinite () =
+      () =
     check_nodes nodes;
     check_mate mate;
     check_depth depth;

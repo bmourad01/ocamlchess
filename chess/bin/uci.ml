@@ -178,8 +178,7 @@ let go g =
   (* Construct the search limits. *)
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
-  let limits = Option.try_with @@ fun () ->
-    Search.Limits.create
+  let limits = Option.try_with @@ Search.Limits.create
       ~nodes:!nodes
       ~mate:!mate
       ~depth:!depth
@@ -190,7 +189,7 @@ let go g =
       ~btime:!btime
       ~binc:!binc
       ~infinite:!infinite
-      ~active () in
+      ~active in
   match limits with
   | None ->
     Debug.printf "Ill-formed command: %s\n%!" @@ Uci.Recv.to_string (Go g);
