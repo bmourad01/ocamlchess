@@ -385,7 +385,7 @@ module Send = struct
       | Nodes n -> sprintf "nodes %d" n
       | Pv moves -> sprintf "pv %s" @@ string_of_moves moves
       | Multipv n -> sprintf "multipv %d" n
-      | Score (Mate n) -> sprintf " mate %d" n
+      | Score (Mate n) -> sprintf "score mate %d" n
       | Score (Cp (cp, bound)) ->
         let bound = match bound with
           | Some bound -> sprintf " bound %s" @@ string_of_bound bound

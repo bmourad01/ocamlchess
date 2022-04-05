@@ -134,6 +134,11 @@ let search ~root ~limits ~history ~tt ~stop =
     Search.go () ~root ~limits ~history ~tt ~stop ~iter:(fun result ->
         (* For each iteration, send a UCI `info` command about the search. *)
         info_of_result root tt result) in
+  (* The UCI protocol says that `infinite` and `ponder` searches must wait for
+     a corresponding `stop` or `ponderhit` command before sending `bestmove`.
+     So, we will busy-wait in this thread until it happens. *)
+  if Search.Limits.infinite limits then
+    while not (!stop) do () done;
   stop := false;
   (* Send the bestmove. *)
   let ponder = match Search.Result.pv result with
@@ -148,6 +153,7 @@ let go g =
   (* Parse the search limits. *)
   let infinite = ref false in
   let nodes = ref None in
+  let mate = ref None in
   let depth = ref None in
   let movetime = ref None in
   let wtime = ref None in
@@ -160,6 +166,7 @@ let go g =
       match go with
       | Infinite -> infinite := true
       | Nodes n -> nodes := Some n
+      | Mate n -> mate := Some n
       | Depth n -> depth := Some n
       | Movetime t -> movetime := Some t
       | Wtime t -> wtime := Some t
@@ -170,21 +177,22 @@ let go g =
       | _ -> ());
   (* Construct the search limits. *)
   let nodes = !nodes in
+  let mate = !mate in
   let moves_to_go = !moves_to_go in
   let winc = Option.value ~default:0 !winc in
   let binc = Option.value ~default:0 !binc in
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
   let limits = Option.try_with @@ fun () ->
-    if !infinite then Search.Limits.of_infinite ~nodes ()
+    if !infinite then Search.Limits.of_infinite ~nodes ~mate ()
     else match !depth with
-      | Some n -> Search.Limits.of_depth n ~nodes
+      | Some n -> Search.Limits.of_depth n ~nodes ~mate
       | None -> match !movetime with
-        | Some n -> Search.Limits.of_search_time n ~nodes
+        | Some n -> Search.Limits.of_search_time n ~nodes ~mate
         | None -> match !wtime, !btime with
           | Some wtime, Some btime ->
             Search.Limits.of_game_time
-              ~wtime ~winc ~btime ~binc ~active ~nodes ~moves_to_go ()
+              ~wtime ~winc ~btime ~binc ~active ~nodes~mate ~moves_to_go ()
           | _ -> assert false in
   match limits with
   | None ->

@@ -12,10 +12,12 @@ module Limits = struct
 
   type t = {
     nodes : int option;
+    mate  : int option;
     kind  : kind;
   }
 
   let nodes {nodes; _} = nodes
+  let mate {mate; _} = mate
 
   let depth = function
     | {kind = Depth n; _} -> Some n
@@ -35,26 +37,27 @@ module Limits = struct
     | Some n ->
       invalid_argf "Invalid node limit %d, must be greater than 0" n ()
 
-  let of_infinite ?(nodes = None) () =
+  let of_infinite ?(nodes = None) ?(mate = None) () =
     check_nodes nodes;
-    {nodes; kind = Infinite}
+    {nodes; mate; kind = Infinite}
 
-  let of_depth ?(nodes = None) = function
+  let of_depth ?(nodes = None) ?(mate = None) = function
     | n when n < 1 ->
       invalid_argf "Invalid depth limit %d, must be greater than 0" n ()
     | n ->
       check_nodes nodes;
-      {nodes; kind = Depth n}
+      {nodes; mate; kind = Depth n}
 
-  let of_search_time ?(nodes = None) = function
+  let of_search_time ?(nodes = None) ?(mate = None) = function
     | n when n < 1 ->
       invalid_argf "Invalid search time %d, must be greater than 0" n ()
     | n ->
       check_nodes nodes;
-      {nodes; kind = Time n}
+      {nodes; mate; kind = Time n}
 
   let of_game_time
       ?(nodes = None)
+      ?(mate = None)
       ?(moves_to_go = None)
       ~wtime
       ~winc
@@ -86,7 +89,7 @@ module Limits = struct
         let ratio =
           Float.(min (max (of_int our_time / of_int their_time) 1.0) 2.0) in
         our_time / int_of_float (20.0 *. ratio) in
-    {nodes; kind = Time (time + our_inc)}
+    {nodes; mate; kind = Time (time + our_inc)}
 end
 
 type limits = Limits.t
@@ -712,8 +715,9 @@ let default_iter : iter = fun _ -> ()
 let convert_score score tt root ~pv ~mate ~mated =
   let open Uci.Send.Info in
   let len = List.length pv in
-  if mate then Mate len
-  else if mated then Mate (-len)
+  let full = (len + (len land 1)) / 2 in
+  if mate then Mate full
+  else if mated then Mate (-full)
   else match Tt.find tt root with
     | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
     | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
@@ -762,7 +766,11 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
       let score = convert_score score tt root ~pv ~mate ~mated in
       Result.Fields.create ~pv ~score ~nodes ~depth ~time in
     iter result;
-    if mate || depth >= limit || too_long then result
+    (* Stop searching once we've found a mate in X (if applicable). *)
+    Limits.mate limits |> Option.iter ~f:(fun n ->
+        if mate && List.length pv <= n * 2 then
+          stop := true);
+    if depth >= limit || too_long then result
     else next ~prev:(Some result) @@ State.new_iter score st
   end
 

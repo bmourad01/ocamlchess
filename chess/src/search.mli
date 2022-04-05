@@ -9,6 +9,9 @@ module Limits : sig
   (** The limit on the number of positions that may be evaluated. *)
   val nodes : t -> int option
 
+  (** The number of fullmoves to find a mate in. *)
+  val mate : t -> int option
+
   (** Returns [true] if the search is infinite. *)
   val infinite : t -> bool
 
@@ -21,17 +24,17 @@ module Limits : sig
   (** A search that never terminates unless interrupted, with an optional
       number of [nodes] that may be evaluated per iteration. Raises
       [Invalid_argument] on invalid inputs. *)
-  val of_infinite : ?nodes:int option -> unit -> t
+  val of_infinite : ?nodes:int option -> ?mate:int option -> unit -> t
 
   (** [of_depth depth ~nodes] will limit the depth of the search by [depth],
       and optionally the number of [nodes] that may be evaluated. Raises
       [Invalid_argument] on invalid inputs. *)
-  val of_depth : ?nodes:int option -> int -> t
+  val of_depth : ?nodes:int option -> ?mate:int option -> int -> t
 
   (** [of_search_time t ~nodes] will limit the time allocated for the search
       by [t] milliseconds, and optionally the number of [nodes] that may be
       evaluated. Raises [Invalid_argument] on invalid inputs. *)
-  val of_search_time : ?nodes:int option -> int -> t
+  val of_search_time : ?nodes:int option -> ?mate:int option -> int -> t
 
   (** [of_game_time () ~wtime ~winc ~btime ~binc ~active ~nodes ~moves_to_go]
       will limit the time allocated for the search according to the following
@@ -50,6 +53,7 @@ module Limits : sig
   *)
   val of_game_time :
     ?nodes:int option ->
+    ?mate:int option ->
     ?moves_to_go:int option ->
     wtime:int ->
     winc:int ->
