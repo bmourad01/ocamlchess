@@ -5,10 +5,10 @@ open Monads.Std
 module State = struct
   module T = struct
     type t = {
-      pos : Position.t;
+      pos     : Position.t;
       history : int Int64.Map.t;
-      tt : Search.Tt.t;
-      stop : bool ref;
+      tt      : Search.Tt.t;
+      stop    : bool ref;
     } [@@deriving fields]
   end
 
