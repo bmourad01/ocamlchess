@@ -55,16 +55,16 @@ let finish () = return false
 
 let uci =
   let open Uci.Send in
-  let response = [
+  let id = [
     Id (`name (sprintf "ocamlchess v%d.%d" Version.major Version.minor));
     Id (`author "Benjamin Mourad");
-    Uciok;
   ] in
   fun () ->
-    List.iter response ~f:(fun cmd ->
+    List.iter id ~f:(fun cmd ->
         printf "%s\n%!" @@ to_string cmd);
     Hashtbl.iteri options ~f:(fun ~key:name ~data:typ ->
-        printf "%s\n%!" @@ to_string (Option Option.{name; typ} ))
+        printf "%s\n%!" @@ to_string (Option Option.{name; typ}));
+    printf "%s\n%!" @@ to_string Uciok
 
 let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
 
