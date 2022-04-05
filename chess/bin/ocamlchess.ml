@@ -8,10 +8,10 @@ let man_players () =
   `S "PLAYER" ::
   `Pre "Predefined algorithms for the computer." :: begin
     Players.enumerate () |> Core_kernel.Sequence.map
-      ~f:(fun Chess.Player.(T player) ->
+      ~f:(fun Player.(T player) ->
           `P (Format.sprintf "%s: %s"
-                (Chess.Player.name player)
-                (Chess.Player.desc player))) |>
+                (Player.name player)
+                (Player.desc player))) |>
     Core_kernel.Sequence.to_list
   end
 

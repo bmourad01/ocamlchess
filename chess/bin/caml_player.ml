@@ -1,5 +1,5 @@
-open Chess
 open Core_kernel
+open Chess
 
 let limits = ref None
 

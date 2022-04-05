@@ -1,4 +1,5 @@
 open Core_kernel
+open Chess
 
 module Legal = Position.Legal
 

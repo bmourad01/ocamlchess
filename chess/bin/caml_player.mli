@@ -10,4 +10,4 @@ val book : Chess.Book.t option ref
 val name : string
 
 (** Create the player. *)
-val create : unit -> Chess.Player.e
+val create : unit -> Player.e
