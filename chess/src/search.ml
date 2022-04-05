@@ -733,8 +733,8 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
-let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
-  let next = iterdeep ~iter ~depth:(depth + 1) ~moves ~limit in
+let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
+  let next = iterdeep ~iter ~depth:(depth + 1) ~moves in
   let (best, score), st = Monad.State.run (Main.aspire moves depth) st in
   let time =
     int_of_float @@
@@ -752,12 +752,6 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
       let score = convert_score score tt root ~pv ~mate ~mated in
       Result.Fields.create ~pv ~score ~nodes ~depth ~time
   else begin
-    (* Last iteration may have eaten up at least half the allocated time,
-       so the next (deeper) iteration is likely to take longer. Thus, we
-       should abort the search. *)
-    let too_long =
-      Limits.time limits |>
-      Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
     (* Extract the current PV. *)
     let pv = Tt.pv tt depth best ~mate:(mate || mated) in
     assert_pv pv moves;
@@ -766,11 +760,27 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves ~limit =
       let score = convert_score score tt root ~pv ~mate ~mated in
       Result.Fields.create ~pv ~score ~nodes ~depth ~time in
     iter result;
+    (* Last iteration may have eaten up at least half the allocated time,
+       so the next (deeper) iteration is likely to take longer. Thus, we
+       should abort the search. *)
+    let too_long =
+      Limits.time limits |>
+      Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
+    (* Stop searching once we've reached the depth limit. *)
+    let max_depth =
+      Limits.depth limits |>
+      Option.value_map ~default:false ~f:(fun n -> depth >= n) in
+    (* Stop searching once we've reached the node limit. *)
+    let max_nodes =
+      Limits.nodes limits |>
+      Option.value_map ~default:false ~f:(fun n -> nodes >= n) in
     (* Stop searching once we've found a mate in X (if applicable). *)
-    Limits.mate limits |> Option.iter ~f:(fun n ->
-        if mate && List.length pv <= n * 2 then
-          stop := true);
-    if depth >= limit || too_long then result
+    let mate =
+      mate &&
+      Limits.mate limits |>
+      Option.value_map ~default:false ~f:(fun n -> List.length pv <= n * 2) in
+    (* Continue iterating? *)
+    if too_long || max_nodes || max_depth || mate then result
     else next ~prev:(Some result) @@ State.new_iter score st
   end
 
@@ -785,9 +795,6 @@ let go
   match Position.legal_moves root with
   | [] -> invalid_arg "No legal moves"
   | moves ->
-    let limit = match limits.Limits.kind with
-      | Depth n -> n
-      | _ -> Int.max_value in
-    iterdeep ~iter ~moves ~limit @@
+    iterdeep ~iter ~moves @@
     State.create @@
     create ~root ~limits ~history ~tt ~stop

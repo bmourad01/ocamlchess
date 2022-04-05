@@ -213,7 +213,7 @@ let recv cmd =
   let open Uci.Recv in
   match cmd with
   | Uci -> uci (); cont ()
-  | Isready -> isready (); cont ()
+  | Isready -> cont @@ isready ()
   | Setoption opt -> setoption opt
   | Ucinewgame -> ucinewgame >>= cont
   | Position (`fen pos, moves) -> position pos moves
