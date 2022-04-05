@@ -11,25 +11,12 @@ module Limits = struct
     | Time of int
 
   type t = {
-    nodes : int option;
-    mate  : int option;
-    kind  : kind;
-  }
-
-  let nodes {nodes; _} = nodes
-  let mate {mate; _} = mate
-
-  let depth = function
-    | {kind = Depth n; _} -> Some n
-    | _ -> None
-
-  let time = function
-    | {kind = Time n; _} -> Some n
-    | _ -> None
-
-  let infinite = function
-    | {kind = Infinite; _} -> true
-    | _ -> false
+    infinite : bool;
+    nodes    : int option;
+    mate     : int option;
+    depth    : int option;
+    time     : int option;
+  } [@@deriving fields]
 
   let check_nodes = function
     | None -> ()
@@ -37,28 +24,26 @@ module Limits = struct
     | Some n ->
       invalid_argf "Invalid node limit %d, must be greater than 0" n ()
 
-  let of_infinite ?(nodes = None) ?(mate = None) () =
-    check_nodes nodes;
-    {nodes; mate; kind = Infinite}
+  let check_mate = function
+    | None -> ()
+    | Some n when n >= 1 -> ()
+    | Some n ->
+      invalid_argf "Invalid mate limit %d, must be greater than 0" n ()
 
-  let of_depth ?(nodes = None) ?(mate = None) = function
-    | n when n < 1 ->
+  let check_depth = function
+    | None -> ()
+    | Some n when n >= 1 -> ()
+    | Some n ->
       invalid_argf "Invalid depth limit %d, must be greater than 0" n ()
-    | n ->
-      check_nodes nodes;
-      {nodes; mate; kind = Depth n}
 
-  let of_search_time ?(nodes = None) ?(mate = None) = function
-    | n when n < 1 ->
-      invalid_argf "Invalid search time %d, must be greater than 0" n ()
-    | n ->
-      check_nodes nodes;
-      {nodes; mate; kind = Time n}
+  let check_movetime = function
+    | None -> None
+    | (Some n) as movetime when n >= 1 -> movetime
+    | Some n ->
+      invalid_argf "Invalid movetime %d, must be greater than 0" n ()
 
-  let of_game_time
-      ?(nodes = None)
-      ?(mate = None)
-      ?(moves_to_go = None)
+  let gametime
+      ?(movestogo = None)
       ~wtime
       ~winc
       ~btime
@@ -66,30 +51,59 @@ module Limits = struct
       ~active
       () =
     (* Validate inputs. *)
-    check_nodes nodes;
     if wtime < 1 then
-      invalid_argf "Invalid white time %d, must be greater than 0" wtime ();
+      invalid_argf "Invalid wtime %d, must be greater than 0" wtime ();
     if winc < 0 then
-      invalid_argf "Invalid white increment %d, must be positive" winc ();
+      invalid_argf "Invalid winc %d, must be positive" winc ();
     if btime < 1 then
-      invalid_argf "Invalid black time %d, must be greater than 0" btime ();
+      invalid_argf "Invalid btime %d, must be greater than 0" btime ();
     if binc < 0 then
-      invalid_argf "Invalid black increment %d, must be positive" binc ();
-    Option.iter moves_to_go ~f:(function
+      invalid_argf "Invalid binc %d, must be positive" binc ();
+    Option.iter movestogo ~f:(function
         | n when n < 0 ->
-          invalid_argf "Invalid number of moves to go %d, must be positive" n ()
+          invalid_argf "Invalid movestogo %d, must be positive" n ()
         | _ -> ());
     (* Calculate the amount of time to search. *)
     let our_time, our_inc, their_time = match active with
       | Piece.White -> wtime, winc, btime
       | Piece.Black -> btime, binc, wtime in
-    let time = match moves_to_go with
+    let time = match movestogo with
       | Some n -> our_time / (n + 3)
       | None ->
         let ratio =
           Float.(min (max (of_int our_time / of_int their_time) 1.0) 2.0) in
         our_time / int_of_float (20.0 *. ratio) in
-    {nodes; mate; kind = Time (time + our_inc)}
+    time + our_inc
+
+  let create
+      ?(nodes = None)
+      ?(mate = None)
+      ?(depth = None)
+      ?(movetime = None)
+      ?(movestogo = None)
+      ?(wtime = None)
+      ?(winc = None)
+      ?(btime = None)
+      ?(binc = None)
+      ~active
+      ~infinite () =
+    check_nodes nodes;
+    check_mate mate;
+    check_depth depth;
+    let movetime = check_movetime movetime in
+    let gametime = match wtime, btime with
+      | None, None -> None
+      | Some _, None -> invalid_arg "Missinc btime"
+      | None, Some _ -> invalid_arg "Missing wtime"
+      | Some wtime, Some btime ->
+        let winc, binc = match winc, binc with
+          | None, None -> 0, 0
+          | Some winc, Some binc -> winc, binc
+          | Some _, None -> invalid_arg "Missing binc"
+          | None, Some _ -> invalid_arg "Missing winc" in
+        Some (gametime ~wtime ~winc ~btime ~binc ~movestogo ~active ()) in
+    let time = Option.merge movetime gametime ~f:min in
+    {infinite; nodes; mate; depth; time}
 end
 
 type limits = Limits.t
@@ -298,11 +312,11 @@ let check_limits =
   State.get () >>| fun {start_time; search; nodes; _} ->
   !(search.stop) ||
   let limits = search.limits in
-  match limits.nodes with
+  match Limits.nodes limits with
   | Some n when nodes >= n -> true
-  | _ -> match limits.kind with
-    | Infinite | Depth _ -> false
-    | Time t ->
+  | _ -> match Limits.time limits with
+    | None -> false
+    | Some t ->
       let elapsed =
         int_of_float @@
         Time.(Span.to_ms @@ diff (now ()) start_time) in

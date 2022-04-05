@@ -3,8 +3,11 @@
 
 (** The search limits. *)
 module Limits : sig
-  (** The search limits. *)
+  (** The search limits, according to the UCI protocol. *)
   type t
+
+  (** Returns [true] if the search is infinite. *)
+  val infinite : t -> bool
 
   (** The limit on the number of positions that may be evaluated. *)
   val nodes : t -> int option
@@ -12,54 +15,39 @@ module Limits : sig
   (** The number of fullmoves to find a mate in. *)
   val mate : t -> int option
 
-  (** Returns [true] if the search is infinite. *)
-  val infinite : t -> bool
-
   (** The depth limit for the search, if any. *)
   val depth : t -> int option
 
   (** The time limit (in milliseconds) for the search, if any. *)
   val time : t -> int option
 
-  (** A search that never terminates unless interrupted, with an optional
-      number of [nodes] that may be evaluated per iteration. Raises
-      [Invalid_argument] on invalid inputs. *)
-  val of_infinite : ?nodes:int option -> ?mate:int option -> unit -> t
+  (** Creates the search limits, raising [Invalid_argument] if the parameters
+      are ill-formed.
 
-  (** [of_depth depth ~nodes] will limit the depth of the search by [depth],
-      and optionally the number of [nodes] that may be evaluated. Raises
-      [Invalid_argument] on invalid inputs. *)
-  val of_depth : ?nodes:int option -> ?mate:int option -> int -> t
-
-  (** [of_search_time t ~nodes] will limit the time allocated for the search
-      by [t] milliseconds, and optionally the number of [nodes] that may be
-      evaluated. Raises [Invalid_argument] on invalid inputs. *)
-  val of_search_time : ?nodes:int option -> ?mate:int option -> int -> t
-
-  (** [of_game_time () ~wtime ~winc ~btime ~binc ~active ~nodes ~moves_to_go]
-      will limit the time allocated for the search according to the following
-      parameters (all times are in milliseconds):
-
-      - [wtime]: the amount of time left on the clock for white.
-      - [winc]: the time increment for white.
-      - [btime]: the amount of time left on the clock for black.
-      - [binc]: the time increment for black.
-      - [active]: the active player.
-      - [moves_to_go]: the (optional) number of moves left until the next time
-        control.
-
-      Additionally, the number of [nodes] to be evaluated may be limited.
-      Raises [Invalid_argument] on invalid inputs.
+      - [nodes]: search [n] nodes only
+      - [mate]: search for a mate in [n] moves
+      - [depth]: search [n] plies only
+      - [movetime]: search exactly [n] milliseconds
+      - [movesgoto]: there are [n] moves to the next time control
+      - [wtime]: white has [n] milliseconds left on the clock
+      - [winc]: white gets [n] millisecond increments per move
+      - [btime]: black has [n] milliseconds left on the clock
+      - [binc]: black gets [n] millisecond increments per move
+      - [active]: the active player
+      - [infinite]: search until the [stop] command.
   *)
-  val of_game_time :
+  val create :
     ?nodes:int option ->
     ?mate:int option ->
-    ?moves_to_go:int option ->
-    wtime:int ->
-    winc:int ->
-    btime:int ->
-    binc:int ->
+    ?depth:int option ->
+    ?movetime:int option ->
+    ?movestogo:int option ->
+    ?wtime:int option ->
+    ?winc:int option ->
+    ?btime:int option ->
+    ?binc:int option ->
     active:Piece.color ->
+    infinite:bool ->
     unit ->
     t
 end

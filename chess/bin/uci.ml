@@ -160,7 +160,7 @@ let go g =
   let btime = ref None in
   let winc = ref None in
   let binc = ref None in
-  let moves_to_go = ref None in
+  let movestogo = ref None in
   List.iter g ~f:(fun go ->
       let open Uci.Recv.Go in
       match go with
@@ -173,27 +173,24 @@ let go g =
       | Btime t -> btime := Some t
       | Winc n -> winc := Some n
       | Binc n -> binc := Some n
-      | Movestogo n -> moves_to_go := Some n
+      | Movestogo n -> movestogo := Some n
       | _ -> ());
   (* Construct the search limits. *)
-  let nodes = !nodes in
-  let mate = !mate in
-  let moves_to_go = !moves_to_go in
-  let winc = Option.value ~default:0 !winc in
-  let binc = Option.value ~default:0 !binc in
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
   let limits = Option.try_with @@ fun () ->
-    if !infinite then Search.Limits.of_infinite ~nodes ~mate ()
-    else match !depth with
-      | Some n -> Search.Limits.of_depth n ~nodes ~mate
-      | None -> match !movetime with
-        | Some n -> Search.Limits.of_search_time n ~nodes ~mate
-        | None -> match !wtime, !btime with
-          | Some wtime, Some btime ->
-            Search.Limits.of_game_time
-              ~wtime ~winc ~btime ~binc ~active ~nodes ~mate ~moves_to_go ()
-          | _ -> assert false in
+    Search.Limits.create
+      ~nodes:!nodes
+      ~mate:!mate
+      ~depth:!depth
+      ~movetime:!movetime
+      ~movestogo:!movestogo
+      ~wtime:!wtime
+      ~winc:!winc
+      ~btime:!btime
+      ~binc:!binc
+      ~infinite:!infinite
+      ~active () in
   match limits with
   | None ->
     Debug.printf "Ill-formed command: %s\n%!" @@ Uci.Recv.to_string (Go g);

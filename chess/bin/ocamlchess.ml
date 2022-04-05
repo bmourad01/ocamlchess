@@ -64,7 +64,12 @@ module Gui = struct
       | Some _, Some _ when Float.(delay <= 0.0) -> Fun.id
       | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
       | _ -> Fun.id in
-    Caml_player.limits := Some (Chess.Search.Limits.of_depth depth ~nodes);
+    let limits = Chess.Search.Limits.create ()
+        ~nodes
+        ~depth:(Some depth)
+        ~active:(Chess.Position.active pos)
+        ~infinite:false in
+    Caml_player.limits := Some limits;
     Base.Option.iter book ~f:(fun filename ->
         let open Core_kernel in
         let t = Time.now () in
