@@ -156,16 +156,22 @@ let search ~root ~limits ~history ~tt =
       Thread.yield ()
     done;
   stop := false;
-  if !cancel then cancel := false
-  else    
-    (* Send the bestmove. *)
-    let ponder = match Search.Result.pv result with
-      | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
-      | _ -> None in
-    let move = Position.Legal.move @@ Search.Result.best result in
-    printf "%s\n%!" @@
-    Uci.Send.to_string @@
-    Uci.Send.(Bestmove Bestmove.{move; ponder})
+  begin match !cancel with
+    | true ->
+      (* We canceled the thread, so don't output the result. *)
+      cancel := false
+    | false ->
+      (* Send the bestmove. *)
+      let ponder = match Search.Result.pv result with
+        | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
+        | _ -> None in
+      let move = Position.Legal.move @@ Search.Result.best result in
+      printf "%s\n%!" @@
+      Uci.Send.to_string @@
+      Uci.Send.(Bestmove Bestmove.{move; ponder})
+  end;
+  (* Thread completed. *)
+  thread := None
 
 let go g =
   (* Parse the search limits. *)
