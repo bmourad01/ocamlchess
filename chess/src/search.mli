@@ -38,7 +38,9 @@ module Limits : sig
       - [infinite]: search until the [stop] command.
 
       By default, if no values are given for these parameters, the search is
-      assumed to be infinite.
+      assumed to be infinite. Thus, it is recommended to run the search with
+      these limits in a separate thread. There, the optional [stop] parameter
+      may be used to terminate the search.
 
       The remaining parameters:
 
