@@ -147,7 +147,10 @@ let search ~root ~limits ~history ~tt ~stop =
   let move = Position.Legal.move @@ Search.Result.best result in
   printf "%s\n%!" @@
   Uci.Send.to_string @@
-  Uci.Send.(Bestmove Bestmove.{move; ponder})
+  Uci.Send.(Bestmove Bestmove.{move; ponder});
+  (* Remove ourselves from the list. *)
+  let id = Thread.(id @@ self ()) in
+  threads := List.filter !threads ~f:(fun t -> Thread.id t <> id)
 
 let go g =
   (* Parse the search limits. *)
