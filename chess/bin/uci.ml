@@ -8,7 +8,6 @@ module State = struct
       pos     : Position.t;
       history : int Int64.Map.t;
       tt      : Search.Tt.t;
-      stop    : bool ref;
     } [@@deriving fields]
   end
 
@@ -28,10 +27,7 @@ module State = struct
     {st with pos; history}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
-  let stop' {stop; _} = stop := true
 end
-
-let threads = ref []
 
 open State.Syntax
 
@@ -51,7 +47,7 @@ end
 
 let return = State.return
 let cont () = return true
-let finish () = State.(gets stop') >>| const false
+let finish () = return false
 
 let uci =
   let open Uci.Send in
@@ -94,7 +90,7 @@ let position pos moves =
       | exception _ ->
         Debug.printf "Received illegal move %s for position %s\n%!"
           (Move.to_string m) (Position.Fen.to_string pos);
-        finish ()
+        exit 1
       | legal ->
         let pos = Position.Legal.new_position legal in
         State.update_position pos >>= fun () ->
@@ -106,7 +102,7 @@ let position pos moves =
   | Error err ->
     Debug.printf "Received invalid position %s: %s\n%!"
       (Position.Fen.to_string pos) (Position.Valid.Error.to_string err);
-    finish ()
+    exit 1
 
 let info_of_result root tt result =
   let depth = Search.Result.depth result in
@@ -127,30 +123,49 @@ let info_of_result root tt result =
       Pv pv;
     ])
 
-let search ~root ~limits ~history ~tt ~stop =
+(* Don't output the result of the search. *)
+let cancel = ref false
+
+(* Stop the search. *)
+let stop = ref false
+
+(* Current search thread. *)
+let thread = ref None
+
+let kill () =
+  cancel := true;
+  stop := true
+
+(* The main search routine, should be run in a separate thread. *)
+let search ~root ~limits ~history ~tt =
   (* Make sure that we don't start a search that will stop immediately. *)
   stop := false;
   let result =
-    Search.go () ~root ~limits ~history ~tt ~stop ~iter:(fun result ->
-        (* For each iteration, send a UCI `info` command about the search. *)
-        info_of_result root tt result) in
+    try
+      Search.go () ~root ~limits ~history ~tt ~stop ~iter:(fun result ->
+          (* For each iteration, send a UCI `info` command about the search. *)
+          info_of_result root tt result)
+    with exn ->
+      Debug.printf "Uncaught exception: %s\n%!" @@ Exn.to_string exn;
+      exit 1 in
   (* The UCI protocol says that `infinite` and `ponder` searches must wait for
      a corresponding `stop` or `ponderhit` command before sending `bestmove`.
      So, we will busy-wait in this thread until it happens. *)
   if Search.Limits.infinite limits then
-    while not (!stop) do () done;
+    while not (!stop || !cancel) do
+      Thread.yield ()
+    done;
   stop := false;
-  (* Send the bestmove. *)
-  let ponder = match Search.Result.pv result with
-    | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
-    | _ -> None in
-  let move = Position.Legal.move @@ Search.Result.best result in
-  printf "%s\n%!" @@
-  Uci.Send.to_string @@
-  Uci.Send.(Bestmove Bestmove.{move; ponder});
-  (* Remove ourselves from the list. *)
-  let id = Thread.(id @@ self ()) in
-  threads := List.filter !threads ~f:(fun t -> Thread.id t <> id)
+  if !cancel then cancel := false
+  else    
+    (* Send the bestmove. *)
+    let ponder = match Search.Result.pv result with
+      | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
+      | _ -> None in
+    let move = Position.Legal.move @@ Search.Result.best result in
+    printf "%s\n%!" @@
+    Uci.Send.to_string @@
+    Uci.Send.(Bestmove Bestmove.{move; ponder})
 
 let go g =
   (* Parse the search limits. *)
@@ -164,7 +179,9 @@ let go g =
   let winc = ref None in
   let binc = ref None in
   let movestogo = ref None in
-  List.iter g ~f:(fun go ->
+  (* If no parameters were given, then assume an infinite search. *)
+  if List.is_empty g then infinite := true
+  else List.iter g ~f:(fun go ->
       let open Uci.Recv.Go in
       match go with
       | Infinite -> infinite := true
@@ -196,30 +213,36 @@ let go g =
   match limits with
   | None ->
     Debug.printf "Ill-formed command: %s\n%!" @@ Uci.Recv.to_string (Go g);
-    finish ()
+    exit 1
   | Some limits ->
-    (* Start the search. *)
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
-    State.(gets stop) >>= fun stop ->
-    let t = Thread.create (fun () ->
-        search ~root ~limits ~history ~tt ~stop) () in
-    threads := t :: !threads;
+    (* Abort if there's already a thread running. *)
+    Option.iter !thread ~f:(fun t ->
+        Debug.printf
+          "Error: tried to start a new search while the previous one is still \
+           running\n%!";
+        kill ();
+        Thread.join t;
+        exit 1);
+    (* Start the search. *)
+    thread := Some (Thread.create (fun () ->
+        search ~root ~limits ~history ~tt) ());
     cont ()
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
 let recv cmd =
   let open Uci.Recv in
   match cmd with
-  | Uci -> uci (); cont ()
+  | Uci -> cont @@ uci ()
   | Isready -> cont @@ isready ()
   | Setoption opt -> setoption opt
   | Ucinewgame -> ucinewgame >>= cont
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves
   | Go g -> go g
-  | Stop -> State.(gets stop') >>= cont
-  | Quit -> State.(gets stop') >>= finish
+  | Stop -> cont (stop := true)
+  | Quit -> cont @@ kill ()
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
     printf "what?\n%!";
@@ -227,7 +250,7 @@ let recv cmd =
 
 (* Main loop. *)
 let rec loop () = match In_channel.(input_line stdin) with
-  | None -> State.(gets stop')
+  | None -> return ()
   | Some "" -> loop ()
   | Some line ->
     let open Uci.Recv in
@@ -242,13 +265,6 @@ let rec loop () = match In_channel.(input_line stdin) with
       | false -> return ()
       | true -> loop ()
 
-let rec wait_for_threads () = match !threads with
-  | [] -> ()
-  | t :: rest ->
-    threads := rest;
-    Thread.join t;
-    wait_for_threads ()
-
 (* Entry point. *)
 let run ~debug =
   Debug.set debug;
@@ -256,6 +272,8 @@ let run ~debug =
   State.Fields.create
     ~pos:Position.start
     ~history:(Int64.Map.singleton Position.(hash start) 1)
-    ~tt:(Search.Tt.create ())
-    ~stop:(ref false);
-  wait_for_threads ()
+    ~tt:(Search.Tt.create ());
+  (* Stop the thread. *)
+  Option.iter !thread ~f:(fun t ->
+      kill ();
+      Thread.join t)
