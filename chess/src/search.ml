@@ -104,6 +104,13 @@ module Limits = struct
           | None, Some _ -> invalid_arg "Missing winc" in
         Some (gametime ~wtime ~winc ~btime ~binc ~movestogo ~active ()) in
     let time = Option.merge movetime gametime ~f:min in
+    let infinite =
+      infinite ||
+      (not infinite &&
+       Option.is_none nodes &&
+       Option.is_none mate  &&
+       Option.is_none depth &&
+       Option.is_none time) in
     {infinite; nodes; mate; depth; time}
 end
 

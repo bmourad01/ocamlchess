@@ -24,6 +24,8 @@ module Limits : sig
   (** Creates the search limits, raising [Invalid_argument] if the parameters
       are ill-formed.
 
+      The following parameters control the limits:
+
       - [nodes]: search [n] nodes only
       - [mate]: search for a mate in [n] moves
       - [depth]: search [n] plies only
@@ -33,8 +35,14 @@ module Limits : sig
       - [winc]: white gets [n] millisecond increments per move
       - [btime]: black has [n] milliseconds left on the clock
       - [binc]: black gets [n] millisecond increments per move
-      - [active]: the active player
       - [infinite]: search until the [stop] command.
+
+      By default, if no values are given for these parameters, the search is
+      assumed to be infinite.
+
+      The remaining parameters:
+
+      - [active]: the active player, used for calculating the time limit
   *)
   val create :
     ?nodes:int option ->

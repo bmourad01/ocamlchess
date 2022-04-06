@@ -51,7 +51,7 @@ end
 
 let return = State.return
 let cont () = return true
-let finish () = return false
+let finish () = State.(gets stop') >>| const false
 
 let uci =
   let open Uci.Send in
@@ -224,7 +224,7 @@ let recv cmd =
 
 (* Main loop. *)
 let rec loop () = match In_channel.(input_line stdin) with
-  | None -> return ()
+  | None -> State.(gets stop')
   | Some "" -> loop ()
   | Some line ->
     let open Uci.Recv in
