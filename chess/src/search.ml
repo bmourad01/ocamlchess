@@ -75,10 +75,12 @@ module Limits = struct
         our_time / int_of_float (20.0 *. ratio) in
     time + our_inc
 
+  let default_depth = 7
+
   let create
       ?(nodes = None)
       ?(mate = None)
-      ?(depth = None)
+      ?(depth = Some default_depth)
       ?(movetime = None)
       ?(movestogo = None)
       ?(wtime = None)
@@ -104,14 +106,13 @@ module Limits = struct
           | None, Some _ -> invalid_arg "Missing winc" in
         Some (gametime ~wtime ~winc ~btime ~binc ~movestogo ~active ()) in
     let time = Option.merge movetime gametime ~f:min in
-    let infinite =
-      infinite ||
-      (not infinite &&
-       Option.is_none nodes &&
-       Option.is_none mate  &&
-       Option.is_none depth &&
-       Option.is_none time) in
-    {infinite; nodes; mate; depth; time}
+    if not infinite
+    && Option.is_none nodes
+    && Option.is_none mate
+    && Option.is_none depth
+    && Option.is_none time
+    then invalid_arg "Limits were explicitly unspecified"
+    else {infinite; nodes; mate; depth; time}
 end
 
 type limits = Limits.t

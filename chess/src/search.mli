@@ -21,6 +21,9 @@ module Limits : sig
   (** The time limit (in milliseconds) for the search, if any. *)
   val time : t -> int option
 
+  (** The default depth to search to. *)
+  val default_depth : int
+
   (** Creates the search limits, raising [Invalid_argument] if the parameters
       are ill-formed.
 
@@ -37,10 +40,10 @@ module Limits : sig
       - [binc]: black gets [n] millisecond increments per move
       - [infinite]: search until the [stop] command.
 
-      By default, if no values are given for these parameters, the search is
-      assumed to be infinite. Thus, it is recommended to run the search with
-      these limits in a separate thread. There, the optional [stop] parameter
-      may be used to terminate the search.
+      By default, if no values are given for these parameters, the search will
+      use the [depth] value of [default_depth]. If all parameters are left
+      explicitly unspecified (e.g. [infinite] is [false], and all others are
+      [None]), then [Invalid_argument] is raised.
 
       The remaining parameters:
 
