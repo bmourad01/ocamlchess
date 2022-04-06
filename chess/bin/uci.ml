@@ -141,10 +141,9 @@ let search ~root ~limits ~history ~tt =
   (* Make sure that we don't start a search that will stop immediately. *)
   stop := false;
   let result =
-    try
-      Search.go () ~root ~limits ~history ~tt ~stop ~iter:(fun result ->
-          (* For each iteration, send a UCI `info` command about the search. *)
-          info_of_result root tt result)
+    (* For each iteration, send a UCI `info` command about the search. *)
+    let iter result = info_of_result root tt result in
+    try Search.go () ~root ~limits ~history ~tt ~stop ~iter
     with exn ->
       Debug.printf "Uncaught exception: %s\n%!" @@ Exn.to_string exn;
       exit 1 in
@@ -174,6 +173,14 @@ let search ~root ~limits ~history ~tt =
   thread := None
 
 let go g =
+  (* Abort if there's already a thread running. *)
+  Option.iter !thread ~f:(fun t ->
+      Debug.printf
+        "Error: tried to start a new search while the previous one is still \
+         running\n%!";
+      kill ();
+      Thread.join t;
+      exit 1);
   (* Parse the search limits. *)
   let infinite = ref false in
   let nodes = ref None in
@@ -221,17 +228,9 @@ let go g =
     Debug.printf "Ill-formed command: %s\n%!" @@ Uci.Recv.to_string (Go g);
     exit 1
   | Some limits ->
+    (* Start the search. *)
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
-    (* Abort if there's already a thread running. *)
-    Option.iter !thread ~f:(fun t ->
-        Debug.printf
-          "Error: tried to start a new search while the previous one is still \
-           running\n%!";
-        kill ();
-        Thread.join t;
-        exit 1);
-    (* Start the search. *)
     thread := Some (Thread.create (fun () ->
         search ~root ~limits ~history ~tt) ());
     cont ()
@@ -248,7 +247,7 @@ let recv cmd =
   | Position (`startpos, moves) -> position Position.start moves
   | Go g -> go g
   | Stop -> cont (stop := true)
-  | Quit -> cont @@ kill ()
+  | Quit -> finish ()
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
     printf "what?\n%!";
