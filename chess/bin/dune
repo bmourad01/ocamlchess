@@ -2,7 +2,13 @@
  (name ocamlchess)
  (public_name ocamlchess)
  (flags -w -58)
- (libraries cmdliner core_kernel chess monads threads)
+ (libraries
+   cmdliner
+   core_kernel
+   chess
+   bap-future
+   monads
+   threads)
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_fields_conv))
  (foreign_stubs

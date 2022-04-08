@@ -48,6 +48,7 @@ module Limits : sig
       The remaining parameters:
 
       - [active]: the active player, used for calculating the time limit
+      - [stop]: a promise to stop the search at an arbitrary point in time
   *)
   val create :
     ?nodes:int option ->
@@ -61,6 +62,7 @@ module Limits : sig
     ?binc:int option ->
     ?infinite:bool ->
     active:Piece.color ->
+    stop:unit Bap_future.Std.future ->
     unit ->
     t
 end
@@ -151,14 +153,10 @@ type iter = result -> unit
 
     An optional callback [iter] can be provided, which is invoked for each
     iteration of the search. By default, it will do nothing.
-
-    An optional parameter [stop] may be provided to stop the search at an
-    arbitrary point in time.
 *)
 val go :
   ?tt:Tt.t ->
   ?iter:iter ->
-  ?stop:bool ref ->
   root:Position.t ->
   limits:limits ->
   history:int Core_kernel.Int64.Map.t ->

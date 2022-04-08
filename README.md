@@ -8,6 +8,7 @@ For best performance, please ensure that a Flambda-enabled OCaml compiler is ins
 
 The following OCaml packages are required, available via `opam install <pkg>`:
 
+- bap-future
 - cmdliner
 - core_kernel
 - dune

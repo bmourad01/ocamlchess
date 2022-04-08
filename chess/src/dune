@@ -5,6 +5,7 @@
  (libraries
    core_kernel
    core_kernel.uopt
+   bap-future
    monads)
  (foreign_stubs
   (language c)

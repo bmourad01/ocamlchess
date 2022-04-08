@@ -1,5 +1,6 @@
 open Core_kernel
 open Chess
+open Bap_future.Std
 open Monads.Std
 
 module State = struct
@@ -8,6 +9,7 @@ module State = struct
       pos     : Position.t;
       history : int Int64.Map.t;
       tt      : Search.Tt.t;
+      stop    : unit promise option;
     } [@@deriving fields]
   end
 
@@ -27,6 +29,7 @@ module State = struct
     {st with pos; history}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
+  let set_stop stop = update @@ fun st -> {st with stop}
 end
 
 open State.Syntax
@@ -88,9 +91,8 @@ let position pos moves =
       State.(gets pos) >>= fun pos ->
       match Position.make_move pos m with
       | exception _ ->
-        Debug.printf "Received illegal move %s for position %s\n%!"
-          (Move.to_string m) (Position.Fen.to_string pos);
-        exit 1
+        failwithf "Received illegal move %s for position %s\n%!"
+          (Move.to_string m) (Position.Fen.to_string pos) ()
       | legal ->
         let pos = Position.Legal.new_position legal in
         State.update_position pos >>= fun () ->
@@ -100,9 +102,8 @@ let position pos moves =
     State.set_position pos >>= fun () ->
     apply moves
   | Error err ->
-    Debug.printf "Received invalid position %s: %s\n%!"
-      (Position.Fen.to_string pos) (Position.Valid.Error.to_string err);
-    exit 1
+    failwithf "Received invalid position %s: %s\n%!"
+      (Position.Fen.to_string pos) (Position.Valid.Error.to_string err) ()
 
 let info_of_result root tt result =
   let depth = Search.Result.depth result in
@@ -126,35 +127,30 @@ let info_of_result root tt result =
 (* Don't output the result of the search. *)
 let cancel = ref false
 
-(* Stop the search. *)
-let stop = ref false
-
 (* Current search thread. *)
-let thread = ref None
+let search_thread = ref None
 
-let kill () =
-  cancel := true;
-  stop := true
+let kill stop =
+  Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
+  cancel := true
 
 (* The main search routine, should be run in a separate thread. *)
-let search ~root ~limits ~history ~tt =
-  (* Make sure that we don't start a search that will stop immediately. *)
-  stop := false;
+let search ~root ~limits ~history ~tt ~stop =
   let result =
     (* For each iteration, send a UCI `info` command about the search. *)
     let iter result = info_of_result root tt result in
-    try Search.go () ~root ~limits ~history ~tt ~stop ~iter
+    try Search.go () ~root ~limits ~history ~tt ~iter
     with exn ->
-      Debug.printf "Uncaught exception: %s\n%!" @@ Exn.to_string exn;
+      (* Notify the user and abort. *)
+      printf "Search encountered an exception: %s\n%!" @@ Exn.to_string exn;
       exit 1 in
   (* The UCI protocol says that `infinite` and `ponder` searches must wait for
      a corresponding `stop` or `ponderhit` command before sending `bestmove`.
      So, we will busy-wait in this thread until it happens. *)
   if Search.Limits.infinite limits then
-    while not (!stop || !cancel) do
+    while not (Future.is_decided stop || !cancel) do
       Thread.yield ()
     done;
-  stop := false;
   begin match !cancel with
     | true ->
       (* We canceled the thread, so don't output the result. *)
@@ -170,17 +166,19 @@ let search ~root ~limits ~history ~tt =
       Uci.Send.(Bestmove Bestmove.{move; ponder})
   end;
   (* Thread completed. *)
-  thread := None
+  search_thread := None
+
+(* Abort if there's already a thread running. *)
+let check_thread =
+  State.(gets stop) >>| fun stop ->
+  Option.iter !search_thread ~f:(fun t ->
+      kill stop;
+      Thread.join t;
+      failwith "Error: tried to start a new search while the previous one is \
+                still running")
 
 let go g =
-  (* Abort if there's already a thread running. *)
-  Option.iter !thread ~f:(fun t ->
-      Debug.printf
-        "Error: tried to start a new search while the previous one is still \
-         running\n%!";
-      kill ();
-      Thread.join t;
-      exit 1);
+  check_thread >>= fun () ->
   (* Parse the search limits. *)
   let infinite = ref false in
   let nodes = ref None in
@@ -211,6 +209,7 @@ let go g =
   (* Construct the search limits. *)
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
+  let stop, promise = Future.create () in
   let limits = Option.try_with @@ Search.Limits.create
       ~nodes:!nodes
       ~mate:!mate
@@ -222,18 +221,28 @@ let go g =
       ~btime:!btime
       ~binc:!binc
       ~infinite:!infinite
-      ~active in
+      ~active
+      ~stop in
   match limits with
   | None ->
-    Debug.printf "Ill-formed command: %s\n%!" @@ Uci.Recv.to_string (Go g);
-    exit 1
+    failwithf "Ill-formed command: %s\n%!" (Uci.Recv.to_string (Go g)) ()
   | Some limits ->
     (* Start the search. *)
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
-    thread := Some (Thread.create (fun () ->
-        search ~root ~limits ~history ~tt) ());
+    State.set_stop (Some promise) >>= fun () ->
+    search_thread := Some (Thread.create (fun () ->
+        search ~root ~limits ~history ~tt ~stop) ());
     cont ()
+
+let stop =
+  (* Fulfill the promise if it exists. *)
+  State.(gets stop) >>= begin function
+    | Some stop -> return @@ Promise.fulfill stop ()
+    | None -> return ()
+  end >>= fun () ->
+  (* Reset. *)
+  State.set_stop None
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
 let recv cmd =
@@ -246,7 +255,7 @@ let recv cmd =
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves
   | Go g -> go g
-  | Stop -> cont (stop := true)
+  | Stop -> stop >>= cont
   | Quit -> finish ()
   | cmd ->
     Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
@@ -273,12 +282,13 @@ let rec loop () = match In_channel.(input_line stdin) with
 (* Entry point. *)
 let run ~debug =
   Debug.set debug;
-  Monad.State.eval (loop ()) @@
-  State.Fields.create
-    ~pos:Position.start
-    ~history:(Int64.Map.singleton Position.(hash start) 1)
-    ~tt:(Search.Tt.create ());
-  (* Stop the thread. *)
-  Option.iter !thread ~f:(fun t ->
-      kill ();
-      Thread.join t)
+  (* Run the main interpreter loop. *)
+  let State.{stop; _} =
+    Monad.State.exec (loop ()) @@
+    State.Fields.create
+      ~pos:Position.start
+      ~history:(Int64.Map.singleton Position.(hash start) 1)
+      ~tt:(Search.Tt.create ())
+      ~stop:None in
+  (* Stop the search thread. *)
+  Option.iter !search_thread ~f:(fun t -> kill stop; Thread.join t)

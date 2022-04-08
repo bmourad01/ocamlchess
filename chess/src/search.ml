@@ -1,5 +1,6 @@
 open Core_kernel
 open Monads.Std
+open Bap_future.Std
 
 module Bb = Bitboard
 module Legal = Position.Legal
@@ -16,7 +17,10 @@ module Limits = struct
     mate     : int option;
     depth    : int option;
     time     : int option;
+    stop     : unit future;
   } [@@deriving fields]
+
+  let stopped limits = Future.is_decided @@ stop limits
 
   let check_nodes = function
     | None -> ()
@@ -89,6 +93,7 @@ module Limits = struct
       ?(binc = None)
       ?(infinite = false)
       ~active
+      ~stop
       () =
     check_nodes nodes;
     check_mate mate;
@@ -112,7 +117,7 @@ module Limits = struct
     && Option.is_none depth
     && Option.is_none time
     then invalid_arg "Limits were explicitly unspecified"
-    else {infinite; nodes; mate; depth; time}
+    else {infinite; nodes; mate; depth; time; stop}
 end
 
 type limits = Limits.t
@@ -200,20 +205,19 @@ end
 type result = Result.t
 
 (* The input parameters to the search. *)
-type t = {
+type search = {
   limits  : limits;
   root    : Position.t;
   history : int Int64.Map.t;
   tt      : Tt.t;
-  stop    : bool ref;
 } [@@deriving fields]
 
-let create ~limits ~root ~history ~tt ~stop =
+let create_search ~limits ~root ~history ~tt =
   let history =
     (* Make sure that the root position is in our history. *)
     Position.hash root |> Map.update history ~f:(function
         | Some n -> n | None -> 1) in
-  Fields.create ~limits ~root ~history ~tt ~stop
+  Fields_of_search.create ~limits ~root ~history ~tt
 
 (* Constants. *)
 let inf = 65535
@@ -233,8 +237,6 @@ let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
-  type search = t
-
   module T = struct
     type t = {
       start_time   : Time.t;
@@ -319,17 +321,18 @@ let return = State.return
 
 let check_limits =
   State.get () >>| fun {start_time; search; nodes; _} ->
-  !(search.stop) ||
   let limits = search.limits in
-  match Limits.nodes limits with
-  | Some n when nodes >= n -> true
-  | _ -> match Limits.time limits with
-    | None -> false
-    | Some t ->
-      let elapsed =
-        int_of_float @@
-        Time.(Span.to_ms @@ diff (now ()) start_time) in
-      elapsed >= t
+  Limits.stopped limits || begin
+    match Limits.nodes limits with
+    | Some n when nodes >= n -> true
+    | _ -> match Limits.time limits with
+      | None -> false
+      | Some t ->
+        let elapsed =
+          int_of_float @@
+          Time.(Span.to_ms @@ diff (now ()) start_time) in
+        elapsed >= t
+  end
 
 (* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
@@ -720,9 +723,9 @@ module Main = struct
     let alpha = if depth > 1 then best_score - delta_low  else -inf in
     let beta  = if depth > 1 then best_score + delta_high else  inf in
     root moves ~alpha ~beta ~depth >>= fun (best, score) ->
-    State.(gets search) >>= fun {stop; _} ->
+    State.(gets search) >>= fun {limits; _} ->
     (* Search was stopped, or we landed inside the window. *)
-    if !stop || (score > alpha && score < beta)
+    if Limits.stopped limits || (score > alpha && score < beta)
     then return (best, score)
     else (* Result was outside the window, so we need to widen a bit. *)
       let delta_low, delta_high =
@@ -764,11 +767,11 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
     Time.(Span.to_ms @@ diff (now ()) st.start_time) in
   let mate = is_mate score in
   let mated = is_mated score in
-  let {limits; tt; root; stop; _} = st.search in
+  let {limits; tt; root; _} = st.search in
   let nodes = st.nodes in
   (* If the search was stopped, use the previous completed result, if
      available. *)
-  if !stop then match prev with
+  if Limits.stopped limits then match prev with
     | Some result -> result
     | None ->
       let pv = [best] in
@@ -810,7 +813,6 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
 let go
     ?(tt = Tt.create ())
     ?(iter = default_iter)
-    ?(stop = ref false)
     ~root
     ~limits
     ~history
@@ -820,4 +822,4 @@ let go
   | moves ->
     iterdeep ~iter ~moves @@
     State.create @@
-    create ~root ~limits ~history ~tt ~stop
+    create_search ~root ~limits ~history ~tt

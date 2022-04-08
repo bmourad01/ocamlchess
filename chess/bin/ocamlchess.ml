@@ -68,7 +68,8 @@ module Gui = struct
         ~nodes
         ~depth:(Some depth)
         ~active:(Chess.Position.active pos)
-        ~infinite:false in
+        ~infinite:false
+        ~stop:(fst @@ Bap_future.Std.Future.create ()) in
     Caml_player.limits := Some limits;
     Base.Option.iter book ~f:(fun filename ->
         let open Core_kernel in
