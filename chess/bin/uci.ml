@@ -208,7 +208,8 @@ let go g =
       | Winc n -> winc := Some n
       | Binc n -> binc := Some n
       | Movestogo n -> movestogo := Some n
-      | _ -> ());
+      | Ponder -> failwith "Unsupported command: ponder"
+      | Searchmoves _ -> failwith "Unsupported command: searchmoves");
   (* Construct the search limits. *)
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
@@ -258,10 +259,9 @@ let recv cmd =
   | Go g -> go g
   | Stop -> stop >>= cont
   | Quit -> finish ()
-  | cmd ->
-    Debug.printf "Unhandled command: %s\n%!" @@ to_string cmd;
-    printf "what?\n%!";
-    cont ()
+  | Ponderhit -> failwith "Unsupported command: ponderhit"
+  | Debug _ -> failwith "Unsupported command: debug"
+  | Register _ -> failwith "Unsupported command: register"
 
 (* Main loop. *)
 let rec loop () = match In_channel.(input_line stdin) with
