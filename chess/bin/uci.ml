@@ -213,7 +213,7 @@ let go g =
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
   let stop, promise = Future.create () in
-  let limits = Option.try_with @@ Search.Limits.create
+  let limits = Search.Limits.create
       ~nodes:!nodes
       ~mate:!mate
       ~depth:!depth
@@ -225,19 +225,16 @@ let go g =
       ~binc:!binc
       ~infinite:!infinite
       ~active
-      ~stop in
-  match limits with
-  | None ->
-    failwithf "Ill-formed command: %s\n%!" (Uci.Recv.to_string (Go g)) ()
-  | Some limits ->
-    (* Start the search. *)
-    State.(gets history) >>= fun history ->
-    State.(gets tt) >>= fun tt ->
-    State.set_stop (Some promise) >>= fun () ->
-    Atomic.set search_thread @@
-    Option.return @@
-    Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ();
-    cont ()
+      ~stop
+      () in
+  (* Start the search. *)
+  State.(gets history) >>= fun history ->
+  State.(gets tt) >>= fun tt ->
+  State.set_stop (Some promise) >>= fun () ->
+  Atomic.set search_thread @@
+  Option.return @@
+  Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ();
+  cont ()
 
 let stop =
   (* Fulfill the promise if it exists. *)
