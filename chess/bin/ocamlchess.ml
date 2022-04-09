@@ -138,16 +138,10 @@ module Gui = struct
 end
 
 module Uci = struct
-  let go debug = Uci.run ~debug
-
-  let debug =
-    let doc = "Enables debug logging to stderr." in
-    Arg.(value & flag (info ["debug"] ~doc))
-
-  let t = Term.(const go $ debug)
+  let t = Term.(const Uci.run $ const ())
 
   let info =
-    let doc = "Runs the UCI loop with the 'caml' player." in
+    let doc = "Runs the UCI loop." in
     Cmd.info "uci"
       ~version
       ~doc

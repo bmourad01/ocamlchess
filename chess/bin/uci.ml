@@ -38,16 +38,6 @@ let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
     "Clear Hash", Button;
   ]
 
-(* Debug logging. *)
-module Debug = struct
-  let enabled = ref false
-  let set b = enabled := b
-
-  let printf fmt =
-    if !enabled then Printf.eprintf fmt
-    else Printf.(ifprintf stderr fmt)
-end
-
 let return = State.return
 let cont () = return true
 let finish () = return false
@@ -267,22 +257,14 @@ let recv cmd =
 let rec loop () = match In_channel.(input_line stdin) with
   | None -> return ()
   | Some "" -> loop ()
-  | Some line ->
-    let open Uci.Recv in
-    match of_string line with
-    | None ->
-      Debug.printf "Invalid command: %s\n%!" line;
-      printf "what?\n%!";
-      loop ()
-    | Some cmd ->
-      Debug.printf "Received command: %s\n%!" @@ to_string cmd;
-      recv cmd >>= function
+  | Some line -> match Uci.Recv.of_string line with
+    | None -> loop @@ printf "what?\n%!"
+    | Some cmd -> recv cmd >>= function
       | false -> return ()
       | true -> loop ()
 
 (* Entry point. *)
-let run ~debug =
-  Debug.set debug;
+let run () =
   (* Run the main interpreter loop. *)
   let State.{stop; _} =
     Monad.State.exec (loop ()) @@
