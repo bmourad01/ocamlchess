@@ -129,6 +129,7 @@ let cancel = ref false
 
 (* Current search thread. *)
 let search_thread = ref None
+let search_thread_lock = Mutex.create ()
 
 let kill stop =
   Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
@@ -166,16 +167,20 @@ let search ~root ~limits ~history ~tt ~stop =
       Uci.Send.(Bestmove Bestmove.{move; ponder})
   end;
   (* Thread completed. *)
-  search_thread := None
+  Mutex.lock search_thread_lock;
+  search_thread := None;
+  Mutex.unlock search_thread_lock
 
 (* Abort if there's already a thread running. *)
 let check_thread =
   State.(gets stop) >>| fun stop ->
+  Mutex.lock search_thread_lock;
   Option.iter !search_thread ~f:(fun t ->
       kill stop;
       Thread.join t;
       failwith "Error: tried to start a new search while the previous one is \
-                still running")
+                still running");
+  Mutex.unlock search_thread_lock
 
 let go g =
   check_thread >>= fun () ->
@@ -291,4 +296,6 @@ let run ~debug =
       ~tt:(Search.Tt.create ())
       ~stop:None in
   (* Stop the search thread. *)
-  Option.iter !search_thread ~f:(fun t -> kill stop; Thread.join t)
+  Mutex.lock search_thread_lock;
+  Option.iter !search_thread ~f:(fun t -> kill stop; Thread.join t);
+  Mutex.unlock search_thread_lock
