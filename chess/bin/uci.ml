@@ -125,15 +125,14 @@ let info_of_result root tt result =
     ])
 
 (* Don't output the result of the search. *)
-let cancel = ref false
+let cancel = Atomic.make false
 
 (* Current search thread. *)
-let search_thread = ref None
-let search_thread_lock = Mutex.create ()
+let search_thread = Atomic.make None
 
 let kill stop =
   Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
-  cancel := true
+  Atomic.set cancel true
 
 (* The main search routine, should be run in a separate thread. *)
 let search ~root ~limits ~history ~tt ~stop =
@@ -149,13 +148,13 @@ let search ~root ~limits ~history ~tt ~stop =
      a corresponding `stop` or `ponderhit` command before sending `bestmove`.
      So, we will busy-wait in this thread until it happens. *)
   if Search.Limits.infinite limits then
-    while not (Future.is_decided stop || !cancel) do
+    while not (Future.is_decided stop || Atomic.get cancel) do
       Thread.yield ()
     done;
-  begin match !cancel with
+  begin match Atomic.get cancel with
     | true ->
       (* We canceled the thread, so don't output the result. *)
-      cancel := false
+      Atomic.set cancel false
     | false ->
       (* Send the bestmove. *)
       let ponder = match Search.Result.pv result with
@@ -167,20 +166,16 @@ let search ~root ~limits ~history ~tt ~stop =
       Uci.Send.(Bestmove Bestmove.{move; ponder})
   end;
   (* Thread completed. *)
-  Mutex.lock search_thread_lock;
-  search_thread := None;
-  Mutex.unlock search_thread_lock
+  Atomic.set search_thread None
 
 (* Abort if there's already a thread running. *)
 let check_thread =
   State.(gets stop) >>| fun stop ->
-  Mutex.lock search_thread_lock;
-  Option.iter !search_thread ~f:(fun t ->
+  Atomic.get search_thread |> Option.iter ~f:(fun t ->
       kill stop;
       Thread.join t;
       failwith "Error: tried to start a new search while the previous one is \
-                still running");
-  Mutex.unlock search_thread_lock
+                still running")
 
 let go g =
   check_thread >>= fun () ->
@@ -195,7 +190,10 @@ let go g =
   let winc = ref None in
   let binc = ref None in
   let movestogo = ref None in
-  (* If no parameters were given, then assume an infinite search. *)
+  (* If no parameters were given, then assume an infinite search. This is how
+     Stockfish behaves. To be fair, the UCI protocol is very underspecified
+     and underdocumented. It begs the question as to why it's still so widely
+     supported. *)
   if List.is_empty g then infinite := true
   else List.iter g ~f:(fun go ->
       let open Uci.Recv.Go in
@@ -236,8 +234,9 @@ let go g =
     State.(gets history) >>= fun history ->
     State.(gets tt) >>= fun tt ->
     State.set_stop (Some promise) >>= fun () ->
-    search_thread := Some (Thread.create (fun () ->
-        search ~root ~limits ~history ~tt ~stop) ());
+    Atomic.set search_thread @@
+    Option.return @@
+    Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ();
     cont ()
 
 let stop =
@@ -296,6 +295,5 @@ let run ~debug =
       ~tt:(Search.Tt.create ())
       ~stop:None in
   (* Stop the search thread. *)
-  Mutex.lock search_thread_lock;
-  Option.iter !search_thread ~f:(fun t -> kill stop; Thread.join t);
-  Mutex.unlock search_thread_lock
+  Atomic.get search_thread |>
+  Option.iter ~f:(fun t -> kill stop; Thread.join t);
