@@ -442,6 +442,8 @@ module Order = struct
             else let killer = killer m in
               if killer <> 0 then killer
               else history m) in
+    (* In case we never improve alpha, return the first available move as an
+       option for the player (any arbitrary selection would do). *)
     fst @@ Array.unsafe_get moves 0, make_picker moves
 
   (* Score the moves for quiescence search. *)
