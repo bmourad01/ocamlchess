@@ -469,25 +469,26 @@ let negm = Fn.compose return Int.neg
 module Quiescence = struct
   let margin = Piece.Kind.value Queen * Eval.material_weight
 
-  let rec go pos ~alpha ~beta ~ply =
-    let moves = Position.legal_moves pos in
-    let check = Position.in_check pos in
-    if List.is_empty moves
-    then return @@ if check then -mate_score + ply else 0
-    else with_moves pos moves ~alpha ~beta ~ply
-
-  and with_moves pos moves ~alpha ~beta ~ply = check_limits >>= function
+  let rec go pos ~alpha ~beta ~ply = check_limits >>= function
     | true -> return 0
-    | false -> State.(update inc_nodes) >>= fun () ->
-      let score = Eval.go pos in
-      if score >= beta then return beta
-      else if score + margin < alpha && not @@ Eval.is_endgame pos
-      then return alpha
-      else List.filter moves ~f:is_noisy |>
-           Order.qscore |> Order.fold_until
-             ~init:(max score alpha)
-             ~finish:return
-             ~f:(branch ~beta ~ply)
+    | false ->
+      let moves = Position.legal_moves pos in
+      let check = Position.in_check pos in
+      if List.is_empty moves
+      then return @@ if check then -mate_score + ply else 0
+      else with_moves pos moves ~alpha ~beta ~ply
+
+  and with_moves pos moves ~alpha ~beta ~ply =
+    State.(update inc_nodes) >>= fun () ->
+    let score = Eval.go pos in
+    if score >= beta then return beta
+    else if score + margin < alpha && not @@ Eval.is_endgame pos
+    then return alpha
+    else List.filter moves ~f:is_noisy |>
+         Order.qscore |> Order.fold_until
+           ~init:(max score alpha)
+           ~finish:return
+           ~f:(branch ~beta ~ply)
 
   and branch ~beta ~ply = fun alpha m ->
     let open Continue_or_stop in
