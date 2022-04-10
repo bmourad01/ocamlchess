@@ -122,6 +122,16 @@ end
 
 type limits = Limits.t
 
+(* Constants. *)
+let inf = 65535
+let mate_score = inf / 2
+let max_ply = 64
+
+(* Mate scores should be relative to the distance from the root position.
+   Shorter distances are to be preferred. *)
+let is_mate score = score >= mate_score - max_ply
+let is_mated score = score <= (-mate_score) + max_ply
+
 (* Transposition table for caching search results. *)
 module Tt = struct
   type bound = Lower | Upper | Exact
@@ -168,15 +178,22 @@ module Tt = struct
 
      - Exact: the score is an exact evaluation for this position.
   *)
-  let lookup tt ~pos ~depth ~alpha ~beta = match find tt pos with
+  let lookup tt ~pos ~depth ~ply ~alpha ~beta = match find tt pos with
     | None -> Second (alpha, beta)
     | Some entry when Entry.depth entry < depth -> Second (alpha, beta)
-    | Some Entry.{score; bound; _} -> match bound with
-      | Lower when score >= beta -> First beta
-      | Lower -> Second (max alpha score, beta)
-      | Upper when score <= alpha -> First alpha
-      | Upper -> Second (alpha, min beta score)
+    | Some Entry.{score; bound; _} ->
+      let score =
+        if is_mate score then score - ply
+        else if is_mated score then score + ply
+        else score in
+      match bound with
       | Exact -> First score
+      | Lower ->
+        let alpha = max alpha score in
+        if alpha >= beta then First score else Second (alpha, beta)
+      | Upper ->
+        let beta = min beta score in
+        if alpha >= beta then First score else Second (alpha, beta)
 
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
@@ -218,16 +235,6 @@ let create_search ~limits ~root ~history ~tt =
     Position.hash root |> Map.update history ~f:(function
         | Some n -> n | None -> 1) in
   Fields_of_search.create ~limits ~root ~history ~tt
-
-(* Constants. *)
-let inf = 65535
-let mate_score = inf / 2
-let max_ply = 64
-
-(* Mate scores should be relative to the distance from the root position.
-   Shorter distances are to be preferred. *)
-let is_mate score = score >= mate_score - max_ply
-let is_mated score = score <= (-mate_score) + max_ply
 
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
@@ -514,7 +521,7 @@ module Main = struct
       (* Will the position lead to a draw? *)
       if drawn search pos then return 0
       (* Find a cached evaluation of the position. *)
-      else match Tt.lookup search.tt ~pos ~depth ~alpha ~beta with
+      else match Tt.lookup search.tt ~pos ~depth ~ply ~alpha ~beta with
         | First score -> return score
         | Second (alpha, beta) ->
           let moves = Position.legal_moves pos in
@@ -531,28 +538,32 @@ module Main = struct
               | Second (alpha, beta) ->
                 (* Use the null move hypothesis to reduce the depth of the
                    search. *)
-                let score = Eval.go pos in
+                let eval = Eval.go pos in
                 reduce pos moves
-                  ~score ~alpha ~beta ~ply ~depth
+                  ~eval ~alpha ~beta ~ply ~depth
                   ~check ~depth ~null >>= function
                 | Some score -> return score
                 | None ->
-                  Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
-                  let t = create moves ~alpha in
-                  let finish () = return t.alpha in
-                  let f = branch t ~score ~beta ~depth ~ply ~check in
-                  State.List.fold_until moves ~init:() ~finish ~f >>| fun score ->
-                  (* To be safe, don't cache the results of a null move. *)
-                  if not null then
-                    Tt.store search.tt pos ~depth ~score
-                      ~best:t.best ~bound:t.bound;
-                  score
+                  (* Couldn't reduce, so search the available moves. *)
+                  with_moves pos moves
+                    ~alpha ~beta ~ply ~depth ~eval ~check
+
+  (* Search the available moves for the given position. *)
+  and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check =
+    State.(gets search) >>= fun {tt; _} ->
+    Order.sort moves ~ply ~pos ~tt >>= fun moves ->
+    let t = create moves ~alpha in
+    let finish () = return t.alpha in
+    let f = branch t ~eval ~beta ~depth ~ply ~check in
+    State.List.fold_until moves ~init:() ~finish ~f >>| fun score ->
+    Tt.store tt pos ~depth ~score ~best:t.best ~bound:t.bound;
+    score
 
   (* Search a branch of the current node. *)
-  and branch t ~score ~beta ~depth ~ply ~check = fun () m ->
+  and branch t ~eval ~beta ~depth ~ply ~check = fun () m ->
     let open Continue_or_stop in
     (* Skip this move if it has no chance of improving alpha. *)
-    if futile m ~score ~alpha:t.alpha ~beta ~depth ~check
+    if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check
     then return @@ Continue ()
     else (* Get the score. *)
       lmr_pvs t m ~beta ~ply ~depth ~check >>= fun score ->
@@ -571,23 +582,24 @@ module Main = struct
     else Second (alpha, beta)
 
   (* Try to reduce the depth. *)
-  and reduce pos moves ~score ~alpha ~beta ~ply ~depth ~check ~depth ~null =
+  and reduce pos moves ~eval ~alpha ~beta ~ply ~depth ~check ~depth ~null =
     if beta - alpha > 1 || check || null
     then return None
-    else match rfp ~depth ~score ~beta with
+    else match rfp ~depth ~eval ~beta with
       | Some _ as score -> return score
-      | None -> nmr pos ~score ~beta ~ply ~depth >>= function
+      | None -> nmr pos ~eval ~beta ~ply ~depth >>= function
         | Some _ as beta -> return beta
-        | None -> razor pos moves ~score ~alpha ~beta ~ply ~depth
+        | None -> razor pos moves ~eval ~alpha ~beta ~ply ~depth
 
   (* Reverse futility pruning.
 
      If our score is within a margin above beta, then it is likely too
      good, and should cause a cutoff.
   *)
-  and rfp ~depth ~score ~beta =
-    let score = score - 70 * depth in
-    Option.some_if (depth <= futility_limit && score >= beta) score
+  and rfp ~depth ~eval ~beta =
+    Option.some_if
+      (depth <= futility_limit && (eval - 70 * depth) >= beta)
+      eval
 
   (* Null move reduction.
 
@@ -595,20 +607,18 @@ module Main = struct
      response still produces a beta cutoff, then we know this position
      is unlikely.
   *)
-  and nmr pos ~score ~beta ~ply ~depth =
+  and nmr pos ~eval ~beta ~ply ~depth =
     let pawn = Position.pawn pos in
     let king = Position.king pos in
     let active = Position.active_board pos in
-    if score >= beta
+    if eval >= beta
     && depth > reduction_factor
     && Bb.(((pawn + king) & active) <> active) then
-      let r = 4 + (depth / 6) in
-      let r = r + min 3 ((score - beta) / 3000) in
       Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)
-        ~depth:(depth - r)
+        ~depth:(depth - 1 - reduction_factor)
         ~null:true >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else return None
@@ -618,10 +628,10 @@ module Main = struct
      Drop down to quescience search if we're approaching the horizon and we 
      have little chance to improve alpha.
   *)
-  and razor pos moves ~score ~alpha ~beta ~ply ~depth =
-    if depth = 1 && score + razor_margin <= alpha then
-      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun qscore ->
-      Option.some_if (qscore <= alpha) qscore
+  and razor pos moves ~eval ~alpha ~beta ~ply ~depth =
+    if depth = 1 && eval + razor_margin <= alpha then
+      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun score ->
+      Option.some_if (score <= alpha) score
     else return None
 
   and razor_margin = Piece.Kind.value Rook * Eval.material_weight
@@ -631,13 +641,13 @@ module Main = struct
      If our score is within a margin below alpha, then skip searching
      quiet moves (since they are likely to be "futile" in improving alpha).
   *)
-  and futile m ~score ~alpha ~beta ~depth ~check =
+  and futile m ~eval ~alpha ~beta ~depth ~check =
     not check &&
     beta - alpha <= 1 &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
     depth <= futility_limit &&
-    score + 115 + 90 * depth <= alpha
+    eval + 115 + 90 * depth <= alpha
 
   and futility_limit = 6
 
@@ -674,14 +684,14 @@ module Main = struct
           ~alpha:((-t.alpha) - 1)
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
-          ~depth:(depth - reduction_factor) >>= negm >>| Option.some
+          ~depth:(depth - reduction_factor) >>= negm >>| fun score ->
+        Option.some_if (score <= t.alpha) score
     else return None
 
   (* Combine LMR and PVS. *)
   and lmr_pvs t m ~beta ~ply ~depth ~check =
     let pvs () = Legal.new_position m |> pvs t ~beta ~ply ~depth in
     lmr t m ~beta ~ply ~depth ~check >>= function
-    | Some score when score > t.alpha -> pvs ()
     | Some score -> return score
     | None -> pvs ()
 
