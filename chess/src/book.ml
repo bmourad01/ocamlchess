@@ -24,21 +24,21 @@ external b16 : bytes -> int -> int   = "ml_bytes_int16_be" [@@noalloc]
 *)
 let decode_move i =
   let src =
-    let rank = (i land 0xE00) lsr 9 in
-    let file = (i land 0x1C0) lsr 6 in
+    let rank = (i land 0b0_000_111_000_000_000) lsr 9 in
+    let file = (i land 0b0_000_000_111_000_000) lsr 6 in
     Square.create_exn ~rank ~file in
   let dst =
-    let rank = (i land 0x38) lsr 3 in
-    let file = i land 0x7 in
+    let rank = (i land 0b0_000_000_000_111_000) lsr 3 in
+    let file = (i land 0b0_000_000_000_000_111) lsr 0 in
     Square.create_exn ~rank ~file in
   let promote =
-    match (i land 0x7000) lsr 12 with
-    | 0 -> None
-    | 1 -> Some Move.Promote.Knight
-    | 2 -> Some Move.Promote.Bishop
-    | 3 -> Some Move.Promote.Rook
-    | 4 -> Some Move.Promote.Queen
-    | n -> invalid_argf "Invalid promotion piece %d" n () in
+    match (i land 0b0_111_000_000_000_000) lsr 12 with
+    | 0b000 -> None
+    | 0b001 -> Some Move.Promote.Knight
+    | 0b010 -> Some Move.Promote.Bishop
+    | 0b011 -> Some Move.Promote.Rook
+    | 0b100 -> Some Move.Promote.Queen
+    | _ -> assert false in
   Move.create src dst ~promote
 
 (* The Polyglot entry format can be seen as the following C struct:
