@@ -38,7 +38,7 @@ let decode_move i =
     | 0b010 -> Some Move.Promote.Bishop
     | 0b011 -> Some Move.Promote.Rook
     | 0b100 -> Some Move.Promote.Queen
-    | _ -> assert false in
+    | n -> invalid_argf "Invalid promotion piece %d" n () in
   Move.create src dst ~promote
 
 (* The Polyglot entry format can be seen as the following C struct:
