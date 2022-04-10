@@ -307,19 +307,6 @@ module State = struct
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
-
-  module List = struct
-    include List
-
-    let fold_until =
-      let open Continue_or_stop in
-      let rec aux acc ~f ~finish = function
-        | [] -> finish acc
-        | x :: xs -> f acc x >>= function
-          | Continue y -> aux y xs ~f ~finish
-          | Stop z -> return z in
-      fun l ~init -> aux init l
-  end
 end
 
 open State.Syntax
@@ -399,14 +386,36 @@ module Order = struct
         let k = Move.Promote.to_piece_kind k in
         promote_bonus + Piece.Kind.value k * Eval.material_weight)
 
-  (* Sort by the result of `eval` for each move. *)
-  let sort_aux moves ~eval =
-    List.map moves ~f:(fun m -> m, eval m) |>
-    List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
-    List.map ~f:fst
+  (* Score each move according to `eval`. *)
+  let score_aux moves ~eval =
+    Array.of_list @@ List.map moves ~f:(fun m -> m, eval m)
 
-  (* Sort for normal search. *)
-  let sort moves ~ply ~pos ~tt =
+  (* Returns a thunk that incrementally sorts the list. In the context of
+     alpha-beta pruning, we may not actually visit all the moves for a given
+     position, so it makes no sense to waste time sorting the entire thing. *)
+  let make_picker moves =
+    let current = ref 0 in
+    let n = Array.length moves in
+    fun () ->
+      if !current < n then
+        let best_score = ref (-inf) in
+        let best_index = ref (!current) in
+        for i = !current to n - 1 do
+          let _, score = Array.unsafe_get moves i in
+          if score > !best_score then begin
+            best_score := score;
+            best_index := i;
+          end
+        done;
+        let m, _ = Array.unsafe_get moves !best_index in
+        let old = Array.unsafe_get moves !current in
+        Array.unsafe_set moves !best_index old;
+        incr current;
+        Some m
+      else None
+
+  (* Score the moves for normal search. *)
+  let score moves ~ply ~pos ~tt =
     let best = is_best pos tt in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
@@ -421,7 +430,7 @@ module Order = struct
       let dst = Square.to_int @@ Move.dst m in
       let i = src + dst * Square.count in
       Array.unsafe_get move_history i in
-    sort_aux moves ~eval:(fun m ->
+    let moves = score_aux moves ~eval:(fun m ->
         if best m then inf
         else let capture = capture m in
           if capture <> 0 then capture
@@ -429,14 +438,24 @@ module Order = struct
             if promote <> 0 then promote
             else let killer = killer m in
               if killer <> 0 then killer
-              else history m)
+              else history m) in
+    fst @@ Array.unsafe_get moves 0, make_picker moves
 
-  (* Sort for quiescence search. *)
-  let qsort moves =
-    sort_aux moves ~eval:(fun m ->
-        let capture = capture m in
-        if capture <> 0 then capture
-        else promote m)
+  (* Score the moves for quiescence search. *)
+  let qscore moves = make_picker @@ score_aux moves ~eval:(fun m ->
+      let capture = capture m in
+      if capture <> 0 then capture
+      else promote m)
+
+  (* Iterate using the thunk. *)
+  let fold_until =
+    let open Continue_or_stop in
+    let rec aux acc next ~f ~finish = match next () with
+      | None -> finish acc
+      | Some x -> f acc x >>= function
+        | Continue y -> aux y next ~f ~finish
+        | Stop z -> return z in
+    fun next ~init -> aux init next
 end
 
 let negm = Fn.compose return Int.neg
@@ -461,8 +480,8 @@ module Quiescence = struct
       if score >= beta then return beta
       else if score + margin < alpha && not @@ Eval.is_endgame pos
       then return alpha
-      else List.filter moves ~f:is_noisy |> Order.qsort |>
-           State.List.fold_until
+      else List.filter moves ~f:is_noisy |>
+           Order.qscore |> Order.fold_until
              ~init:(max score alpha)
              ~finish:return
              ~f:(branch ~beta ~ply)
@@ -485,8 +504,8 @@ module Main = struct
     mutable bound : Tt.bound;
   }
 
-  let create ?(alpha = -inf) moves = {
-    best = List.hd_exn moves;
+  let create ?(alpha = -inf) ~best () = {
+    best;
     alpha;
     full_window = true;
     bound = Tt.Upper;
@@ -551,11 +570,11 @@ module Main = struct
   (* Search the available moves for the given position. *)
   and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check =
     State.(gets search) >>= fun {tt; _} ->
-    Order.sort moves ~ply ~pos ~tt >>= fun moves ->
-    let t = create moves ~alpha in
+    Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
+    let t = create ~alpha ~best () in
     let finish () = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply ~check in
-    State.List.fold_until moves ~init:() ~finish ~f >>| fun score ->
+    Order.fold_until next ~init:() ~finish ~f >>| fun score ->
     Tt.store tt pos ~depth ~score ~best:t.best ~bound:t.bound;
     score
 
@@ -708,10 +727,10 @@ module Main = struct
     State.(gets search) >>= fun search ->
     let pos = search.root in
     let ply = 0 in
-    Order.sort moves ~ply ~pos ~tt:search.tt >>= fun moves ->
-    let t = create moves ~alpha in
+    Order.score moves ~ply ~pos ~tt:search.tt >>= fun (best, next) ->
+    let t = create ~alpha ~best () in
     let finish () = return t.alpha in
-    State.List.fold_until moves ~init:() ~finish ~f:(fun () m ->
+    Order.fold_until next ~init:() ~finish ~f:(fun () m ->
         Legal.new_position m |>
         pvs t ~ply ~depth ~beta >>= fun score ->
         better t m ~score ~depth >>= fun () ->
