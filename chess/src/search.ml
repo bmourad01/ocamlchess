@@ -407,9 +407,12 @@ module Order = struct
             best_index := i;
           end
         done;
-        let m, _ = Array.unsafe_get moves !best_index in
-        let old = Array.unsafe_get moves !current in
-        Array.unsafe_set moves !best_index old;
+        let i = !best_index in
+        let m, _ = Array.unsafe_get moves i in
+        if i > !current then begin
+          let old = Array.unsafe_get moves !current in
+          Array.unsafe_set moves i old;
+        end;
         incr current;
         Some m
       else None
