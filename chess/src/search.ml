@@ -179,8 +179,8 @@ module Tt = struct
      - Exact: the score is an exact evaluation for this position.
   *)
   let lookup tt ~pos ~depth ~ply ~alpha ~beta = match find tt pos with
-    | None -> Second (alpha, beta)
-    | Some entry when Entry.depth entry < depth -> Second (alpha, beta)
+    | None -> Second (alpha, beta, false)
+    | Some entry when Entry.depth entry < depth -> Second (alpha, beta, true)
     | Some Entry.{score; bound; _} ->
       let score =
         if is_mate score then score - ply
@@ -190,10 +190,10 @@ module Tt = struct
       | Exact -> First score
       | Lower ->
         let alpha = max alpha score in
-        if alpha >= beta then First score else Second (alpha, beta)
+        if alpha >= beta then First score else Second (alpha, beta, true)
       | Upper ->
         let beta = min beta score in
-        if alpha >= beta then First score else Second (alpha, beta)
+        if alpha >= beta then First score else Second (alpha, beta, true)
 
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
@@ -390,17 +390,19 @@ module Order = struct
   let score_aux moves ~eval =
     Array.of_list @@ List.map moves ~f:(fun m -> m, eval m)
 
-  (* Returns a thunk that incrementally sorts the list. In the context of
-     alpha-beta pruning, we may not actually visit all the moves for a given
-     position, so it makes no sense to waste time sorting the entire thing. *)
+  (* Returns a thunk that incrementally applies insertion sort to the list.
+     In the context of alpha-beta pruning, we may not actually visit all the
+     moves for a given position, so it makes no sense to waste time sorting
+     the entire thing. *)
   let make_picker moves =
     let current = ref 0 in
     let n = Array.length moves in
     fun () ->
-      if !current < n then
+      let c = !current in
+      if c < n then
         let best_score = ref (-inf) in
-        let best_index = ref (!current) in
-        for i = !current to n - 1 do
+        let best_index = ref c in
+        for i = c to n - 1 do
           let _, score = Array.unsafe_get moves i in
           if score > !best_score then begin
             best_score := score;
@@ -408,13 +410,13 @@ module Order = struct
           end
         done;
         let i = !best_index in
-        let m, _ = Array.unsafe_get moves i in
-        if i > !current then begin
-          let old = Array.unsafe_get moves !current in
+        let result = Array.unsafe_get moves i in
+        if i > c then begin
+          let old = Array.unsafe_get moves c in
           Array.unsafe_set moves i old;
         end;
         incr current;
-        Some m
+        Some result
       else None
 
   (* Score the moves for normal search. *)
@@ -492,7 +494,7 @@ module Quiescence = struct
            ~finish:return
            ~f:(branch ~beta ~ply)
 
-  and branch ~beta ~ply = fun alpha m ->
+  and branch ~beta ~ply = fun alpha (m, _) ->
     let open Continue_or_stop in
     Legal.new_position m |>
     go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>= negm >>| fun score ->
@@ -504,10 +506,10 @@ end
 module Main = struct
   (* The results for a single ply. *)
   type t = {
-    mutable best : Position.legal;
-    mutable alpha : int;
+    mutable best        : Position.legal;
+    mutable alpha       : int;
     mutable full_window : bool;
-    mutable bound : Tt.bound;
+    mutable bound       : Tt.bound;
   }
 
   let create ?(alpha = -inf) ~best () = {
@@ -548,7 +550,7 @@ module Main = struct
       (* Find a cached evaluation of the position. *)
       else match Tt.lookup search.tt ~pos ~depth ~ply ~alpha ~beta with
         | First score -> return score
-        | Second (alpha, beta) ->
+        | Second (alpha, beta, hit) ->
           let moves = Position.legal_moves pos in
           let check = Position.in_check pos in
           (* Checkmate or stalemate. *)
@@ -557,6 +559,7 @@ module Main = struct
           (* Check extension. *)
           else let depth = depth + Bool.to_int check in
             if depth <= 0 then
+              (* Depth exhausted, drop down to quiescence search. *)
               Quiescence.with_moves pos moves ~alpha ~beta ~ply
             else match mdp ~alpha ~beta ~ply with
               | First alpha -> return alpha
@@ -569,7 +572,15 @@ module Main = struct
                   ~check ~depth ~null >>= function
                 | Some score -> return score
                 | None ->
-                  (* Couldn't reduce, so search the available moves. *)
+                  (* Couldn't reduce, so search the available moves.
+                     Perform internal iterative deepening if applicable. *)
+                  begin
+                    if not hit && depth >= 7 && beta - alpha > 1 then
+                      with_moves pos moves
+                        ~alpha ~beta ~ply ~depth:(depth - 1)
+                        ~eval ~check >>| ignore
+                    else return ()
+                  end >>= fun () ->
                   with_moves pos moves
                     ~alpha ~beta ~ply ~depth ~eval ~check
 
@@ -578,18 +589,18 @@ module Main = struct
     State.(gets search) >>= fun {tt; _} ->
     Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
-    let finish () = return t.alpha in
+    let finish _ = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply ~check in
-    Order.fold_until next ~init:() ~finish ~f >>| fun score ->
+    Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt pos ~depth ~score ~best:t.best ~bound:t.bound;
     score
 
   (* Search a branch of the current node. *)
-  and branch t ~eval ~beta ~depth ~ply ~check = fun () m ->
+  and branch t ~eval ~beta ~depth ~ply ~check = fun i (m, _) ->
     let open Continue_or_stop in
-    (* Skip this move if it has no chance of improving alpha. *)
+    (* If this move is obviously bad, then skip it. *)
     if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check
-    then return @@ Continue ()
+    then return @@ Continue (i + 1)
     else (* Get the score. *)
       lmr_pvs t m ~beta ~ply ~depth ~check >>= fun score ->
       (* Update alpha if needed. *)
@@ -597,7 +608,7 @@ module Main = struct
       if score >= beta then
         (* Move was too good. *)
         cutoff t m ~ply >>| fun () -> Stop beta
-      else return @@ Continue ()
+      else return @@ Continue (i + 1)
 
   (* Mate distance pruning. *)
   and mdp ~alpha ~beta ~ply =
@@ -623,8 +634,11 @@ module Main = struct
   *)
   and rfp ~depth ~eval ~beta =
     Option.some_if
-      (depth <= futility_limit && (eval - 70 * depth) >= beta)
+      (depth <= futility_limit && eval - rfp_margin depth >= beta)
       eval
+
+  and rfp_margin depth =
+    Piece.(Kind.value Pawn) * Eval.material_weight * depth
 
   (* Null move reduction.
 
@@ -736,7 +750,7 @@ module Main = struct
     Order.score moves ~ply ~pos ~tt:search.tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
     let finish () = return t.alpha in
-    Order.fold_until next ~init:() ~finish ~f:(fun () m ->
+    Order.fold_until next ~init:() ~finish ~f:(fun () (m, _) ->
         Legal.new_position m |>
         pvs t ~ply ~depth ~beta >>= fun score ->
         better t m ~score ~depth >>= fun () ->
