@@ -506,16 +506,14 @@ end
 module Main = struct
   (* The results for a single ply. *)
   type t = {
-    mutable best        : Position.legal;
-    mutable alpha       : int;
-    mutable full_window : bool;
-    mutable bound       : Tt.bound;
+    mutable best  : Position.legal;
+    mutable alpha : int;
+    mutable bound : Tt.bound;
   }
 
   let create ?(alpha = -inf) ~best () = {
     best;
     alpha;
-    full_window = true;
     bound = Tt.Upper;
   }
 
@@ -530,7 +528,6 @@ module Main = struct
     if score > t.alpha then begin
       t.best <- m;
       t.alpha <- score;
-      t.full_window <- false;
       t.bound <- Tt.Exact;
       State.(gets @@ history m depth)
     end else return ()
@@ -572,15 +569,12 @@ module Main = struct
                   ~check ~depth ~null >>= function
                 | Some score -> return score
                 | None ->
-                  (* Couldn't reduce, so search the available moves.
-                     Perform internal iterative deepening if applicable. *)
-                  begin
-                    if not hit && depth >= 7 && beta - alpha > 1 then
-                      with_moves pos moves
-                        ~alpha ~beta ~ply ~depth:(depth - 1)
-                        ~eval ~check >>| ignore
-                    else return ()
-                  end >>= fun () ->
+                  (* Apply internal iterative reductions for PV nodes that
+                     weren't found in the TT. *)
+                  let depth =
+                    if not hit && beta - alpha > 1 && depth >= 3
+                    then depth - 2 else depth in
+                  (* Search the available moves. *)
                   with_moves pos moves
                     ~alpha ~beta ~ply ~depth ~eval ~check
 
@@ -601,8 +595,11 @@ module Main = struct
     (* If this move is obviously bad, then skip it. *)
     if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check
     then return @@ Continue (i + 1)
-    else (* Get the score. *)
-      lmr_pvs t m ~beta ~ply ~depth ~check >>= fun score ->
+    else begin
+      lmr t m ~i ~beta ~ply ~depth ~check >>= function
+      | Some score -> return score
+      | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth
+    end >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score ~depth >>= fun () ->
       if score >= beta then
@@ -651,16 +648,18 @@ module Main = struct
     let king = Position.king pos in
     let active = Position.active_board pos in
     if eval >= beta
-    && depth > reduction_factor
+    && depth > nmr_limit
     && Bb.(((pawn + king) & active) <> active) then
       Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
         ~beta:((-beta) + 1)
         ~ply:(ply + 1)
-        ~depth:(depth - 1 - reduction_factor)
+        ~depth:(depth - 1 - nmr_limit)
         ~null:true >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else return None
+
+  and nmr_limit = 2
 
   (* Razoring.
 
@@ -690,30 +689,16 @@ module Main = struct
 
   and futility_limit = 6
 
-  (* Principal variation search. *)
-  and pvs t pos ~beta ~ply ~depth =
-    let f alpha =
-      go pos
-        ~alpha
-        ~beta:(-t.alpha)
-        ~ply:(ply + 1)
-        ~depth:(depth - 1) >>= negm in
-    let alpha = if t.full_window then -beta else (-t.alpha) - 1 in
-    f alpha >>= function
-    | score when t.full_window -> return score
-    | score when score > t.alpha && score < beta -> f (-beta)
-    | score -> return score
+  (* Late move reduction.
 
-  (* Amount to reduce the depth by. *)
-  and reduction_factor = 2
-
-  (* Late move reduction. *)
-  and lmr t m ~beta ~ply ~depth ~check =
+     For quiet moves (closer to the end of our ordering), see if a reduced
+     depth search will improve alpha or not.
+  *)
+  and lmr t m ~i ~beta ~ply ~depth ~check =
     (* Least expensive checks first. *)
     if not check
-    && not t.full_window
-    && depth > reduction_factor
-    && beta - t.alpha <= 1
+    && depth > lmr_limit
+    && i > (if beta - t.alpha > 1 then 3 else 2)
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
@@ -723,16 +708,26 @@ module Main = struct
           ~alpha:((-t.alpha) - 1)
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
-          ~depth:(depth - reduction_factor) >>= negm >>| fun score ->
+          ~depth:(depth - lmr_limit) >>= negm >>| fun score ->
         Option.some_if (score <= t.alpha) score
     else return None
 
-  (* Combine LMR and PVS. *)
-  and lmr_pvs t m ~beta ~ply ~depth ~check =
-    let pvs () = Legal.new_position m |> pvs t ~beta ~ply ~depth in
-    lmr t m ~beta ~ply ~depth ~check >>= function
-    | Some score -> return score
-    | None -> pvs ()
+  and lmr_limit = 2
+
+  (* Principal variation search. *)
+  and pvs t pos ~i ~beta ~ply ~depth =
+    let f alpha =
+      go pos
+        ~alpha
+        ~beta:(-t.alpha)
+        ~ply:(ply + 1)
+        ~depth:(depth - 1) >>= negm in
+    if i = 0 then f (-beta)
+    else f (-t.alpha - 1) >>= fun score ->
+      if beta - t.alpha > 1
+      && score > t.alpha
+      && score < beta then f (-beta)
+      else return score
 
   (* Search from the root position. This follows slightly different rules than
      the generic search:
@@ -749,15 +744,15 @@ module Main = struct
     let ply = 0 in
     Order.score moves ~ply ~pos ~tt:search.tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
-    let finish () = return t.alpha in
-    Order.fold_until next ~init:() ~finish ~f:(fun () (m, _) ->
+    let finish _ = return t.alpha in
+    Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
         Legal.new_position m |>
-        pvs t ~ply ~depth ~beta >>= fun score ->
+        pvs t ~i ~ply ~depth ~beta >>= fun score ->
         better t m ~score ~depth >>= fun () ->
         check_limits >>| function
         | true -> Stop t.alpha
         | false when is_mate score -> Stop score
-        | false -> Continue ()) >>| fun score ->
+        | false -> Continue (i + 1)) >>| fun score ->
     (* Update the transposition table and return the score. *)
     let best = t.best in
     Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
