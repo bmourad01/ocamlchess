@@ -569,11 +569,6 @@ module Main = struct
                   ~check ~depth ~null >>= function
                 | Some score -> return score
                 | None ->
-                  (* Apply internal iterative reductions for PV nodes that
-                     weren't found in the TT. *)
-                  let depth =
-                    if not hit && beta - alpha > 1 && depth >= 3
-                    then depth - 2 else depth in
                   (* Search the available moves. *)
                   with_moves pos moves
                     ~alpha ~beta ~ply ~depth ~eval ~check
