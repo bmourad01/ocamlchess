@@ -557,6 +557,12 @@ module Main = struct
     Position.halfmove pos >= 100 ||
     Position.is_insufficient_material pos
 
+  (* Find a cached evaluation of the position. *)
+  let lookup pos ~depth ~ply ~alpha ~beta ~node =
+    State.(gets search) >>| fun {tt; _} ->
+    let pv = equal_node node Pv in
+    Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
+
   (* Search from a new position. *)
   let rec go
       ?(null = false)
@@ -595,12 +601,6 @@ module Main = struct
                 (* Search the available moves. *)
                 with_moves pos moves
                   ~alpha ~beta ~ply ~depth ~eval ~check ~node
-
-  (* Find a cached evaluation of the position. *)
-  and lookup pos ~depth ~ply ~alpha ~beta ~node =
-    State.(gets search) >>| fun {tt; _} ->
-    let pv = equal_node node Pv in
-    Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
   (* Search the available moves for the given position. *)
   and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check ~node =
