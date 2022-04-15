@@ -179,8 +179,9 @@ module Tt = struct
      - Exact: the score is an exact evaluation for this position.
   *)
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
-    | None -> Second (alpha, beta, false)
-    | Some entry when Entry.depth entry < depth -> Second (alpha, beta, true)
+    | None -> Second (alpha, beta, None)
+    | Some entry when Entry.depth entry < depth ->
+      Second (alpha, beta, Some (Entry.score entry))
     | Some Entry.{score; bound; _} ->
       let score =
         if is_mate score then score - ply
@@ -188,13 +189,15 @@ module Tt = struct
         else score in
       match bound with
       | Exact when not pv -> First score
-      | Exact -> Second (alpha, beta, true)
+      | Exact -> Second (alpha, beta, Some score)
       | Lower ->
         let alpha = max alpha score in
-        if alpha >= beta then First score else Second (alpha, beta, true)
+        if alpha >= beta then First score
+        else Second (alpha, beta, Some score)
       | Upper ->
         let beta = min beta score in
-        if alpha >= beta then First score else Second (alpha, beta, true)
+        if alpha >= beta then First score
+        else Second (alpha, beta, Some score)
 
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
@@ -569,7 +572,7 @@ module Main = struct
       | true -> return 0
       | false -> lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
         | First score -> return score
-        | Second (alpha, beta, hit) ->
+        | Second (alpha, beta, tt_score) ->
           let moves = Position.legal_moves pos in
           let check = Position.in_check pos in
           (* Checkmate or stalemate. *)
