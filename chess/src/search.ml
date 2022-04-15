@@ -538,7 +538,14 @@ module Main = struct
     Position.is_insufficient_material pos
 
   (* Search from a new position. *)
-  let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth =
+  let rec go
+      ?(null = false)
+      ?(pv = true)
+      pos
+      ~alpha
+      ~beta
+      ~ply
+      ~depth =
     check_limits >>= function
     | true -> return 0
     | false -> State.(gets search) >>= fun search ->
@@ -566,34 +573,34 @@ module Main = struct
                 let eval = Eval.go pos in
                 reduce pos moves
                   ~eval ~alpha ~beta ~ply ~depth
-                  ~check ~depth ~null >>= function
+                  ~check ~depth ~null ~pv >>= function
                 | Some score -> return score
                 | None ->
                   (* Search the available moves. *)
                   with_moves pos moves
-                    ~alpha ~beta ~ply ~depth ~eval ~check
+                    ~alpha ~beta ~ply ~depth ~eval ~check ~pv
 
   (* Search the available moves for the given position. *)
-  and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check =
+  and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check ~pv =
     State.(gets search) >>= fun {tt; _} ->
     Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
     let finish _ = return t.alpha in
-    let f = branch t ~eval ~beta ~depth ~ply ~check in
+    let f = branch t ~eval ~beta ~depth ~ply ~check ~pv in
     Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt pos ~depth ~score ~best:t.best ~bound:t.bound;
     score
 
   (* Search a branch of the current node. *)
-  and branch t ~eval ~beta ~depth ~ply ~check = fun i (m, _) ->
+  and branch t ~eval ~beta ~depth ~ply ~check ~pv = fun i (m, _) ->
     let open Continue_or_stop in
     (* If this move is obviously bad, then skip it. *)
-    if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check
+    if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~pv
     then return @@ Continue (i + 1)
     else begin
-      lmr t m ~i ~beta ~ply ~depth ~check >>= function
+      lmr t m ~i ~beta ~ply ~depth ~check ~pv >>= function
       | Some score -> return score
-      | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth
+      | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth ~pv
     end >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score ~depth >>= fun () ->
@@ -610,8 +617,19 @@ module Main = struct
     else Second (alpha, beta)
 
   (* Try to reduce the depth. *)
-  and reduce pos moves ~eval ~alpha ~beta ~ply ~depth ~check ~depth ~null =
-    if beta - alpha > 1 || check || null
+  and reduce
+      pos
+      moves
+      ~eval
+      ~alpha
+      ~beta
+      ~ply
+      ~depth
+      ~check
+      ~depth
+      ~null
+      ~pv =
+    if pv || check || null
     then return None
     else match rfp ~depth ~eval ~beta with
       | Some _ as score -> return score
@@ -647,10 +665,11 @@ module Main = struct
     && Bb.(((pawn + king) & active) <> active) then
       Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
-        ~beta:((-beta) + 1)
+        ~beta:(-beta + 1)
         ~ply:(ply + 1)
         ~depth:(depth - 1 - nmr_limit)
-        ~null:true >>= negm >>| fun score ->
+        ~null:true
+        ~pv:false >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else return None
 
@@ -674,9 +693,9 @@ module Main = struct
      If our score is within a margin below alpha, then skip searching
      quiet moves (since they are likely to be "futile" in improving alpha).
   *)
-  and futile m ~eval ~alpha ~beta ~depth ~check =
+  and futile m ~eval ~alpha ~beta ~depth ~check ~pv =
     not check &&
-    beta - alpha <= 1 &&
+    not pv &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
     depth <= futility_limit &&
@@ -689,39 +708,40 @@ module Main = struct
      For quiet moves (closer to the end of our ordering), see if a reduced
      depth search will improve alpha or not.
   *)
-  and lmr t m ~i ~beta ~ply ~depth ~check =
+  and lmr t m ~i ~beta ~ply ~depth ~check ~pv =
     (* Least expensive checks first. *)
     if not check
     && depth > lmr_limit
-    && i > (if beta - t.alpha > 1 then 3 else 2)
+    && i > (if pv then 3 else 2)
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
       | true -> return None
       | false ->
         Legal.new_position m |> go
-          ~alpha:((-t.alpha) - 1)
+          ~alpha:(-t.alpha - 1)
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
-          ~depth:(depth - lmr_limit) >>= negm >>| fun score ->
+          ~depth:(depth - lmr_limit)
+          ~pv:false >>= negm >>| fun score ->
         Option.some_if (score <= t.alpha) score
     else return None
 
   and lmr_limit = 2
 
   (* Principal variation search. *)
-  and pvs t pos ~i ~beta ~ply ~depth =
-    let f alpha =
+  and pvs ?(pv = true) t pos ~i ~beta ~ply ~depth =
+    let f ?(pv = false) alpha =
       go pos
         ~alpha
         ~beta:(-t.alpha)
         ~ply:(ply + 1)
-        ~depth:(depth - 1) >>= negm in
+        ~depth:(depth - 1)
+        ~pv >>= negm in
     if i = 0 then f (-beta)
     else f (-t.alpha - 1) >>= fun score ->
-      if beta - t.alpha > 1
-      && score > t.alpha
-      && score < beta then f (-beta)
+      if pv && score > t.alpha && score < beta
+      then f (-beta) ~pv
       else return score
 
   (* Search from the root position. This follows slightly different rules than
@@ -741,8 +761,7 @@ module Main = struct
     let t = create ~alpha ~best () in
     let finish _ = return t.alpha in
     Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
-        Legal.new_position m |>
-        pvs t ~i ~ply ~depth ~beta >>= fun score ->
+        Legal.new_position m |> pvs t ~i ~ply ~depth ~beta >>= fun score ->
         better t m ~score ~depth >>= fun () ->
         check_limits >>| function
         | true -> Stop t.alpha
