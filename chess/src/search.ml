@@ -747,7 +747,7 @@ module Main = struct
   and pvs ?(node = Pv) t pos ~i ~beta ~ply ~depth =
     let node = match node with
       | Pv -> Pv
-      | Cut -> All
+      | Cut -> if i > 0 then All else Cut
       | All -> Cut in
     let f ?(node = Cut) alpha =
       go pos
@@ -756,7 +756,7 @@ module Main = struct
         ~ply:(ply + 1)
         ~depth:(depth - 1)
         ~node >>= negm in
-    if i = 0 then f (-beta)
+    if i = 0 then f (-beta) ~node
     else f (-t.alpha - 1) >>= fun score ->
       if equal_node node Pv && score > t.alpha && score < beta
       then f (-beta) ~node else return score
