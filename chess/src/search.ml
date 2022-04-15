@@ -871,8 +871,8 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
       Result.Fields.create ~pv ~score ~nodes ~depth ~time in
     iter result;
     (* Last iteration may have eaten up at least half the allocated time,
-       so the next (deeper) iteration is likely to take longer. Thus, we
-       should abort the search. *)
+       so the next (deeper) iteration is likely to take longer without
+       having completed. Thus, we should abort the search. *)
     let too_long =
       Limits.time limits |>
       Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
