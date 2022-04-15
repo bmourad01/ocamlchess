@@ -178,7 +178,7 @@ module Tt = struct
 
      - Exact: the score is an exact evaluation for this position.
   *)
-  let lookup tt ~pos ~depth ~ply ~alpha ~beta = match find tt pos with
+  let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
     | None -> Second (alpha, beta, false)
     | Some entry when Entry.depth entry < depth -> Second (alpha, beta, true)
     | Some Entry.{score; bound; _} ->
@@ -187,7 +187,8 @@ module Tt = struct
         else if is_mated score then score + ply
         else score in
       match bound with
-      | Exact -> First score
+      | Exact when not pv -> First score
+      | Exact -> Second (alpha, beta, true)
       | Lower ->
         let alpha = max alpha score in
         if alpha >= beta then First score else Second (alpha, beta, true)
@@ -546,7 +547,9 @@ module Main = struct
       State.(gets @@ history m depth)
     end else return ()
 
-  let drawn search pos =
+  (* Will the position lead to a draw? *)
+  let drawn pos =
+    State.(gets search) >>| fun search ->
     check_repetition search pos ||
     Position.halfmove pos >= 100 ||
     Position.is_insufficient_material pos
@@ -562,11 +565,9 @@ module Main = struct
       ~depth =
     check_limits >>= function
     | true -> return 0
-    | false -> State.(gets search) >>= fun search ->
-      (* Will the position lead to a draw? *)
-      if drawn search pos then return 0
-      (* Find a cached evaluation of the position. *)
-      else match Tt.lookup search.tt ~pos ~depth ~ply ~alpha ~beta with
+    | false -> drawn pos >>= function
+      | true -> return 0
+      | false -> lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
         | First score -> return score
         | Second (alpha, beta, hit) ->
           let moves = Position.legal_moves pos in
@@ -574,25 +575,29 @@ module Main = struct
           (* Checkmate or stalemate. *)
           if List.is_empty moves
           then return @@ if check then -mate_score + ply else 0
-          (* Check extension. *)
-          else let depth = depth + Bool.to_int check in
-            if depth <= 0 then
+          else match mdp ~alpha ~beta ~ply with
+            | First alpha -> return alpha
+            | Second (alpha, beta) when depth <= 0 ->
               (* Depth exhausted, drop down to quiescence search. *)
               Quiescence.with_moves pos moves ~alpha ~beta ~ply
-            else match mdp ~alpha ~beta ~ply with
-              | First alpha -> return alpha
-              | Second (alpha, beta) ->
-                (* Use the null move hypothesis to reduce the depth of the
-                   search. *)
-                let eval = Eval.go pos in
-                reduce pos moves
-                  ~eval ~alpha ~beta ~ply ~depth
-                  ~check ~depth ~null ~node >>= function
-                | Some score -> return score
-                | None ->
-                  (* Search the available moves. *)
-                  with_moves pos moves
-                    ~alpha ~beta ~ply ~depth ~eval ~check ~node
+            | Second (alpha, beta) ->
+              (* Check extension. *)
+              let depth = depth + Bool.to_int check in
+              let eval = Eval.go pos in
+              reduce pos moves
+                ~eval ~alpha ~beta ~ply ~depth
+                ~check ~depth ~null ~node >>= function
+              | Some score -> return score
+              | None ->
+                (* Search the available moves. *)
+                with_moves pos moves
+                  ~alpha ~beta ~ply ~depth ~eval ~check ~node
+
+  (* Find a cached evaluation of the position. *)
+  and lookup pos ~depth ~ply ~alpha ~beta ~node =
+    State.(gets search) >>| fun {tt; _} ->
+    let pv = equal_node node Pv in
+    Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
   (* Search the available moves for the given position. *)
   and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check ~node =
@@ -630,7 +635,8 @@ module Main = struct
     if alpha >= beta then First alpha
     else Second (alpha, beta)
 
-  (* Try to reduce the depth. *)
+  (* Use the null move hypothesis to reduce the depth of the
+     search. *)
   and reduce
       pos
       moves
