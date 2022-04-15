@@ -504,6 +504,20 @@ end
 (* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
+  (* There are three main types of nodes, given a score `s`:
+
+     1. `Pv` nodes are those where `alpha > s` and `s < beta` hold. Since this
+        node's score is inside of our window, we will consider it as part of
+        the principal variation.
+
+     2. `Cut` nodes are those where `s >= beta` holds, meaning this node is
+        expected to produce a beta cutoff.
+
+     3. `All` nodes are those where `s <= alpha` holds, meaning we do not
+        expect this node to improve alpha.
+  *)
+  type node = Pv | Cut | All [@@deriving equal]
+
   (* The results for a single ply. *)
   type t = {
     mutable best  : Position.legal;
@@ -540,7 +554,7 @@ module Main = struct
   (* Search from a new position. *)
   let rec go
       ?(null = false)
-      ?(pv = true)
+      ?(node = Pv)
       pos
       ~alpha
       ~beta
@@ -573,34 +587,34 @@ module Main = struct
                 let eval = Eval.go pos in
                 reduce pos moves
                   ~eval ~alpha ~beta ~ply ~depth
-                  ~check ~depth ~null ~pv >>= function
+                  ~check ~depth ~null ~node >>= function
                 | Some score -> return score
                 | None ->
                   (* Search the available moves. *)
                   with_moves pos moves
-                    ~alpha ~beta ~ply ~depth ~eval ~check ~pv
+                    ~alpha ~beta ~ply ~depth ~eval ~check ~node
 
   (* Search the available moves for the given position. *)
-  and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check ~pv =
+  and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check ~node =
     State.(gets search) >>= fun {tt; _} ->
     Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
     let finish _ = return t.alpha in
-    let f = branch t ~eval ~beta ~depth ~ply ~check ~pv in
+    let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
     Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt pos ~depth ~score ~best:t.best ~bound:t.bound;
     score
 
   (* Search a branch of the current node. *)
-  and branch t ~eval ~beta ~depth ~ply ~check ~pv = fun i (m, _) ->
+  and branch t ~eval ~beta ~depth ~ply ~check ~node = fun i (m, _) ->
     let open Continue_or_stop in
     (* If this move is obviously bad, then skip it. *)
-    if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~pv
+    if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node
     then return @@ Continue (i + 1)
     else begin
-      lmr t m ~i ~beta ~ply ~depth ~check ~pv >>= function
+      lmr t m ~i ~beta ~ply ~depth ~check ~node >>= function
       | Some score -> return score
-      | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth ~pv
+      | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth ~node
     end >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score ~depth >>= fun () ->
@@ -628,8 +642,8 @@ module Main = struct
       ~check
       ~depth
       ~null
-      ~pv =
-    if pv || check || null
+      ~node =
+    if equal_node node Pv || check || null
     then return None
     else match rfp ~depth ~eval ~beta with
       | Some _ as score -> return score
@@ -669,7 +683,7 @@ module Main = struct
         ~ply:(ply + 1)
         ~depth:(depth - 1 - nmr_limit)
         ~null:true
-        ~pv:false >>= negm >>| fun score ->
+        ~node:Cut >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else return None
 
@@ -693,9 +707,9 @@ module Main = struct
      If our score is within a margin below alpha, then skip searching
      quiet moves (since they are likely to be "futile" in improving alpha).
   *)
-  and futile m ~eval ~alpha ~beta ~depth ~check ~pv =
+  and futile m ~eval ~alpha ~beta ~depth ~check ~node =
     not check &&
-    not pv &&
+    not (equal_node node Pv) &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
     depth <= futility_limit &&
@@ -708,11 +722,11 @@ module Main = struct
      For quiet moves (closer to the end of our ordering), see if a reduced
      depth search will improve alpha or not.
   *)
-  and lmr t m ~i ~beta ~ply ~depth ~check ~pv =
+  and lmr t m ~i ~beta ~ply ~depth ~check ~node =
     (* Least expensive checks first. *)
     if not check
     && depth > lmr_limit
-    && i > (if pv then 3 else 2)
+    && i > (if equal_node node Pv then 3 else 2)
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
@@ -723,26 +737,29 @@ module Main = struct
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
           ~depth:(depth - lmr_limit)
-          ~pv:false >>= negm >>| fun score ->
+          ~node:All >>= negm >>| fun score ->
         Option.some_if (score <= t.alpha) score
     else return None
 
   and lmr_limit = 2
 
   (* Principal variation search. *)
-  and pvs ?(pv = true) t pos ~i ~beta ~ply ~depth =
-    let f ?(pv = false) alpha =
+  and pvs ?(node = Pv) t pos ~i ~beta ~ply ~depth =
+    let node = match node with
+      | Pv -> Pv
+      | Cut -> All
+      | All -> Cut in
+    let f ?(node = Cut) alpha =
       go pos
         ~alpha
         ~beta:(-t.alpha)
         ~ply:(ply + 1)
         ~depth:(depth - 1)
-        ~pv >>= negm in
+        ~node >>= negm in
     if i = 0 then f (-beta)
     else f (-t.alpha - 1) >>= fun score ->
-      if pv && score > t.alpha && score < beta
-      then f (-beta) ~pv
-      else return score
+      if equal_node node Pv && score > t.alpha && score < beta
+      then f (-beta) ~node else return score
 
   (* Search from the root position. This follows slightly different rules than
      the generic search:
