@@ -266,7 +266,7 @@ module State = struct
     }
 
     (* Start a new search while reusing the transposition table. *)
-    let new_iter best_score st = {st with nodes = 0; best_score}
+    let new_iter best_score st = {st with best_score}
 
     (* Increment the number of nodes we've evaluated. *)
     let inc_nodes st = {st with nodes = st.nodes + 1}
