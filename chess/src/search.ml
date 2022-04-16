@@ -581,6 +581,8 @@ module Main = struct
         | Second (alpha, beta, tt_score) ->
           let moves = Position.legal_moves pos in
           let check = Position.in_check pos in
+          (* Check extension. *)
+          let depth = depth + Bool.to_int check in
           (* Checkmate or stalemate. *)
           if List.is_empty moves
           then return @@ if check then -mate_score + ply else 0
@@ -590,8 +592,6 @@ module Main = struct
               (* Depth exhausted, drop down to quiescence search. *)
               Quiescence.with_moves pos moves ~alpha ~beta ~ply
             | Second (alpha, beta) ->
-              (* Check extension. *)
-              let depth = depth + Bool.to_int check in
               let eval = Eval.go pos in
               reduce pos moves
                 ~eval ~alpha ~beta ~ply ~depth
@@ -734,8 +734,9 @@ module Main = struct
   and lmr t m ~i ~beta ~ply ~depth ~check ~node =
     (* Least expensive checks first. *)
     if not check
+    && not (equal_node node Pv)
+    && i > 0
     && depth > lmr_limit
-    && i > (if equal_node node Pv then 3 else 2)
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
@@ -758,24 +759,26 @@ module Main = struct
       | Pv -> Pv
       | Cut -> if i > 0 then All else Cut
       | All -> Cut in
-    let f ?(node = Cut) alpha =
+    let f alpha node =
       go pos
         ~alpha
         ~beta:(-t.alpha)
         ~ply:(ply + 1)
         ~depth:(depth - 1)
         ~node >>= negm in
-    if i = 0 then f (-beta) ~node
-    else f (-t.alpha - 1) >>= fun score ->
+    if i = 0 then f (-beta) node
+    else f (-t.alpha - 1) Cut >>= fun score ->
       if equal_node node Pv && score > t.alpha && score < beta
-      then f (-beta) ~node else return score
+      then f (-beta) node else return score
 
   (* Search from the root position. This follows slightly different rules than
      the generic search:
 
      1. There is no need to consider beta cutoff. Instead, we cut off the
         search when a mate is found.
+
      2. We drop straight down into PVS.
+
      3. In addition to the score, we return the best move.
   *)
   let root moves ~alpha ~beta ~depth =
