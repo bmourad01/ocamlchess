@@ -181,15 +181,15 @@ module Tt = struct
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
-     - Lower: the score is a lower bound, so only return it if it causes a
-              beta cutoff, which would prune the rest of the branch being
-              searched.
+     - Pv: the score is an exact evaluation for this position.
 
-     - Upper: the score is an upper bound, so if it doesn't improve alpha
-              we can use that score to prune the rest of the branch being
-              searched.
+     - Cut: the score is a lower bound, so only return it if it causes a
+            beta cutoff, which would prune the rest of the branch being
+            searched.
 
-     - Exact: the score is an exact evaluation for this position.
+     - All: the score is an upper bound, so if it doesn't improve alpha
+            we can use that score to prune the rest of the branch being
+            searched.
   *)
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
     | None -> Second (alpha, beta, None)
