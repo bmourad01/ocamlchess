@@ -70,11 +70,11 @@ end
 (** The search limits. *)
 type limits = Limits.t
 
+(** The types of nodes that are traversed in an alpha-beta search. *)
+type node = Pv | Cut | All
+
 (** The transposition table. *)
 module Tt : sig
-  (** The bound for the score. *)
-  type bound = Lower | Upper | Exact
-
   (** An entry in the table. *)
   module Entry : sig
     type t
@@ -88,8 +88,8 @@ module Tt : sig
     (** The best move for the position. *)
     val best : t -> Position.legal
 
-    (** The bound for the score. *)
-    val bound : t -> bound
+    (** The node type. *)
+    val node : t -> node
 
     (** The position that this entry corresponds to. *)
     val position : t -> Position.t

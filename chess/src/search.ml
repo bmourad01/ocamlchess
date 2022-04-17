@@ -132,16 +132,29 @@ let max_ply = 64
 let is_mate score = score >= mate_score - max_ply
 let is_mated score = score <= (-mate_score) + max_ply
 
+(* There are three main types of nodes, given a score `s`:
+
+   1. `Pv` nodes are those where `alpha > s` and `s < beta` hold. Since this
+      node's score is inside of our window, we will consider it as part of
+      the principal variation.
+
+   2. `Cut` nodes are those where `s >= beta` holds, meaning this node is
+      expected to produce a beta cutoff.
+
+   3. `All` nodes are those where `s <= alpha` holds, meaning we do not
+      expect this node to improve alpha.
+*)
+type node = Pv | Cut | All [@@deriving equal]
+
 (* Transposition table for caching search results. *)
 module Tt = struct
-  type bound = Lower | Upper | Exact
 
   module Entry = struct
     type t = {
       depth : int;
       score : int;
       best  : Position.legal;
-      bound : bound;
+      node  : node;
     } [@@deriving fields]
 
     let position {best; _} = Position.Legal.parent best
@@ -161,9 +174,9 @@ module Tt = struct
 
      For the same position, prefer the more recent search.
   *)
-  let store tt pos ~depth ~score ~best ~bound =
+  let store tt pos ~depth ~score ~best ~node =
     let key = Position.hash pos in
-    let data = Entry.Fields.create ~depth ~score ~best ~bound in
+    let data = Entry.Fields.create ~depth ~score ~best ~node in
     Hashtbl.set tt ~key ~data
 
   (* Check for a previous evaluation of the position at a comparable depth.
@@ -182,19 +195,19 @@ module Tt = struct
     | None -> Second (alpha, beta, None)
     | Some entry when Entry.depth entry < depth ->
       Second (alpha, beta, Some (Entry.score entry))
-    | Some Entry.{score; bound; _} ->
+    | Some Entry.{score; node; _} ->
       let score =
         if is_mate score then score - ply
         else if is_mated score then score + ply
         else score in
-      match bound with
-      | Exact when not pv -> First score
-      | Exact -> Second (alpha, beta, Some score)
-      | Lower ->
+      match node with
+      | Pv when not pv -> First score
+      | Pv -> Second (alpha, beta, Some score)
+      | Cut ->
         let alpha = max alpha score in
         if alpha >= beta then First score
         else Second (alpha, beta, Some score)
-      | Upper ->
+      | All ->
         let beta = min beta score in
         if alpha >= beta then First score
         else Second (alpha, beta, Some score)
@@ -370,8 +383,8 @@ module Order = struct
     let best =
       Position.hash pos |> Hashtbl.find tt |>
       Option.bind ~f:(fun entry ->
-          match Tt.Entry.bound entry with
-          | Exact -> Some (Tt.Entry.best entry)
+          match Tt.Entry.node entry with
+          | Pv -> Some (Tt.Entry.best entry)
           | _ -> None) in
     fun m -> Option.exists best ~f:(Legal.same m)
 
@@ -508,37 +521,24 @@ end
 (* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
-  (* There are three main types of nodes, given a score `s`:
-
-     1. `Pv` nodes are those where `alpha > s` and `s < beta` hold. Since this
-        node's score is inside of our window, we will consider it as part of
-        the principal variation.
-
-     2. `Cut` nodes are those where `s >= beta` holds, meaning this node is
-        expected to produce a beta cutoff.
-
-     3. `All` nodes are those where `s <= alpha` holds, meaning we do not
-        expect this node to improve alpha.
-  *)
-  type node = Pv | Cut | All [@@deriving equal]
 
   (* The results for a single ply. *)
   type t = {
     mutable best  : Position.legal;
     mutable alpha : int;
-    mutable bound : Tt.bound;
+    mutable node  : node;
   }
 
   let create ?(alpha = -inf) ~best () = {
     best;
     alpha;
-    bound = Tt.Upper;
+    node = All;
   }
 
   (* Beta cutoff. *)
   let cutoff t m ~ply =
     t.best <- m;
-    t.bound <- Tt.Lower;
+    t.node <- Cut;
     State.(gets @@ killer ply m)
 
   (* Alpha may have improved. *)
@@ -546,7 +546,7 @@ module Main = struct
     if score > t.alpha then begin
       t.best <- m;
       t.alpha <- score;
-      t.bound <- Tt.Exact;
+      t.node <- Pv;
       State.(gets @@ history m depth)
     end else return ()
 
@@ -610,7 +610,7 @@ module Main = struct
     let finish _ = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
     Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
-    Tt.store tt pos ~depth ~score ~best:t.best ~bound:t.bound;
+    Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
     score
 
   (* Search a branch of the current node. *)
@@ -735,7 +735,7 @@ module Main = struct
     (* Least expensive checks first. *)
     if not check
     && not (equal_node node Pv)
-    && i > 0
+    && i > 3
     && depth > lmr_limit
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
@@ -798,7 +798,7 @@ module Main = struct
         | false -> Continue (i + 1)) >>| fun score ->
     (* Update the transposition table and return the score. *)
     let best = t.best in
-    Tt.store search.tt pos ~depth ~score ~best ~bound:Exact;
+    Tt.store search.tt pos ~depth ~score ~best ~node:Pv;
     best, score
 
   (* Use an aspiration window for the search. The basic idea is that if
@@ -832,9 +832,9 @@ let convert_score score tt root ~pv ~mate ~mated =
   if mate then Mate full
   else if mated then Mate (-full)
   else match Tt.find tt root with
-    | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
-    | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
-    | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper)
+    | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
+    | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
+    | Some Tt.Entry.{node = all; _} -> Cp (score, Some `upper)
 
 (* For debugging, make sure that the PV is a legal sequence of moves. *)
 let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
