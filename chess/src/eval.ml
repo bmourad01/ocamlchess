@@ -36,6 +36,12 @@ module Phase = struct
     ((start * (max_phase - weight)) + (end_ * weight)) / max_phase
 end
 
+let advantage go pos phase =
+  let score = go pos phase Piece.White - go pos phase Piece.Black in
+  match Position.active pos with
+  | White -> score
+  | Black -> -score
+
 module Material = struct
   (* In order: Pawn, Knight, Bishop, Rook, Queen *)
   let start_value = [|100; 300; 300; 500; 900|]
@@ -51,11 +57,7 @@ module Material = struct
         | Phase.Opening -> acc + n * Array.unsafe_get start_value i
         | Phase.Endgame -> acc + n * Array.unsafe_get end_value   i)
 
-  let advantage pos phase =
-    let score = go pos phase White - go pos phase Black in
-    match Position.active pos with
-    | White -> score
-    | Black -> -score
+  let advantage = advantage go
 end
 
 module Mobility = struct
@@ -110,11 +112,7 @@ module Mobility = struct
     pawn + rest
 
   (* Relative mobility advantage. *)
-  let advantage pos phase =
-    let score = go pos phase White - go pos phase Black in
-    match Position.active pos with
-    | White -> score
-    | Black -> -score
+  let advantage = advantage go
 end
 
 module Rook_open_file = struct
@@ -138,11 +136,7 @@ module Rook_open_file = struct
     | Phase.Endgame -> score * end_bonus
 
   (* Relative advantage of rooks on open files. *)
-  let advantage pos phase =
-    let score = go pos phase White - go pos phase Black in
-    match Position.active pos with
-    | White -> score
-    | Black -> -score
+  let advantage = advantage go
 end
 
 module Bishop_pair = struct
@@ -161,11 +155,7 @@ module Bishop_pair = struct
     | Phase.Opening -> score * start_bonus
     | Phase.Endgame -> score * end_bonus
 
-  let advantage pos phase =
-    let score = go pos phase White - go pos phase Black in
-    match Position.active pos with
-    | White -> score
-    | Black -> -score
+  let advantage = advantage go
 end
 
 module King_pawn_shield = struct
@@ -205,11 +195,24 @@ module King_pawn_shield = struct
       let score = Bb.(count (m & pawn)) in
       score * bonus
 
-  let advantage pos phase =
-    let score = go pos phase White - go pos phase Black in
-    match Position.active pos with
-    | White -> score
-    | Black -> -score
+  let advantage = advantage go
+end
+
+module King_danger = struct
+  let start_weight = -14
+  let end_weight = 3
+
+  let go pos phase c =
+    (* Count the squares surrounding the king that are attacked. *)
+    let box = Pre.king @@ Bb.first_set_exn @@ Position.king pos in
+    let attacks = Position.Attacks.all pos @@ Piece.Color.opposite c in
+    let score = Bb.(count (box & attacks)) in
+    match phase with
+    | Phase.Opening -> score * start_weight
+    | Phase.Endgame -> score * end_weight
+
+  (* Relative king danger advantage. *)
+  let advantage = advantage go
 end
 
 (* Pawn structure. *)
@@ -505,11 +508,7 @@ module Placement = struct
         | Phase.Endgame -> acc + get end_  sq c)
 
   (* Relative placement advantage. *)
-  let advantage pos phase =
-    let score = go pos phase White - go pos phase Black in
-    match Position.active pos with
-    | White -> score
-    | Black -> -score
+  let advantage = advantage go
 end
 
 module Mop_up = struct
@@ -551,6 +550,7 @@ let of_phase pos phase =
   Rook_open_file.advantage pos phase +
   Bishop_pair.advantage pos phase +
   King_pawn_shield.advantage pos phase +
+  King_danger.advantage pos phase +
   Pawns.advantage pos phase +
   Placement.advantage pos phase +
   Mop_up.advantage pos phase material
