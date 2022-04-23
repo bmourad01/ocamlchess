@@ -212,6 +212,8 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
         (Position.Fen.to_string new_pos);
       printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
       printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
+      See.go mv |> Option.iter ~f:(fun see ->
+          printf "Static Exchange Evaluation: %d\n%!" see);
       printf "%d legal moves\n%!" @@ List.length legal;
       printf "\n%!";
     end;

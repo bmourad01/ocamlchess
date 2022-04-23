@@ -6,7 +6,8 @@
    test_precalculated
    test_perft
    test_zobrist
-   test_uci)
+   test_uci
+   test_see)
  (libraries ounit2 chess)
  (flags -w -58)
  (ocamlopt_flags -O3))

@@ -271,59 +271,59 @@ module State = struct
       move_history : int array;
       best_score   : int;
     } [@@deriving fields]
-
-    let create search = {
-      start_time = Time.now ();
-      nodes = 0;
-      search;
-      killer1 = Option_array.create ~len:max_ply;
-      killer2 = Option_array.create ~len:max_ply;
-      move_history = Array.create ~len:Square.(count * count) 0;
-      best_score = -inf;
-    }
-
-    (* Start a new search while reusing the transposition table. *)
-    let new_iter best_score st = {st with best_score}
-
-    (* Increment the number of nodes we've evaluated. *)
-    let inc_nodes st = {st with nodes = st.nodes + 1}
-
-    (* Get the first killer move. *)
-    let killer1 ply st = Option_array.get st.killer1 ply
-
-    (* Get the second killer move. *)
-    let killer2 ply st = Option_array.get st.killer2 ply
-
-    (* Is `m` a killer move? *)
-    let is_killer m ply st = match killer1 ply st with
-      | Some m' when Legal.same m m' -> true
-      | _ -> match killer2 ply st with
-        | Some m' -> Legal.same m m'
-        | None -> false
-
-    (* Update the killer move for a particular ply. *)
-    let killer ply m st = if is_quiet m then begin
-        begin match killer1 ply st with
-          | None -> ()
-          | Some m ->
-            Option_array.set_some st.killer2 ply m
-        end;
-        Option_array.set_some st.killer1 ply m
-      end
-
-    (* Update the move history heuristic. *)
-    let history m depth st = if is_quiet m then begin
-        let m = Legal.move m in
-        let src = Square.to_int @@ Move.src m in
-        let dst = Square.to_int @@ Move.dst m in
-        let i = src + dst * Square.count in
-        let d = Array.unsafe_get st.move_history i + (depth * depth) in
-        Array.unsafe_set st.move_history i d
-      end
   end
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
+
+  let create search = {
+    start_time = Time.now ();
+    nodes = 0;
+    search;
+    killer1 = Option_array.create ~len:max_ply;
+    killer2 = Option_array.create ~len:max_ply;
+    move_history = Array.create ~len:Square.(count * count) 0;
+    best_score = -inf;
+  }
+
+  (* Start a new search while reusing the transposition table. *)
+  let new_iter best_score st = {st with best_score}
+
+  (* Increment the number of nodes we've evaluated. *)
+  let inc_nodes st = {st with nodes = st.nodes + 1}
+
+  (* Get the first killer move. *)
+  let killer1 ply st = Option_array.get st.killer1 ply
+
+  (* Get the second killer move. *)
+  let killer2 ply st = Option_array.get st.killer2 ply
+
+  (* Is `m` a killer move? *)
+  let is_killer m ply st = match killer1 ply st with
+    | Some m' when Legal.same m m' -> true
+    | _ -> match killer2 ply st with
+      | Some m' -> Legal.same m m'
+      | None -> false
+
+  (* Update the killer move for a particular ply. *)
+  let killer ply m st = if is_quiet m then begin
+      begin match killer1 ply st with
+        | None -> ()
+        | Some m ->
+          Option_array.set_some st.killer2 ply m
+      end;
+      Option_array.set_some st.killer1 ply m
+    end
+
+  (* Update the move history heuristic. *)
+  let history m depth st = if is_quiet m then begin
+      let m = Legal.move m in
+      let src = Square.to_int @@ Move.src m in
+      let dst = Square.to_int @@ Move.dst m in
+      let i = src + dst * Square.count in
+      let d = Array.unsafe_get st.move_history i + (depth * depth) in
+      Array.unsafe_set st.move_history i d
+    end
 end
 
 open State.Syntax
@@ -360,24 +360,6 @@ module Order = struct
   let killer1_bonus = 2000
   let killer2_bonus = 1000
 
-  (* Most Valuable Victim/Least Valuable Attacker *)
-  let mvv_lva =
-    let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen] in
-    let attackers = Piece.King :: List.rev victims in
-    let num_attackers = List.length attackers in
-    let num_victims = List.length victims in
-    let tbl = Array.create ~len:(num_victims * num_attackers) 0 in
-    List.fold victims ~init:0 ~f:(fun acc victim ->
-        let i = Piece.Kind.to_int victim in
-        List.fold attackers ~init:acc ~f:(fun acc attacker ->
-            let j = Piece.Kind.to_int attacker in
-            tbl.(i + j * num_victims) <- acc;
-            acc + 1)) |> ignore;
-    fun victim attacker ->
-      let i = Piece.Kind.to_int victim in
-      let j = Piece.Kind.to_int attacker in
-      Array.unsafe_get tbl (i + j * num_victims)
-
   (* Check if a particular move has been evaluated already. *)
   let is_best pos tt =
     let best =
@@ -387,14 +369,6 @@ module Order = struct
           | Pv -> Some (Tt.Entry.best entry)
           | _ -> None) in
     fun m -> Option.exists best ~f:(Legal.same m)
-
-  (* Prioritize captures according to the MVV/LVA table. *)
-  let capture m =
-    Legal.capture m |> Option.value_map ~default:0 ~f:(fun victim ->
-        let src = Move.src @@ Legal.move m in
-        let p = Position.piece_at_square_exn (Legal.parent m) src in
-        let attacker = Piece.kind p in
-        capture_bonus + mvv_lva victim attacker)
 
   (* Prioritize promotions by the value of the piece *)
   let promote m =
@@ -454,22 +428,23 @@ module Order = struct
       Array.unsafe_get move_history i in
     let moves = score_aux moves ~eval:(fun m ->
         if best m then inf
-        else let capture = capture m in
-          if capture <> 0 then capture
-          else let promote = promote m in
+        else match See.go m with
+          | Some see -> capture_bonus + see
+          | None -> let promote = promote m in
             if promote <> 0 then promote
             else let killer = killer m in
               if killer <> 0 then killer
               else history m) in
+
     (* In case we never improve alpha, return the first available move as an
        option for the player (any arbitrary selection would do). *)
     fst @@ Array.unsafe_get moves 0, make_picker moves
 
   (* Score the moves for quiescence search. *)
   let qscore moves = make_picker @@ score_aux moves ~eval:(fun m ->
-      let capture = capture m in
-      if capture <> 0 then capture
-      else promote m)
+      match See.go m with
+      | Some see -> capture_bonus + see
+      | None -> promote m)
 
   (* Iterate using the thunk. *)
   let fold_until =
@@ -521,7 +496,6 @@ end
 (* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
-
   (* The results for a single ply. *)
   type t = {
     mutable best  : Position.legal;
