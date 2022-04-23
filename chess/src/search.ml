@@ -282,7 +282,8 @@ module State = struct
     search;
     killer1 = Option_array.create ~len:max_ply;
     killer2 = Option_array.create ~len:max_ply;
-    move_history = Array.create ~len:Square.(count * count) 0;
+    move_history =
+      Array.create ~len:(Piece.Color.count * Square.(count * count)) 0;
     best_score = -inf;
   }
 
@@ -311,12 +312,16 @@ module State = struct
       ~f:(Option_array.set_some st.killer2 ply);
     Option_array.set_some st.killer1 ply m
 
-  (* Update the move history heuristic. *)
-  let history m depth st =
+  let history_idx m =
+    let c = Piece.Color.to_int @@ Position.active @@ Legal.parent m in
     let m = Legal.move m in
     let src = Square.to_int @@ Move.src m in
     let dst = Square.to_int @@ Move.dst m in
-    let i = src + dst * Square.count in
+    ((src lsl 1) lor c) * Square.count + dst
+
+  (* Update the move history heuristic. *)
+  let history m depth st =
+    let i = history_idx m in
     let d = Array.unsafe_get st.move_history i + (depth * depth) in
     Array.unsafe_set st.move_history i d
 end
@@ -417,10 +422,7 @@ module Order = struct
       | _, Some k when Legal.same m k -> killer2_offset
       | _ -> 0 in
     let history m =
-      let m = Legal.move m in
-      let src = Square.to_int @@ Move.src m in
-      let dst = Square.to_int @@ Move.dst m in
-      let i = src + dst * Square.count in
+      let i = State.history_idx m in
       Array.unsafe_get move_history i in
     let moves = score_aux moves ~eval:(fun m ->
         if best m then inf
@@ -433,7 +435,6 @@ module Order = struct
             else let killer = killer m in
               if killer <> 0 then killer
               else history m) in
-
     (* In case we never improve alpha, return the first available move as an
        option for the player (any arbitrary selection would do). *)
     fst @@ Array.unsafe_get moves 0, make_picker moves
@@ -510,9 +511,9 @@ module Main = struct
   }
 
   let history_and_killer m ~ply ~depth =
+    State.(gets @@ killer ply m) >>= fun () ->
     if is_quiet m then
-      State.(gets @@ history m depth) >>= fun () ->
-      State.(gets @@ killer ply m)
+      State.(gets @@ history m depth)
     else return ()
 
   (* Beta cutoff. *)
@@ -560,8 +561,10 @@ module Main = struct
         | Second (alpha, beta, tt_score) ->
           let moves = Position.legal_moves pos in
           let check = Position.in_check pos in
-          (* Check extension. *)
-          let depth = depth + Bool.to_int check in
+          (* Check + single reply extension. *)
+          let single = match moves with
+            | [_] -> true | _ -> false in
+          let depth = depth + Bool.to_int (check || single) in
           (* Checkmate or stalemate. *)
           if List.is_empty moves
           then return @@ if check then -mate_score + ply else 0
