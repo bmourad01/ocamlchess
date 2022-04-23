@@ -119,7 +119,9 @@ module Result : sig
   (** The best move to play. *)
   val best : t -> Position.legal
 
-  (** The principal variation. *)
+  (** The principal variation. If this is not a mating sequence, then it
+      is guaranteed to have a length that is at most the depth that was
+      searched. *)
   val pv : t -> Position.legal list
 
   (** The score that was given to the best move. *)
