@@ -722,7 +722,7 @@ module Main = struct
           ~alpha:(-t.alpha - 1)
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
-          ~depth:(depth - 1 - lmr_depth_limit)
+          ~depth:(depth - lmr_depth_limit)
           ~node:All >>= negm >>| fun score ->
         Option.some_if (score <= t.alpha) score
     else return None
