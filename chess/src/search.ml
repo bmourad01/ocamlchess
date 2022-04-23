@@ -276,14 +276,16 @@ module State = struct
   include T
   include Monad.State.Make(T)(Monad.Ident)
 
+  let killer_size = max_ply
+  let move_history_size = Piece.Color.count * Square.(count * count)
+
   let create search = {
     start_time = Time.now ();
     nodes = 0;
     search;
-    killer1 = Option_array.create ~len:max_ply;
-    killer2 = Option_array.create ~len:max_ply;
-    move_history =
-      Array.create ~len:(Piece.Color.count * Square.(count * count)) 0;
+    killer1 = Option_array.create ~len:killer_size;
+    killer2 = Option_array.create ~len:killer_size;
+    move_history = Array.create ~len:move_history_size 0;
     best_score = -inf;
   }
 
@@ -307,7 +309,7 @@ module State = struct
       | None -> false
 
   (* Update the killer move for a particular ply. *)
-  let killer ply m st =
+  let update_killer ply m st =
     killer1 ply st |> Option.iter
       ~f:(Option_array.set_some st.killer2 ply);
     Option_array.set_some st.killer1 ply m
@@ -320,7 +322,7 @@ module State = struct
     ((src lsl 1) lor c) * Square.count + dst
 
   (* Update the move history heuristic. *)
-  let history m depth st =
+  let update_move_history m depth st =
     let i = history_idx m in
     let d = Array.unsafe_get st.move_history i + (depth * depth) in
     Array.unsafe_set st.move_history i d
@@ -355,11 +357,10 @@ let check_repetition search pos =
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Order = struct
-  let good_capture_offset = 5000
-  let promote_offset = 4000
-  let killer1_offset = 3000
-  let killer2_offset = 2000
-  let bad_capture_offset = 1000
+  let good_capture_offset = 4000
+  let promote_offset = 3000
+  let killer1_offset = 2000
+  let killer2_offset = 1000
 
   (* Check if a particular move has been evaluated already. *)
   let is_best pos tt =
@@ -421,20 +422,18 @@ module Order = struct
       | Some k, _ when Legal.same m k -> killer1_offset
       | _, Some k when Legal.same m k -> killer2_offset
       | _ -> 0 in
-    let history m =
+    let move_history m =
       let i = State.history_idx m in
       Array.unsafe_get move_history i in
     let moves = score_aux moves ~eval:(fun m ->
         if best m then inf
         else match See.go m with
-          | Some see ->
-            if see >= 0 then good_capture_offset + see * Eval.material_weight
-            else bad_capture_offset + see * Eval.material_weight
-          | None -> let promote = promote m in
+          | Some see when see >= 0 -> good_capture_offset + see
+          | _ -> let promote = promote m in
             if promote <> 0 then promote
             else let killer = killer m in
               if killer <> 0 then killer
-              else history m) in
+              else move_history m) in
     (* In case we never improve alpha, return the first available move as an
        option for the player (any arbitrary selection would do). *)
     fst @@ Array.unsafe_get moves 0, make_picker moves
@@ -442,10 +441,8 @@ module Order = struct
   (* Score the moves for quiescence search. *)
   let qscore moves = make_picker @@ score_aux moves ~eval:(fun m ->
       match See.go m with
-      | Some see ->
-        if see >= 0 then good_capture_offset + see * Eval.material_weight
-        else bad_capture_offset + see * Eval.material_weight
-      | None -> promote m)
+      | Some see when see >= 0 -> good_capture_offset + see
+      | _ -> promote m)
 
   (* Iterate using the thunk. *)
   let fold_until =
@@ -511,9 +508,9 @@ module Main = struct
   }
 
   let history_and_killer m ~ply ~depth =
-    State.(gets @@ killer ply m) >>= fun () ->
+    State.(gets @@ update_killer ply m) >>= fun () ->
     if is_quiet m then
-      State.(gets @@ history m depth)
+      State.(gets @@ update_move_history m depth)
     else return ()
 
   (* Beta cutoff. *)
