@@ -81,7 +81,7 @@ let rec evaluate swap depth =
       swap.(depth - 1) <- -swap.(depth);
     evaluate swap depth
   else swap.(0)
-    
+
 let see legal victim =
   let m = Legal.move legal in
   let src = Move.src m in
@@ -141,7 +141,7 @@ let see legal victim =
   begin try loop () with Stop -> () end;
   (* Evaluate the material gains/losses. *)
   evaluate swap st.depth
-  
+
 let go legal = match Legal.capture legal with
   | Some victim -> Some (see legal victim)
   | None -> None
