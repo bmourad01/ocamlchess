@@ -307,11 +307,8 @@ module State = struct
 
   (* Update the killer move for a particular ply. *)
   let killer ply m st = if is_quiet m then begin
-      begin match killer1 ply st with
-        | None -> ()
-        | Some m ->
-          Option_array.set_some st.killer2 ply m
-      end;
+      killer1 ply st |> Option.iter
+        ~f:(Option_array.set_some st.killer2 ply);
       Option_array.set_some st.killer1 ply m
     end
 
@@ -355,10 +352,11 @@ let check_repetition search pos =
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Order = struct
-  let capture_bonus = 4000
-  let promote_bonus = 3000
-  let killer1_bonus = 2000
-  let killer2_bonus = 1000
+  let good_capture_offset = 5000
+  let promote_offset = 4000
+  let killer1_offset = 3000
+  let killer2_offset = 2000
+  let bad_capture_offset = 1000
 
   (* Check if a particular move has been evaluated already. *)
   let is_best pos tt =
@@ -375,7 +373,7 @@ module Order = struct
     Legal.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(fun k ->
         let k = Move.Promote.to_piece_kind k in
-        promote_bonus + Piece.Kind.value k * Eval.material_weight)
+        promote_offset + Piece.Kind.value k * Eval.material_weight)
 
   (* Score each move according to `eval`. *)
   let score_aux moves ~eval =
@@ -417,8 +415,8 @@ module Order = struct
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets move_history) >>| fun move_history ->
     let killer m = match killer1, killer2 with
-      | Some k, _ when Legal.same m k -> killer1_bonus
-      | _, Some k when Legal.same m k -> killer2_bonus
+      | Some k, _ when Legal.same m k -> killer1_offset
+      | _, Some k when Legal.same m k -> killer2_offset
       | _ -> 0 in
     let history m =
       let m = Legal.move m in
@@ -429,7 +427,9 @@ module Order = struct
     let moves = score_aux moves ~eval:(fun m ->
         if best m then inf
         else match See.go m with
-          | Some see -> capture_bonus + see
+          | Some see ->
+            if see >= 0 then good_capture_offset + see * Eval.material_weight
+            else bad_capture_offset + see * Eval.material_weight
           | None -> let promote = promote m in
             if promote <> 0 then promote
             else let killer = killer m in
@@ -443,7 +443,9 @@ module Order = struct
   (* Score the moves for quiescence search. *)
   let qscore moves = make_picker @@ score_aux moves ~eval:(fun m ->
       match See.go m with
-      | Some see -> capture_bonus + see
+      | Some see ->
+        if see >= 0 then good_capture_offset + see * Eval.material_weight
+        else bad_capture_offset + see * Eval.material_weight
       | None -> promote m)
 
   (* Iterate using the thunk. *)
@@ -658,19 +660,19 @@ module Main = struct
     let king = Position.king pos in
     let active = Position.active_board pos in
     if eval >= beta
-    && depth > nmr_limit
+    && depth > nmr_depth_limit
     && Bb.(((pawn + king) & active) <> active) then
       Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
         ~beta:(-beta + 1)
         ~ply:(ply + 1)
-        ~depth:(depth - 1 - nmr_limit)
+        ~depth:(depth - 1 - nmr_depth_limit)
         ~null:true
         ~node:Cut >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else return None
 
-  and nmr_limit = 2
+  and nmr_depth_limit = 2
 
   (* Razoring.
 
@@ -709,8 +711,8 @@ module Main = struct
     (* Least expensive checks first. *)
     if not check
     && not (equal_node node Pv)
-    && i > 3
-    && depth > lmr_limit
+    && i > lmr_index_limit
+    && depth > lmr_depth_limit
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>= function
@@ -720,18 +722,20 @@ module Main = struct
           ~alpha:(-t.alpha - 1)
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
-          ~depth:(depth - lmr_limit)
+          ~depth:(depth - 1 - lmr_depth_limit)
           ~node:All >>= negm >>| fun score ->
         Option.some_if (score <= t.alpha) score
     else return None
 
-  and lmr_limit = 2
+  and lmr_depth_limit = 2
+  and lmr_index_limit = 3
+  and lmr_reduction_step = 8
 
   (* Principal variation search. *)
   and pvs ?(node = Pv) t pos ~i ~beta ~ply ~depth =
     let node = match node with
       | Pv -> Pv
-      | Cut -> if i > 0 then All else Cut
+      | Cut -> All
       | All -> Cut in
     let f alpha node =
       go pos
