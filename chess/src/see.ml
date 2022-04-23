@@ -5,7 +5,7 @@ module Legal = Position.Legal
 module Pre = Precalculated
 
 (* Get the set of squares that are attacking the destination square. *)
-let attacks pos dst occupied =
+let[@inline] attacks pos dst occupied =
   let open Bb.Syntax in
   let white = Position.white pos in
   let black = Position.black pos in
@@ -28,7 +28,7 @@ let attacks pos dst occupied =
 
 (* Get the set of squares from sliding pieces that are attacking the
    destination square. *)
-let attacks_sliding pos dst occupied c =
+let[@inline] attacks_sliding pos dst occupied c =
   let open Bb.Syntax in
   let diag = Pre.bishop dst occupied in
   let orth = Pre.rook dst occupied in
@@ -75,7 +75,7 @@ let[@inline] init legal src dst pos victim =
   let attacker = Piece.kind @@ Position.piece_at_square_exn pos src in
   {from; attackers; occupation; target_val; depth; side; attacker}, swap
 
-let rec evaluate swap depth =
+let[@inline] rec evaluate swap depth =
   let depth = depth - 1 in
   if depth > 0 then
     let s = swap.(depth) in
