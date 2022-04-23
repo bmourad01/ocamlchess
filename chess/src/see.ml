@@ -81,7 +81,7 @@ let rec evaluate swap depth =
     let s = swap.(depth) in
     let s1 = swap.(depth - 1) in
     if s > -s1 then
-      swap.(depth - 1) <- -swap.(depth);
+      swap.(depth - 1) <- -s;
     evaluate swap depth
   else swap.(0)
 
@@ -111,16 +111,17 @@ let[@inline] see legal victim =
           st.attacker <- k;
           true)
     then raise Stop in
+  (* Main loop. *)
   let rec loop () =
     if Bb.(st.attackers <> empty) then begin
       (* Find the least valuable attacker, if they exist. *)
       lva ();
       (* Update the swap list. *)
       let s1 = swap.(st.depth - 1) in
-      let v = st.target_val - s1 in
-      swap.(st.depth) <- v;
+      let s = st.target_val - s1 in
+      swap.(st.depth) <- s;
       (* The exchange is clearly losing, so abort. *)
-      if max (-s1) v < 0 then raise Stop;
+      if max (-s1) s < 0 then raise Stop;
       st.depth <- st.depth + 1;
       st.target_val <- Piece.Kind.value st.attacker;
       (* Update the board masks. *)
@@ -132,8 +133,6 @@ let[@inline] see legal victim =
       st.side <- Piece.Color.opposite st.side;
       loop ()
     end in
-  (* Run the loop and catch the case where we break out due to eliminating all
-     of the attackers. *)
   begin try loop () with Stop -> () end;
   (* Evaluate the material gains/losses. *)
   evaluate swap st.depth
