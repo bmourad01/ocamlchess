@@ -306,21 +306,19 @@ module State = struct
       | None -> false
 
   (* Update the killer move for a particular ply. *)
-  let killer ply m st = if is_quiet m then begin
-      killer1 ply st |> Option.iter
-        ~f:(Option_array.set_some st.killer2 ply);
-      Option_array.set_some st.killer1 ply m
-    end
+  let killer ply m st =
+    killer1 ply st |> Option.iter
+      ~f:(Option_array.set_some st.killer2 ply);
+    Option_array.set_some st.killer1 ply m
 
   (* Update the move history heuristic. *)
-  let history m depth st = if is_quiet m then begin
-      let m = Legal.move m in
-      let src = Square.to_int @@ Move.src m in
-      let dst = Square.to_int @@ Move.dst m in
-      let i = src + dst * Square.count in
-      let d = Array.unsafe_get st.move_history i + (depth * depth) in
-      Array.unsafe_set st.move_history i d
-    end
+  let history m depth st =
+    let m = Legal.move m in
+    let src = Square.to_int @@ Move.src m in
+    let dst = Square.to_int @@ Move.dst m in
+    let i = src + dst * Square.count in
+    let d = Array.unsafe_get st.move_history i + (depth * depth) in
+    Array.unsafe_set st.move_history i d
 end
 
 open State.Syntax
@@ -511,20 +509,25 @@ module Main = struct
     node = All;
   }
 
+  let history_and_killer m ~ply ~depth =
+    if is_quiet m then
+      State.(gets @@ history m depth) >>= fun () ->
+      State.(gets @@ killer ply m)
+    else return ()
+
   (* Beta cutoff. *)
-  let cutoff t m ~ply =
+  let cutoff t m ~ply ~depth =
+    history_and_killer m ~ply ~depth >>| fun () ->
     t.best <- m;
-    t.node <- Cut;
-    State.(gets @@ killer ply m)
+    t.node <- Cut
 
   (* Alpha may have improved. *)
-  let better t m ~score ~depth =
+  let better t m ~score =
     if score > t.alpha then begin
       t.best <- m;
       t.alpha <- score;
       t.node <- Pv;
-      State.(gets @@ history m depth)
-    end else return ()
+    end
 
   (* Will the position lead to a draw? *)
   let drawn pos =
@@ -601,10 +604,10 @@ module Main = struct
       | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth ~node
     end >>= fun score ->
       (* Update alpha if needed. *)
-      better t m ~score ~depth >>= fun () ->
+      better t m ~score;
       if score >= beta then
         (* Move was too good. *)
-        cutoff t m ~ply >>| fun () -> Stop beta
+        cutoff t m ~ply ~depth >>| fun () -> Stop beta
       else return @@ Continue (i + 1)
 
   (* Mate distance pruning. *)
@@ -769,7 +772,7 @@ module Main = struct
     let finish _ = return t.alpha in
     Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
         Legal.new_position m |> pvs t ~i ~ply ~depth ~beta >>= fun score ->
-        better t m ~score ~depth >>= fun () ->
+        better t m ~score;
         check_limits >>| function
         | true -> Stop t.alpha
         | false when is_mate score -> Stop score
