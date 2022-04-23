@@ -50,9 +50,12 @@ type state = {
   mutable attacker   : Piece.kind;
 }
 
+(* Maximum number of pieces in a legal position. *)
+let swap_len = 32
+
 let[@inline] init legal src dst pos victim =
   let depth = 1 in
-  let swap = Array.create ~len:32 0 in
+  let swap = Array.create ~len:swap_len 0 in
   let from = src in
   let attackers = attacks pos dst @@ Position.all_board pos in
   let target_val = Piece.Kind.value victim in
@@ -82,51 +85,44 @@ let rec evaluate swap depth =
     evaluate swap depth
   else swap.(0)
 
-let see legal victim =
+let[@inline] see legal victim =
+  let exception Stop in
   let m = Legal.move legal in
   let src = Move.src m in
   let dst = Move.dst m in
   let pos = Legal.parent legal in
   let st, swap = init legal src dst pos victim in
-  let pawn = Position.pawn pos in
-  let knight = Position.knight pos in
-  let bishop = Position.bishop pos in
-  let rook = Position.rook pos in
-  let queen = Position.queen pos in
-  let king = Position.king pos in
   let all = Position.all_board pos in
-  let exception Stop in
+  let lva_order = [
+    Position.pawn   pos, Piece.Pawn;
+    Position.knight pos, Piece.Knight;
+    Position.bishop pos, Piece.Bishop;
+    Position.rook   pos, Piece.Rook;
+    Position.queen  pos, Piece.Queen;
+    Position.king   pos, Piece.King;
+  ] in
+  let[@inline] lva () =
+    let side = Position.board_of_color pos st.side in
+    if not @@ (List.exists [@specialised]) lva_order ~f:(fun (b, k) ->
+        match Bb.(first_set (st.attackers & side & b)) with
+        | None -> false
+        | Some sq ->
+          st.from <- sq;
+          st.attacker <- k;
+          true)
+    then raise Stop in
   let rec loop () =
     if Bb.(st.attackers <> empty) then begin
       (* Find the least valuable attacker, if they exist. *)
-      let side = Position.board_of_color pos st.side in
-      if Bb.((st.attackers & side & pawn) <> empty) then begin
-        st.from <- Bb.(first_set_exn (st.attackers & side & pawn));
-        st.attacker <- Pawn;
-      end else if Bb.((st.attackers & side & knight) <> empty) then begin
-        st.from <- Bb.(first_set_exn (st.attackers & side & knight));
-        st.attacker <- Knight;
-      end else if Bb.((st.attackers & side & bishop) <> empty) then begin
-        st.from <- Bb.(first_set_exn (st.attackers & side & bishop));
-        st.attacker <- Bishop;
-      end else if Bb.((st.attackers & side & rook) <> empty) then begin
-        st.from <- Bb.(first_set_exn (st.attackers & side & rook));
-        st.attacker <- Rook;
-      end else if Bb.((st.attackers & side & queen) <> empty) then begin
-        st.from <- Bb.(first_set_exn (st.attackers & side & queen));
-        st.attacker <- Queen;
-      end else if Bb.((st.attackers & side & king) <> empty) then begin
-        st.from <- Bb.(first_set_exn (st.attackers & side & king));
-        st.attacker <- King;
-      end else raise Stop;
+      lva ();
       (* Update the swap list. *)
       let s1 = swap.(st.depth - 1) in
       let v = st.target_val - s1 in
       swap.(st.depth) <- v;
       (* The exchange is clearly losing, so abort. *)
       if max (-s1) v < 0 then raise Stop;
-      st.target_val <- Piece.Kind.value st.attacker;
       st.depth <- st.depth + 1;
+      st.target_val <- Piece.Kind.value st.attacker;
       (* Update the board masks. *)
       st.attackers <- Bb.(st.attackers -- st.from);
       st.occupation <- Bb.(st.occupation -- st.from);
