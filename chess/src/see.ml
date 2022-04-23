@@ -102,9 +102,9 @@ let[@inline] see legal victim =
     Position.king   pos, Piece.King;
   ] in
   let[@inline] lva () =
-    let side = Position.board_of_color pos st.side in
+    let mask = Bb.(st.attackers & Position.board_of_color pos st.side) in
     if not @@ (List.exists [@specialised]) lva_order ~f:(fun (b, k) ->
-        match Bb.(first_set (st.attackers & side & b)) with
+        match Bb.(first_set (mask & b)) with
         | None -> false
         | Some sq ->
           st.from <- sq;
