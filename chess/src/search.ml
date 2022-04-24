@@ -760,15 +760,15 @@ module Main = struct
     Order.score moves ~ply ~pos ~tt:search.tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
     let finish _ = return t.alpha in
+    let cutoff m = cutoff t m ~ply ~depth >>| fun () -> Stop beta in
     Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
         Legal.new_position m |>
         pvs t ~i ~r:0 ~ply ~depth ~beta >>= fun score ->
         better t m ~score;
         check_limits >>= function
+        | _ when score >= beta -> cutoff m
         | true -> return @@ Stop t.alpha
         | false when is_mate score -> return @@ Stop score
-        | false when score >= beta ->
-          cutoff t m ~ply ~depth >>| fun () -> Stop beta
         | false -> return @@ Continue (i + 1)) >>| fun score ->
     (* Update the transposition table and return the score. *)
     let best = t.best in
