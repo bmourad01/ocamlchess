@@ -749,12 +749,8 @@ module Main = struct
   (* Search from the root position. This follows slightly different rules than
      the generic search:
 
-     1. There is no need to consider beta cutoff. Instead, we cut off the
-        search when a mate is found.
-
-     2. We drop straight down into PVS.
-
-     3. In addition to the score, we return the best move.
+     1. We drop straight down into PVS.
+     2. In addition to the score, we return the best move.
   *)
   let root moves ~alpha ~beta ~depth =
     let open Continue_or_stop in
@@ -768,13 +764,15 @@ module Main = struct
         Legal.new_position m |>
         pvs t ~i ~r:0 ~ply ~depth ~beta >>= fun score ->
         better t m ~score;
-        check_limits >>| function
-        | true -> Stop t.alpha
-        | false when is_mate score -> Stop score
-        | false -> Continue (i + 1)) >>| fun score ->
+        check_limits >>= function
+        | true -> return @@ Stop t.alpha
+        | false when is_mate score -> return @@ Stop score
+        | false when score >= beta ->
+          cutoff t m ~ply ~depth >>| fun () -> Stop beta
+        | false -> return @@ Continue (i + 1)) >>| fun score ->
     (* Update the transposition table and return the score. *)
     let best = t.best in
-    Tt.store search.tt pos ~depth ~score ~best ~node:Pv;
+    Tt.store search.tt pos ~depth ~score ~best ~node:t.node;
     best, score
 
   (* Use an aspiration window for the search. The basic idea is that if
