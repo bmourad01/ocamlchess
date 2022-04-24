@@ -759,21 +759,22 @@ module Main = struct
     let ply = 0 in
     Order.score moves ~ply ~pos ~tt:search.tt >>= fun (best, next) ->
     let t = create ~alpha ~best () in
-    let finish _ = return t.alpha in
-    let cutoff m = cutoff t m ~ply ~depth >>| fun () -> Stop beta in
+    let finish _ = return (t.alpha, false) in
+    let cutoff m stopped =
+      cutoff t m ~ply ~depth >>| fun () -> Stop (beta, stopped) in
     Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
         Legal.new_position m |>
         pvs t ~i ~r:0 ~ply ~depth ~beta >>= fun score ->
         better t m ~score;
         check_limits >>= function
-        | _ when score >= beta -> cutoff m
-        | true -> return @@ Stop t.alpha
-        | false when is_mate score -> return @@ Stop score
-        | false -> return @@ Continue (i + 1)) >>| fun score ->
+        | stopped when score >= beta -> cutoff m stopped
+        | true -> return @@ Stop (t.alpha, true)
+        | false when is_mate score -> return @@ Stop (score, false)
+        | false -> return @@ Continue (i + 1)) >>| fun (score, stopped) ->
     (* Update the transposition table and return the score. *)
     let best = t.best in
     Tt.store search.tt pos ~depth ~score ~best ~node:t.node;
-    best, score
+    best, score, stopped
 
   (* Use an aspiration window for the search. The basic idea is that if
      we have the score from a shallower search, then we can use that value
@@ -783,10 +784,10 @@ module Main = struct
     State.(gets best_score) >>= fun best_score ->
     let alpha = if depth > 1 then best_score - delta_low  else -inf in
     let beta  = if depth > 1 then best_score + delta_high else  inf in
-    root moves ~alpha ~beta ~depth >>= fun (best, score) ->
+    root moves ~alpha ~beta ~depth >>= fun (best, score, stopped) ->
     State.(gets search) >>= fun {limits; _} ->
     (* Search was stopped, or we landed inside the window. *)
-    if Limits.stopped limits || (score > alpha && score < beta)
+    if stopped || (score > alpha && score < beta)
     then return (best, score)
     else (* Result was outside the window, so we need to widen a bit. *)
       let delta_low, delta_high =
