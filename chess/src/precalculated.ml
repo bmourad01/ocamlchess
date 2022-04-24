@@ -329,18 +329,17 @@ let[@inline] between sq1 sq2 =
   Array.unsafe_get between_tbl (i + j * Square.count)
 
 let mvv_lva =
-  let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen] in
-  let attackers = Piece.King :: List.rev victims in
-  let num_attackers = List.length attackers in
-  let num_victims = List.length victims in
-  let tbl = Array.create ~len:(num_victims * num_attackers) 0 in
-  List.fold victims ~init:0 ~f:(fun acc victim ->
+  let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen; King] in
+  let attackers = List.rev victims in
+  let len = Piece.Kind.count in
+  let tbl = Array.create ~len 0 in
+  List.fold victims ~init:0 ~f:(fun init victim ->
       let i = Piece.Kind.to_int victim in
-      List.fold attackers ~init:acc ~f:(fun acc attacker ->
+      List.fold attackers ~init ~f:(fun value attacker ->
           let j = Piece.Kind.to_int attacker in
-          tbl.(i + j * num_victims) <- acc;
-          acc + 1)) |> ignore;
+          tbl.(i + j * len) <- value;
+          value + 1)) |> ignore;
   fun victim attacker ->
     let i = Piece.Kind.to_int victim in
     let j = Piece.Kind.to_int attacker in
-    Array.unsafe_get tbl (i + j * num_victims)
+    Array.unsafe_get tbl (i + j * len)
