@@ -69,3 +69,7 @@ val castle :
 (** [between sq1 sq2] returns a bitboard of all squares between [sq1] and [sq2]
     w.r.t. a sliding move. *)
 val between : Square.t -> Square.t -> Bitboard.t
+
+(** [mvv_lva victim attacker] computes an ordering for the most valuable
+    [victim] and least valuable [attacker]. Higher values are better . *)
+val mvv_lva : Piece.kind -> Piece.kind -> int
