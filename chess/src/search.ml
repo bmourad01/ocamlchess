@@ -713,16 +713,15 @@ module Main = struct
     (* Least expensive checks first. *)
     if not check
     && not (equal_node node Pv)
-    && i > lmr_index_limit
-    && depth > lmr_depth_limit
+    && i >= lmr_index_limit
+    && depth >= lmr_depth_limit
     && is_quiet m
-    && not @@ Position.in_check @@ Legal.new_position m
     then State.(gets @@ is_killer m ply) >>| function
       | true -> 0
       | false -> 1
     else return 0
 
-  and lmr_depth_limit = 3
+  and lmr_depth_limit = 2
   and lmr_index_limit = 2
 
   (* Principal variation search. *)
@@ -736,13 +735,16 @@ module Main = struct
         ~alpha
         ~beta:(-t.alpha)
         ~ply:(ply + 1)
-        ~depth:(depth - 1 - r)
+        ~depth:(depth - r - 1)
         ~node >>= negm in
-    let pv = equal_node node Pv in
-    if pv && i = 0 then f (-beta) node ~r:0
+    if equal_node node Pv then
+      if i = 0 then f (-beta) node ~r:0
+      else f (-t.alpha - 1) Cut ~r >>= fun score ->
+        if score <= t.alpha then return score
+        else f (-beta) node ~r:0
     else f (-t.alpha - 1) Cut ~r >>= fun score ->
-      if pv && score > t.alpha && score < beta
-      then f (-beta) node ~r else return score
+      if score > t.alpha && r > 0
+      then f (-beta) node ~r:0 else return score
 
   (* Search from the root position. This follows slightly different rules than
      the generic search:
