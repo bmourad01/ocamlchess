@@ -599,9 +599,8 @@ module Main = struct
     if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node
     then return @@ Continue (i + 1)
     else begin
-      lmr t m ~i ~beta ~ply ~depth ~check ~node >>= function
-      | Some score -> return score
-      | None -> Legal.new_position m |> pvs t ~i ~beta ~ply ~depth ~node
+      lmr t m ~i ~beta ~ply ~depth ~check ~node >>= fun r ->
+      Legal.new_position m |> pvs t ~i ~r ~beta ~ply ~depth ~node
     end >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score;
@@ -646,7 +645,7 @@ module Main = struct
   *)
   and rfp ~depth ~eval ~beta =
     Option.some_if
-      (depth <= futility_limit && eval - rfp_margin depth >= beta)
+      (depth <= futile_max_depth && eval - rfp_margin depth >= beta)
       eval
 
   and rfp_margin depth =
@@ -700,10 +699,10 @@ module Main = struct
     not (equal_node node Pv) &&
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
-    depth <= futility_limit &&
+    depth <= futile_max_depth &&
     eval + 115 + 90 * depth <= alpha
 
-  and futility_limit = 6
+  and futile_max_depth = 6
 
   (* Late move reduction.
 
@@ -718,39 +717,32 @@ module Main = struct
     && depth > lmr_depth_limit
     && is_quiet m
     && not @@ Position.in_check @@ Legal.new_position m
-    then State.(gets @@ is_killer m ply) >>= function
-      | true -> return None
-      | false ->
-        Legal.new_position m |> go
-          ~alpha:(-t.alpha - 1)
-          ~beta:(-t.alpha)
-          ~ply:(ply + 1)
-          ~depth:(depth - lmr_depth_limit)
-          ~node:All >>= negm >>| fun score ->
-        Option.some_if (score <= t.alpha) score
-    else return None
+    then State.(gets @@ is_killer m ply) >>| function
+      | true -> 0
+      | false -> 1
+    else return 0
 
-  and lmr_depth_limit = 2
-  and lmr_index_limit = 3
-  and lmr_reduction_step = 8
+  and lmr_depth_limit = 3
+  and lmr_index_limit = 2
 
   (* Principal variation search. *)
-  and pvs ?(node = Pv) t pos ~i ~beta ~ply ~depth =
+  and pvs ?(node = Pv) t pos ~i ~r ~beta ~ply ~depth =
     let node = match node with
       | Pv -> Pv
       | Cut -> All
       | All -> Cut in
-    let f alpha node =
+    let f alpha node ~r =
       go pos
         ~alpha
         ~beta:(-t.alpha)
         ~ply:(ply + 1)
-        ~depth:(depth - 1)
+        ~depth:(depth - 1 - r)
         ~node >>= negm in
-    if i = 0 then f (-beta) node
-    else f (-t.alpha - 1) Cut >>= fun score ->
-      if equal_node node Pv && score > t.alpha && score < beta
-      then f (-beta) node else return score
+    let pv = equal_node node Pv in
+    if pv && i = 0 then f (-beta) node ~r:0
+    else f (-t.alpha - 1) Cut ~r >>= fun score ->
+      if pv && score > t.alpha && score < beta
+      then f (-beta) node ~r else return score
 
   (* Search from the root position. This follows slightly different rules than
      the generic search:
@@ -771,7 +763,8 @@ module Main = struct
     let t = create ~alpha ~best () in
     let finish _ = return t.alpha in
     Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
-        Legal.new_position m |> pvs t ~i ~ply ~depth ~beta >>= fun score ->
+        Legal.new_position m |>
+        pvs t ~i ~r:0 ~ply ~depth ~beta >>= fun score ->
         better t m ~score;
         check_limits >>| function
         | true -> Stop t.alpha
