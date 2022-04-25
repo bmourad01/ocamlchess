@@ -60,15 +60,15 @@ end
 
 module T = struct
   type t = {
-    event : string option;
-    site : string option;
-    date : Date.t option;
-    round : int option;
-    white : string option;
-    black : string option;
-    result : result;
-    start : Position.t;
-    moves : Position.legal list;
+    event   : string option;
+    site    : string option;
+    date    : Date.t option;
+    round   : int option;
+    white   : string option;
+    black   : string option;
+    result  : result;
+    start   : Position.t;
+    moves   : Position.legal list;
     history : int Int64.Map.t;
   } [@@deriving compare, equal, sexp, fields]
 end
