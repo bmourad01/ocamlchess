@@ -270,11 +270,15 @@ module State = struct
       killer2      : Position.legal Option_array.t;
       move_history : int array;
       best_score   : int;
+      stopped      : bool;
     } [@@deriving fields]
   end
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
+
+  let update_if cnd f = if cnd then update f else return ()
+  let gets_if cnd f ~default = if cnd then gets f else return default
 
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
@@ -287,10 +291,11 @@ module State = struct
     killer2 = Option_array.create ~len:killer_size;
     move_history = Array.create ~len:move_history_size 0;
     best_score = -inf;
+    stopped = false;
   }
 
   (* Start a new search while reusing the transposition table. *)
-  let new_iter best_score st = {st with best_score}
+  let new_iter best_score st = {st with best_score; stopped = false}
 
   (* Increment the number of nodes we've evaluated. *)
   let inc_nodes st = {st with nodes = st.nodes + 1}
@@ -326,13 +331,15 @@ module State = struct
     let i = history_idx m in
     let d = Array.unsafe_get st.move_history i + (depth * depth) in
     Array.unsafe_set st.move_history i d
+
+  let stop st = {st with stopped = true}
 end
 
 open State.Syntax
 
 let return = State.return
 
-let check_limits =
+let has_reached_limits =
   State.get () >>| fun {start_time; search; nodes; _} ->
   let limits = search.limits in
   Limits.stopped limits || begin
@@ -346,6 +353,10 @@ let check_limits =
           Time.(Span.to_ms @@ diff (now ()) start_time) in
         elapsed >= t
   end
+
+let check_limits =
+  has_reached_limits >>= fun result ->
+  State.(update_if result stop) >>| fun () -> result
 
 (* Will playing this position likely lead to a repetition draw? *)
 let check_repetition search pos =
@@ -509,9 +520,7 @@ module Main = struct
 
   let history_and_killer m ~ply ~depth =
     State.(gets @@ update_killer ply m) >>= fun () ->
-    if is_quiet m then
-      State.(gets @@ update_move_history m depth)
-    else return ()
+    State.(gets_if (is_quiet m) (update_move_history m depth) ~default:())
 
   (* Beta cutoff. *)
   let cutoff t m ~ply ~depth =
@@ -571,26 +580,25 @@ module Main = struct
               (* Depth exhausted, drop down to quiescence search. *)
               Quiescence.with_moves pos moves ~alpha ~beta ~ply
             | Second (alpha, beta) ->
-              let eval = Eval.go pos in
-              reduce pos moves
-                ~eval ~alpha ~beta ~ply ~depth
-                ~check ~depth ~null ~node >>= function
-              | Some score -> return score
-              | None ->
-                (* Search the available moves. *)
-                with_moves pos moves
-                  ~alpha ~beta ~ply ~depth ~eval ~check ~node
+              (* Search the available moves. *)
+              with_moves pos moves
+                ~alpha ~beta ~ply ~depth ~check ~node ~null
+
 
   (* Search the available moves for the given position. *)
-  and with_moves pos moves ~alpha ~beta ~ply ~depth ~eval ~check ~node =
-    State.(gets search) >>= fun {tt; _} ->
-    Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
-    let t = create ~alpha ~best () in
-    let finish _ = return t.alpha in
-    let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
-    Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
-    Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
-    score
+  and with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~node ~null =
+    let eval = Eval.go pos in
+    reduce pos moves
+      ~eval ~alpha ~beta ~ply ~depth ~check ~depth ~null ~node >>= function
+    | Some score -> return score
+    | None -> State.(gets search) >>= fun {tt; _} ->
+      Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
+      let t = create ~alpha ~best () in
+      let finish _ = return t.alpha in
+      let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
+      Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
+      Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
+      score
 
   (* Search a branch of the current node. *)
   and branch t ~eval ~beta ~depth ~ply ~check ~node = fun i (m, _) ->
@@ -634,7 +642,7 @@ module Main = struct
     then return None
     else match rfp ~depth ~eval ~beta with
       | Some _ as score -> return score
-      | None -> nmr pos ~eval ~beta ~ply ~depth >>= function
+      | None -> nmp pos ~eval ~beta ~ply ~depth >>= function
         | Some _ as beta -> return beta
         | None -> razor pos moves ~eval ~alpha ~beta ~ply ~depth
 
@@ -651,30 +659,28 @@ module Main = struct
   and rfp_margin depth =
     Piece.(Kind.value Pawn) * Eval.material_weight * depth
 
-  (* Null move reduction.
+  (* Null move pruning.
 
      If we forfeit our right to play a move and our opponent's best
      response still produces a beta cutoff, then we know this position
      is unlikely.
   *)
-  and nmr pos ~eval ~beta ~ply ~depth =
-    let pawn = Position.pawn pos in
-    let king = Position.king pos in
-    let active = Position.active_board pos in
+  and nmp pos ~eval ~beta ~ply ~depth =
     if eval >= beta
-    && depth > nmr_depth_limit
-    && Bb.(((pawn + king) & active) <> active) then
+    && depth >= nmp_depth_limit
+    && not @@ Eval.is_endgame pos then
+      let r = if depth <= 6 then 2 else 3 in
       Position.null_move_unsafe pos |> go
         ~alpha:(-beta)
         ~beta:(-beta + 1)
         ~ply:(ply + 1)
-        ~depth:(depth - 1 - nmr_depth_limit)
+        ~depth:(depth - r - 1)
         ~null:true
         ~node:Cut >>= negm >>| fun score ->
       Option.some_if (score >= beta) beta
     else return None
 
-  and nmr_depth_limit = 2
+  and nmp_depth_limit = 2
 
   (* Razoring.
 
@@ -746,35 +752,14 @@ module Main = struct
       if score > t.alpha && r > 0
       then f (-beta) node ~r:0 else return score
 
-  (* Search from the root position. This follows slightly different rules than
-     the generic search:
-
-     1. We drop straight down into PVS.
-     2. In addition to the score, we return the best move.
-  *)
+  (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    let open Continue_or_stop in
     State.(gets search) >>= fun search ->
-    let pos = search.root in
-    let ply = 0 in
-    Order.score moves ~ply ~pos ~tt:search.tt >>= fun (best, next) ->
-    let t = create ~alpha ~best () in
-    let finish _ = return (t.alpha, false) in
-    let cutoff m stopped =
-      cutoff t m ~ply ~depth >>| fun () -> Stop (beta, stopped) in
-    Order.fold_until next ~init:0 ~finish ~f:(fun i (m, _) ->
-        Legal.new_position m |>
-        pvs t ~i ~r:0 ~ply ~depth ~beta >>= fun score ->
-        better t m ~score;
-        check_limits >>= function
-        | stopped when score >= beta -> cutoff m stopped
-        | true -> return @@ Stop (t.alpha, true)
-        | false when is_mate score -> return @@ Stop (score, false)
-        | false -> return @@ Continue (i + 1)) >>| fun (score, stopped) ->
-    (* Update the transposition table and return the score. *)
-    let best = t.best in
-    Tt.store search.tt pos ~depth ~score ~best ~node:t.node;
-    best, score, stopped
+    let check = Position.in_check search.root in
+    with_moves search.root moves
+      ~alpha ~beta ~ply:0 ~depth ~check ~node:Pv ~null:false >>| fun score ->
+    let entry = Hashtbl.find_exn search.tt @@ Position.hash search.root in
+    entry.best, score
 
   (* Use an aspiration window for the search. The basic idea is that if
      we have the score from a shallower search, then we can use that value
@@ -784,8 +769,8 @@ module Main = struct
     State.(gets best_score) >>= fun best_score ->
     let alpha = if depth > 1 then best_score - delta_low  else -inf in
     let beta  = if depth > 1 then best_score + delta_high else  inf in
-    root moves ~alpha ~beta ~depth >>= fun (best, score, stopped) ->
-    State.(gets search) >>= fun {limits; _} ->
+    root moves ~alpha ~beta ~depth >>= fun (best, score) ->
+    State.(gets stopped) >>= fun stopped ->
     (* Search was stopped, or we landed inside the window. *)
     if stopped || (score > alpha && score < beta)
     then return (best, score)
