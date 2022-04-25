@@ -737,21 +737,18 @@ module Main = struct
       | Pv -> Pv
       | Cut -> All
       | All -> Cut in
-    let f alpha node ~r =
-      go pos
-        ~alpha
-        ~beta:(-t.alpha)
-        ~ply:(ply + 1)
-        ~depth:(depth - r - 1)
+    let f ?(r = 0) alpha node =
+      go pos ~alpha ~beta:(-t.alpha)
+        ~ply:(ply + 1) ~depth:(depth - r - 1)
         ~node >>= negm in
     if equal_node node Pv then
-      if i = 0 then f (-beta) node ~r:0
+      if i = 0 then f (-beta) node
       else f (-t.alpha - 1) Cut ~r >>= fun score ->
         if score <= t.alpha then return score
-        else f (-beta) node ~r:0
+        else f (-beta) node
     else f (-t.alpha - 1) Cut ~r >>= fun score ->
       if score > t.alpha && r > 0
-      then f (-beta) node ~r:0 else return score
+      then f (-beta) node else return score
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
