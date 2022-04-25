@@ -294,6 +294,9 @@ module State = struct
     stopped = false;
   }
 
+  let elapsed st =
+    int_of_float @@ Time.(Span.to_ms @@ diff (now ()) st.start_time)
+
   (* Start a new search while reusing the transposition table. *)
   let new_iter best_score st = {st with best_score; stopped = false}
 
@@ -340,18 +343,16 @@ open State.Syntax
 let return = State.return
 
 let has_reached_limits =
-  State.get () >>| fun {start_time; search; nodes; _} ->
+  State.(gets elapsed) >>= fun elapsed ->
+  State.(gets search) >>= fun search ->
+  State.(gets nodes) >>| fun nodes ->
   let limits = search.limits in
   Limits.stopped limits || begin
     match Limits.nodes limits with
     | Some n when nodes >= n -> true
     | _ -> match Limits.time limits with
+      | Some t -> elapsed >= t
       | None -> false
-      | Some t ->
-        let elapsed =
-          int_of_float @@
-          Time.(Span.to_ms @@ diff (now ()) start_time) in
-        elapsed >= t
   end
 
 let check_limits =
@@ -809,9 +810,7 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
 let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves in
   let (best, score), st = Monad.State.run (Main.aspire moves depth) st in
-  let time =
-    int_of_float @@
-    Time.(Span.to_ms @@ diff (now ()) st.start_time) in
+  let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
   let {limits; tt; root; _} = st.search in
