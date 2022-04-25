@@ -194,12 +194,18 @@ let to_string game =
   end;
   (* Moves *)
   addc '\n';
-  moves game |> List.iteri ~f:(fun i legal ->
+  moves game |> List.fold ~init:true ~f:(fun full legal ->
       let parent = Legal.parent legal in
-      if (i land 1) = 0 then
-        adds @@ sprintf "%d. " @@ Position.fullmove parent;
+      if full then adds @@ sprintf "%d." @@ Position.fullmove parent;
+      let full =
+        (* We may have started this game from a position where black
+           moves first. *)
+        let active = Position.active parent in
+        if full && Piece.Color.(active = Black)
+        then (adds ".."; full) else not full in
       adds @@ Position.San.of_legal legal;
-      addc ' ');
+      addc ' ';
+      full) |> ignore;
   adds result;
   Buffer.contents buf
 
