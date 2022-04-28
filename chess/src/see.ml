@@ -56,9 +56,9 @@ let swap_len = 32
 let[@inline] init legal from dst pos victim =
   let depth = 1 in
   let attacker = Piece.kind @@ Position.piece_at_square_exn pos from in
+  let target_val = Piece.Kind.value attacker in
   let swap = Array.create ~len:swap_len 0 in
-  let target_val = Piece.Kind.value victim in
-  swap.(0) <- target_val;
+  swap.(0) <- Piece.Kind.value victim;
   (* Compute the initial set of attackers at the destination square. *)
   let attackers = attackers pos dst @@ Position.all_board pos in
   (* Compute the mask for squares that we will consider to be occupied.

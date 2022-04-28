@@ -29,7 +29,7 @@ let test_4 () =
   test "2r1r1k1/pp1bppbp/3p1np1/q3P3/2P2P2/1P2B3/P1N1B1PP/2RQ1RK1 b - - 0 1" "d6e5" p
 
 let test_5 () =
-  test "3r3k/3r4/2n1n3/8/3p4/2PR4/1B1Q4/3R3K w - - 0 1" "d3d4" p
+  test "3r3k/3r4/2n1n3/8/3p4/2PR4/1B1Q4/3R3K w - - 0 1" "d3d4" (p - r)
 
 let test_6 () =
   test "1k1r4/1ppn3p/p4b2/4n3/8/P2N2P1/1PP1R1BP/2K1Q3 w - - 0 1" "d3e5" (n - n + b - r + n)
