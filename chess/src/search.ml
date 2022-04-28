@@ -752,11 +752,11 @@ module Main = struct
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    State.(gets search) >>= fun search ->
-    let check = Position.in_check search.root in
-    with_moves search.root moves
+    State.(gets search) >>= fun {tt; root; _} ->
+    let check = Position.in_check root in
+    with_moves root moves
       ~alpha ~beta ~ply:0 ~depth ~check ~node:Pv ~null:false >>| fun score ->
-    let entry = Hashtbl.find_exn search.tt @@ Position.hash search.root in
+    let entry = Hashtbl.find_exn tt @@ Position.hash root in
     entry.best, score
 
   (* Use an aspiration window for the search. The basic idea is that if
