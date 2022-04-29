@@ -39,7 +39,6 @@ type state = {
   mutable target_val : int;
   mutable depth      : int;
   mutable side       : Piece.color;
-  mutable attacker   : Piece.kind;
 }
 
 (* Maximum number of pieces in a legal position. *)
@@ -71,7 +70,7 @@ let[@inline] init legal from dst pos victim =
   let side = Position.inactive pos in
   let sliders = sliders pos dst Bb.(all & occupation) in
   let attackers = Bb.((attackers + (sliders & active_board)) & occupation) in
-  {from; attackers; occupation; target_val; depth; side; attacker}, swap
+  {from; attackers; occupation; target_val; depth; side}, swap
 
 (* Simple negamax search with a branching factor of 1. *)
 let[@inline] rec evaluate swap depth =
@@ -106,17 +105,15 @@ let[@inline] see legal victim =
     Bb.(mask <> empty) &&
     (List.exists [@specialised]) lva_order ~f:(fun (b, k) ->
         Option.value_map Bb.(first_set (mask & b)) ~default:false ~f:(fun sq ->
-            st.from <- sq; st.attacker <- k; true)) in
+            st.target_val <- Piece.Kind.value k;
+            st.from <- sq;
+            true)) in
   (* Main loop. *)
-  let rec loop () =
+  let[@inline] rec loop () =
+    (* Update the swap list. *)
+    swap.(st.depth) <- st.target_val - swap.(st.depth - 1);
     (* Find the least valuable attacker, if they exist. *)
     if lva () then begin
-      (* Update the swap list. *)
-      let s1 = swap.(st.depth - 1) in
-      let s = st.target_val - s1 in
-      swap.(st.depth) <- s;
-      st.depth <- st.depth + 1;
-      st.target_val <- Piece.Kind.value st.attacker;
       (* Update the board. *)
       st.attackers <- Bb.(st.attackers -- st.from);
       st.occupation <- Bb.(st.occupation -- st.from);
@@ -125,6 +122,7 @@ let[@inline] see legal victim =
       st.attackers <- Bb.((st.attackers + (sliders & mask)) & st.occupation);
       (* Other side to move. *)
       st.side <- Piece.Color.opposite st.side;
+      st.depth <- st.depth + 1;
       loop ()
     end in
   loop ();
