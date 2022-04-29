@@ -194,23 +194,23 @@ module Tt = struct
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
     | None -> Second (alpha, beta, None)
     | Some entry when Entry.depth entry < depth ->
-      Second (alpha, beta, Some (Entry.score entry))
-    | Some Entry.{score; node; _} ->
+      Second (alpha, beta, Some entry)
+    | Some (Entry.{score; best; node; _} as entry) ->
       let score =
         if is_mate score then score - ply
         else if is_mated score then score + ply
         else score in
       match node with
-      | Pv when not pv -> First score
-      | Pv -> Second (alpha, beta, Some score)
+      | Pv when not pv -> First (score, best)
+      | Pv -> Second (alpha, beta, Some entry)
       | Cut ->
         let alpha = max alpha score in
-        if alpha >= beta then First score
-        else Second (alpha, beta, Some score)
+        if alpha >= beta then First (score, best)
+        else Second (alpha, beta, Some entry)
       | All ->
         let beta = min beta score in
-        if alpha >= beta then First score
-        else Second (alpha, beta, Some score)
+        if alpha >= beta then First (score, best)
+        else Second (alpha, beta, Some entry)
 
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
@@ -564,8 +564,8 @@ module Main = struct
     | false -> drawn pos >>= function
       | true -> return 0
       | false -> lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-        | First score -> return score
-        | Second (alpha, beta, tt_score) ->
+        | First (score, _) -> return score
+        | Second (alpha, beta, ttentry) ->
           let moves = Position.legal_moves pos in
           let check = Position.in_check pos in
           (* Check + single reply extension. *)
@@ -583,11 +583,20 @@ module Main = struct
             | Second (alpha, beta) ->
               (* Search the available moves. *)
               with_moves pos moves
-                ~alpha ~beta ~ply ~depth ~check ~node ~null
-
+                ~alpha ~beta ~ply ~depth ~check ~node ~null ~ttentry
 
   (* Search the available moves for the given position. *)
-  and with_moves pos moves ~alpha ~beta ~ply ~depth ~check ~node ~null =
+  and with_moves
+      pos
+      moves
+      ~alpha
+      ~beta
+      ~ply
+      ~depth
+      ~check
+      ~node
+      ~null
+      ~ttentry =
     let eval = Eval.go pos in
     reduce pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check ~depth ~null ~node >>= function
@@ -743,21 +752,24 @@ module Main = struct
         ~node >>= negm in
     if equal_node node Pv then
       if i = 0 then f (-beta) node
-      else f (-t.alpha - 1) Cut ~r >>= fun score ->
-        if score <= t.alpha then return score
-        else f (-beta) node
-    else f (-t.alpha - 1) Cut ~r >>= fun score ->
+      else f (-t.alpha - 1) All ~r >>= fun score ->
+        if score > t.alpha then f (-beta) node else return score
+    else f (-t.alpha - 1) All ~r >>= fun score ->
       if score > t.alpha && r > 0
       then f (-beta) node else return score
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
     State.(gets search) >>= fun {tt; root; _} ->
-    let check = Position.in_check root in
-    with_moves root moves
-      ~alpha ~beta ~ply:0 ~depth ~check ~node:Pv ~null:false >>| fun score ->
-    let entry = Hashtbl.find_exn tt @@ Position.hash root in
-    entry.best, score
+    lookup root ~depth ~ply:0 ~alpha ~beta ~node:Pv >>= function
+    | First result -> return result
+    | Second (alpha, beta, ttentry) ->
+      let check = Position.in_check root in
+      with_moves root moves
+        ~alpha ~beta ~ply:0 ~depth ~check
+        ~node:Pv ~null:false ~ttentry >>| fun score ->
+      let entry = Hashtbl.find_exn tt @@ Position.hash root in
+      score, entry.best
 
   (* Use an aspiration window for the search. The basic idea is that if
      we have the score from a shallower search, then we can use that value
@@ -767,11 +779,11 @@ module Main = struct
     State.(gets best_score) >>= fun best_score ->
     let alpha = if depth > 1 then best_score - delta_low  else -inf in
     let beta  = if depth > 1 then best_score + delta_high else  inf in
-    root moves ~alpha ~beta ~depth >>= fun (best, score) ->
+    root moves ~alpha ~beta ~depth >>= fun ((score, best) as result) ->
     State.(gets stopped) >>= fun stopped ->
     (* Search was stopped, or we landed inside the window. *)
     if stopped || (score > alpha && score < beta)
-    then return (best, score)
+    then return result
     else (* Result was outside the window, so we need to widen a bit. *)
       let delta_low, delta_high =
         if score >= beta then delta_low, delta_high * 2
@@ -806,7 +818,7 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
    which makes pruning more effective. *)
 let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves in
-  let (best, score), st = Monad.State.run (Main.aspire moves depth) st in
+  let (score, best), st = Monad.State.run (Main.aspire moves depth) st in
   let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
