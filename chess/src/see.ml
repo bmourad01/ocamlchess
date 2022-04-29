@@ -129,6 +129,4 @@ let[@inline] see legal victim =
   (* Evaluate the material gains/losses. *)
   evaluate swap st.depth
 
-let go legal = match Legal.capture legal with
-  | Some victim -> Some (see legal victim)
-  | None -> None
+let go legal = Legal.capture legal |> Option.map ~f:(see legal)
