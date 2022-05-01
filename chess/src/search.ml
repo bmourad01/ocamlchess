@@ -385,11 +385,11 @@ module Order = struct
     fun m -> Option.exists best ~f:(Legal.same m)
 
   (* Prioritize promotions by the value of the piece *)
-  let promote m =
+  let promote ?(offset = promote_offset) m =
     Legal.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(fun k ->
         let k = Move.Promote.to_piece_kind k in
-        promote_offset + Piece.Kind.value k * Eval.material_weight)
+        offset + Piece.Kind.value k * Eval.material_weight)
 
   (* Score each move according to `eval`. *)
   let score_aux moves ~eval =
@@ -452,9 +452,11 @@ module Order = struct
 
   (* Score the moves for quiescence search. *)
   let qscore moves = make_picker @@ score_aux moves ~eval:(fun m ->
-      match See.go m with
-      | Some see when see >= 0 -> good_capture_offset + see
-      | _ -> promote m)
+      let p = promote m ~offset:0 in
+      if p <> 0 then p
+      else match See.go m with
+        | Some value -> value * Eval.material_weight
+        | None -> 0)
 
   (* Iterate using the thunk. *)
   let fold_until =
@@ -473,8 +475,7 @@ let negm = Fn.compose return Int.neg
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
 module Quiescence = struct
-  let margin = Piece.Kind.value Queen * Eval.material_weight
-
+  (* Search a position until it becomes "quiet". *)
   let rec go pos ~alpha ~beta ~ply = check_limits >>= function
     | true -> return 0
     | false ->
@@ -484,23 +485,31 @@ module Quiescence = struct
       then return @@ if check then -mate_score + ply else 0
       else with_moves pos moves ~alpha ~beta ~ply
 
+  (* Search the available moves for a given position, but only if they are
+     "noisy". *)
   and with_moves pos moves ~alpha ~beta ~ply =
     State.(update inc_nodes) >>= fun () ->
-    let score = Eval.go pos in
-    if score >= beta then return beta
-    else if score + margin < alpha && not @@ Eval.is_endgame pos
-    then return alpha
+    let eval = Eval.go pos in
+    if eval >= beta then return beta
     else List.filter moves ~f:is_noisy |>
          Order.qscore |> Order.fold_until
-           ~init:(max score alpha)
+           ~init:(max eval alpha)
            ~finish:return
-           ~f:(branch ~beta ~ply)
+           ~f:(branch ~beta ~eval ~ply)
 
-  and branch ~beta ~ply = fun alpha (m, _) ->
+  (* Search a branch of the current node. *)
+  and branch ~beta ~eval ~ply = fun alpha (m, order) ->
     let open Continue_or_stop in
-    Legal.new_position m |>
-    go ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>= negm >>| fun score ->
-    if score >= beta then Stop beta else Continue (max score alpha)
+    if order < 0 || futile ~eval ~order ~alpha
+    then return @@ Stop alpha
+    else let pos = Legal.new_position m in
+      go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
+      negm >>| fun score -> if score >= beta then Stop beta
+      else Continue (max score alpha)
+
+  (* Futility pruning. *)
+  and futile ~eval ~order ~alpha = eval + order + futility_margin < alpha
+  and futility_margin = Piece.Kind.value Knight * Eval.material_weight
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
