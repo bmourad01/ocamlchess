@@ -630,9 +630,14 @@ module Main = struct
       ~node
       ~null
       ~ttentry =
-    let eval = Eval.go pos in
-    reduce pos moves
-      ~eval ~alpha ~beta ~ply ~depth ~check ~depth ~null ~node >>= function
+    let eval = eval pos ~check ~ttentry in
+    begin match eval with
+      | None -> return None
+      | Some eval ->
+        reduce pos moves
+          ~eval ~alpha ~beta ~ply ~depth ~check
+          ~depth ~null ~node
+    end >>= function
     | Some score -> return score
     | None -> State.(gets params) >>= fun {tt; _} ->
       Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
@@ -643,11 +648,26 @@ module Main = struct
       Tt.store tt pos ~depth ~ply ~score ~best:t.best ~node:t.node;
       score
 
+  (* Decide whether to use the TT evaluation or the result of the evaluation
+     function (or whether to skip altogether). *)
+  and eval pos ~check ~ttentry =
+    if not check then
+      let eval = Eval.go pos in
+      match ttentry with
+      | None -> Some eval
+      | Some Tt.Entry.{score; node; _} ->
+        let better = match node with
+          | Pv -> false
+          | Cut -> score > eval
+          | All -> score <= eval in
+        Some (if better then score else eval)
+    else None
+
   (* Search a branch of the current node. *)
-  and branch t ~eval ~beta ~depth ~ply ~check ~node = fun i (m, _) ->
+  and branch t ~eval ~beta ~depth ~ply ~check ~node = fun i (m, order) ->
     let open Continue_or_stop in
-    (* If this move is obviously bad, then skip it. *)
     if futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node
+    || see m ~order ~depth
     then return @@ Continue (i + 1)
     else begin
       lmr t m ~i ~beta ~ply ~depth ~check ~node >>= fun r ->
@@ -659,6 +679,19 @@ module Main = struct
         (* Move was too good. *)
         cutoff t m ~ply ~depth >>| fun () -> Stop beta
       else return @@ Continue (i + 1)
+
+  (* Bad captures have a particular offset in the move ordering, corresponding
+     to a negative SEE value.
+
+     If this move is unlikely to allow us compensation given the current depth
+     of the search, then just skip the move.
+  *)
+  and see m ~order ~depth =
+    Option.is_some @@ Legal.capture m &&
+    order <= Order.bad_capture_offset &&
+    (order - Order.bad_capture_offset) < depth * -see_margin
+
+  and see_margin = Piece.Kind.value Pawn * 2 * Eval.material_weight
 
   (* Mate distance pruning. *)
   and mdp ~alpha ~beta ~ply =
@@ -687,7 +720,7 @@ module Main = struct
       | Some _ as score -> return score
       | None -> nmp pos ~eval ~beta ~ply ~depth >>= function
         | Some _ as beta -> return beta
-        | None -> razor pos moves ~eval ~alpha ~beta ~ply ~depth
+        | None -> razor pos moves ~eval ~alpha ~ply ~depth
 
   (* Reverse futility pruning.
 
@@ -730,10 +763,11 @@ module Main = struct
      Drop down to quescience search if we're approaching the horizon and we 
      have little chance to improve alpha.
   *)
-  and razor pos moves ~eval ~alpha ~beta ~ply ~depth =
-    if depth = 1 && eval + razor_margin <= alpha then
-      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| fun score ->
-      Option.some_if (score <= alpha) score
+  and razor pos moves ~eval ~alpha ~ply ~depth =
+    if depth = 1 && eval + razor_margin < alpha then
+      Quiescence.with_moves pos moves
+        ~alpha:(alpha - 1) ~beta:alpha ~ply >>| fun score ->
+      Option.some_if (score < alpha) score
     else return None
 
   and razor_margin = Piece.Kind.value Rook * Eval.material_weight
@@ -749,7 +783,8 @@ module Main = struct
     is_quiet m &&
     not (Position.in_check @@ Legal.new_position m) &&
     depth <= futile_max_depth &&
-    eval + 115 + 90 * depth <= alpha
+    Option.value_map eval ~default:false ~f:(fun eval ->
+        eval + 115 + 90 * depth <= alpha)
 
   and futile_max_depth = 6
 
