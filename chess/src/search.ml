@@ -275,6 +275,7 @@ module State = struct
       killer2      : Position.legal Option_array.t;
       move_history : int array;
       best_score   : int;
+      prev_pv      : Position.legal list;
       stopped      : bool;
     } [@@deriving fields]
   end
@@ -296,6 +297,7 @@ module State = struct
     killer2 = Option_array.create ~len:killer_size;
     move_history = Array.create ~len:move_history_size 0;
     best_score = -inf;
+    prev_pv = [];
     stopped = false;
   }
 
@@ -303,7 +305,9 @@ module State = struct
     int_of_float @@ Time.(Span.to_ms @@ diff (now ()) st.start_time)
 
   (* Start a new search while reusing the transposition table. *)
-  let new_iter best_score st = {st with best_score; stopped = false}
+  let new_iter best_score prev_pv st = {
+    st with best_score; prev_pv; stopped = false
+  }
 
   (* Increment the number of nodes we've evaluated. *)
   let inc_nodes st = {st with nodes = st.nodes + 1}
@@ -376,14 +380,17 @@ module Order = struct
   let promote_offset = 3000
   let killer1_offset = 2000
   let killer2_offset = 1000
+  let bad_capture_offset = -1000
+
+  let is_pv pv m = List.exists pv ~f:(Legal.same m)
 
   (* Check if a particular move has been evaluated already. *)
-  let is_best pos tt =
+  let is_hash pos tt =
     let best =
       Position.hash pos |> Hashtbl.find tt |>
       Option.bind ~f:(fun entry ->
           match Tt.Entry.node entry with
-          | Pv -> Some (Tt.Entry.best entry)
+          | Pv | Cut -> Some (Tt.Entry.best entry)
           | _ -> None) in
     fun m -> Option.exists best ~f:(Legal.same m)
 
@@ -429,7 +436,9 @@ module Order = struct
 
   (* Score the moves for normal search. *)
   let score moves ~ply ~pos ~tt =
-    let best = is_best pos tt in
+    State.(gets prev_pv) >>= fun pv ->
+    let is_pv = is_pv pv in
+    let is_hash = is_hash pos tt in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets move_history) >>| fun move_history ->
@@ -441,9 +450,13 @@ module Order = struct
       let i = State.history_idx m in
       Array.unsafe_get move_history i in
     let moves = score_aux moves ~eval:(fun m ->
-        if best m then inf
+        if is_pv m then inf * 2
+        else if is_hash m then inf
         else match See.go m with
-          | Some see when see >= 0 -> good_capture_offset + see
+          | Some see when see >= 0 ->
+            good_capture_offset + see * Eval.material_weight
+          | Some see when see < 0 ->
+            bad_capture_offset + see * Eval.material_weight
           | _ -> let promote = promote m in
             if promote <> 0 then promote
             else let killer = killer m in
@@ -494,11 +507,19 @@ module Quiescence = struct
     State.(update inc_nodes) >>= fun () ->
     let eval = Eval.go pos in
     if eval >= beta then return beta
+    else if delta pos ~eval ~alpha then return alpha
     else List.filter moves ~f:is_noisy |>
          Order.qscore |> Order.fold_until
            ~init:(max eval alpha)
            ~finish:return
            ~f:(branch ~beta ~eval ~ply)
+
+  (* Delta pruning. *)
+  and delta pos ~eval ~alpha =
+    eval + delta_margin < alpha &&
+    not (Eval.is_endgame pos)
+
+  and delta_margin = Piece.Kind.value Queen * Eval.material_weight
 
   (* Search a branch of the current node. *)
   and branch ~beta ~eval ~ply = fun alpha (m, order) ->
@@ -738,12 +759,12 @@ module Main = struct
      depth search will improve alpha or not.
   *)
   and lmr t m ~i ~beta ~ply ~depth ~check ~node =
-    (* Least expensive checks first. *)
     if not check
     && not (equal_node node Pv)
     && i >= lmr_index_limit
     && depth >= lmr_depth_limit
     && is_quiet m
+    && ply > 0
     then State.(gets @@ is_killer m ply) >>| function
       | true -> 0
       | false -> 1
@@ -752,7 +773,12 @@ module Main = struct
   and lmr_depth_limit = 2
   and lmr_index_limit = 2
 
-  (* Principal variation search. *)
+  (* Principal variation search.
+
+     Attempt to search with a zero window around alpha, and do a full search
+     if the score is within our normal window This can allow us to skip lines
+     that are unlikely to be part of the PV.
+  *)
   and pvs ?(node = Pv) t pos ~i ~r ~beta ~ply ~depth =
     let node = match node with
       | Pv -> Pv
@@ -765,9 +791,10 @@ module Main = struct
     if equal_node node Pv then
       if i = 0 then f (-beta) node
       else f (-t.alpha - 1) All ~r >>= fun score ->
-        if score > t.alpha then f (-beta) node else return score
+        if score > t.alpha && score < beta
+        then f (-beta) node else return score
     else f (-t.alpha - 1) All ~r >>= fun score ->
-      if score > t.alpha && r > 0
+      if score > t.alpha && (score < beta || r > 0)
       then f (-beta) node else return score
 
   (* Search from the root position. *)
@@ -874,7 +901,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
       Option.value_map ~default:false ~f:(fun n -> List.length pv <= n * 2) in
     (* Continue iterating? *)
     if too_long || max_nodes || max_depth || mate then result
-    else next ~prev:(Some result) @@ State.new_iter score st
+    else next ~prev:(Some result) @@ State.new_iter score pv st
   end
 
 let go
