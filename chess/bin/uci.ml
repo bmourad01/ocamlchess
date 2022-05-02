@@ -129,8 +129,14 @@ let search ~root ~limits ~history ~tt ~stop =
   let result =
     (* For each iteration, send a UCI `info` command about the search. *)
     let iter result = info_of_result root tt result in
-    try Search.go () ~root ~limits ~history ~tt ~iter
-    with exn ->
+    try Some (Search.go () ~root ~limits ~history ~tt ~iter) with
+    | Search.No_moves ->
+      printf "%s\n%!" @@ Uci.Send.(to_string @@ Info Info.[
+          Depth 0;
+          Score (if Position.in_check root then Mate 0 else Cp (0, None));
+        ]);
+      None
+    | exn ->
       (* Notify the user and abort. *)
       printf "Search encountered an exception: %s\n%!" @@ Exn.to_string exn;
       exit 1 in
@@ -145,15 +151,15 @@ let search ~root ~limits ~history ~tt ~stop =
     | true ->
       (* We canceled the thread, so don't output the result. *)
       Atomic.set cancel false
-    | false ->
-      (* Send the bestmove. *)
-      let ponder = match Search.Result.pv result with
-        | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
-        | _ -> None in
-      let move = Position.Legal.move @@ Search.Result.best result in
-      printf "%s\n%!" @@
-      Uci.Send.to_string @@
-      Uci.Send.(Bestmove Bestmove.{move; ponder})
+    | false -> Option.iter result ~f:(fun result ->
+        (* Send the bestmove. *)
+        let ponder = match Search.Result.pv result with
+          | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
+          | _ -> None in
+        let move = Position.Legal.move @@ Search.Result.best result in
+        printf "%s\n%!" @@
+        Uci.Send.to_string @@
+        Uci.Send.(Bestmove Bestmove.{move; ponder}))
   end;
   (* Thread completed. *)
   Atomic.set search_thread None

@@ -904,6 +904,8 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
     else next ~prev:(Some result) @@ State.new_iter score pv st
   end
 
+exception No_moves
+
 let go
     ?(tt = Tt.create ())
     ?(iter = default_iter)
@@ -912,7 +914,7 @@ let go
     ~history
     () =
   match Position.legal_moves root with
-  | [] -> invalid_arg "No legal moves"
+  | [] -> raise No_moves
   | moves ->
     iterdeep ~iter ~moves @@
     State.create @@

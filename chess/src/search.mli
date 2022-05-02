@@ -143,9 +143,12 @@ type result = Result.t
 (** The callback function for each iteration of the search. *)
 type iter = result -> unit
 
+(** Raised when the root position has no legal moves. *)
+exception No_moves
+
 (** [go () ~root ~limits ~history ~tt ~iter ~stop] runs the game tree search
-    and returns the search result. Raises [Invalid_argument] if there are no
-    legal moves.
+    and returns the search result. Raises [No_moves] if there are no legal
+    moves.
 
     - [root]: the position to start the search from.
     - [limits]: the search limits.
