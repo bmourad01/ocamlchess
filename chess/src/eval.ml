@@ -85,9 +85,9 @@ module Mobility = struct
     let occupied = Position.all_board pos in
     let us = Position.board_of_color pos c in
     let them = Bb.(occupied - us) in
+    (* For pawns, we not only want to evaluate attacked squares but
+       also the ability to push to new ranks. *)
     let pawn =
-      (* For pawns, we not only want to evaluate attacked squares but
-         also the ability to push to new ranks. *)
       let pawn = Bb.(us & Position.pawn pos) in
       let single, double, attack = match c with
         | Piece.White ->
@@ -106,27 +106,40 @@ module Mobility = struct
       match phase with
       | Phase.Opening -> n * Array.unsafe_get start_bonus i
       | Phase.Endgame -> n * Array.unsafe_get end_bonus   i in
-    let rest =
-      (* For the rest, count the number of attacked squares. *)
-      List.fold kinds ~init:0 ~f:(fun acc k ->
-          let f = match k with
-            | Pawn   -> assert false
-            | Knight -> Pre.knight
-            | Bishop -> fun sq -> Pre.bishop sq occupied
-            | Rook   -> fun sq -> Pre.rook   sq occupied
-            | Queen  -> fun sq -> Pre.queen  sq occupied
-            | King   -> Pre.king in
-          let i = Piece.Kind.to_int k in
-          let bonus = match phase with
-            | Phase.Opening -> Array.unsafe_get start_bonus i
-            | Phase.Endgame -> Array.unsafe_get end_bonus   i in
-          Bb.(Position.board_of_kind pos k & us) |>
-          Bb.fold ~init:acc ~f:(fun acc sq ->
-              acc + Bb.(count (f sq - us)) * bonus)) in
+    (* For the rest, count the number of attacked squares. *)
+    let rest = List.fold kinds ~init:0 ~f:(fun acc k ->
+        let f = match k with
+          | Pawn   -> assert false
+          | Knight -> Pre.knight
+          | Bishop -> fun sq -> Pre.bishop sq occupied
+          | Rook   -> fun sq -> Pre.rook   sq occupied
+          | Queen  -> fun sq -> Pre.queen  sq occupied
+          | King   -> Pre.king in
+        let i = Piece.Kind.to_int k in
+        let bonus = match phase with
+          | Phase.Opening -> Array.unsafe_get start_bonus i
+          | Phase.Endgame -> Array.unsafe_get end_bonus   i in
+        Bb.(Position.board_of_kind pos k & us) |>
+        Bb.fold ~init:acc ~f:(fun acc sq ->
+            acc + Bb.(count (f sq - us)) * bonus)) in
     pawn + rest
 
+  (* Cache the mobility evaluations. *)
+  let table = Hashtbl.create (module Int64)
+
   (* Relative mobility advantage. *)
-  let advantage = advantage go
+  let advantage pos phase =
+    let default () =
+      let start = go pos Opening White - go pos Opening Black in
+      let end_ = go pos Endgame White - go pos Endgame Black in
+      start, end_ in
+    let start, end_ =
+      Position.material_hash pos |> Hashtbl.find_or_add table ~default in
+    match phase, Position.active pos with
+    | Phase.Opening, White -> start
+    | Phase.Opening, Black -> -start
+    | Phase.Endgame, White -> end_
+    | Phase.Endgame, Black -> -end_
 end
 
 module Rook_open_file = struct
@@ -422,12 +435,12 @@ module Placement = struct
 
     let bishop_end = [|
       -20; -10; -10; -10; -10; -10; -10; -20;
-      -10;  0;    0;   0;   0;   0;   0; -10;
-      -10;  0;    5;  10;  10;   5;   0; -10;
-      -10;  5;    5;  10;  10;   5;   5; -10;
-      -10;  0;   10;  10;  10;  10;   0; -10;
+      -10;  0;   0;   0;   0;   0;   0;  -10;
+      -10;  0;   5;   10;  10;  5;   0;  -10;
+      -10;  5;   5;   10;  10;  5;   5;  -10;
+      -10;  0;   10;  10;  10;  10;  0;  -10;
       -10;  10;  10;  10;  10;  10;  10; -10;
-      -10;  5;    0;   0;   0;   0;   5; -10;
+      -10;  5;   0;   0;   0;   0;   5;  -10;
       -20; -10; -10; -10; -10; -10; -10; -20;
     |]
 
@@ -519,8 +532,21 @@ module Placement = struct
         | Phase.Opening -> acc + get start sq c
         | Phase.Endgame -> acc + get end_  sq c)
 
-  (* Relative placement advantage. *)
-  let advantage = advantage go
+  (* Cache the piece placement evaluations. *)
+  let table = Hashtbl.create (module Int64)
+
+  let advantage pos phase =
+    let default () =
+      let start = go pos Opening White - go pos Opening Black in
+      let end_ = go pos Endgame White - go pos Endgame Black in
+      start, end_ in
+    let start, end_ =
+      Position.material_hash pos |> Hashtbl.find_or_add table ~default in
+    match phase, Position.active pos with
+    | Phase.Opening, White -> start
+    | Phase.Opening, Black -> -start
+    | Phase.Endgame, White -> end_
+    | Phase.Endgame, Black -> -end_
 end
 
 module Mop_up = struct
