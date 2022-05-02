@@ -57,7 +57,21 @@ module Material = struct
         | Phase.Opening -> acc + n * Array.unsafe_get start_value i
         | Phase.Endgame -> acc + n * Array.unsafe_get end_value   i)
 
-  let advantage = advantage go
+  (* Cache the material evaluations. *)
+  let table = Hashtbl.create (module Int64)
+
+  let advantage pos phase =
+    let default () =
+      let start = go pos Opening White - go pos Opening Black in
+      let end_ = go pos Endgame White - go pos Endgame Black in
+      start, end_ in
+    let start, end_ =
+      Position.material_hash pos |> Hashtbl.find_or_add table ~default in
+    match phase, Position.active pos with
+    | Phase.Opening, White -> start
+    | Phase.Opening, Black -> -start
+    | Phase.Endgame, White -> end_
+    | Phase.Endgame, Black -> -end_
 end
 
 module Mobility = struct
@@ -321,9 +335,7 @@ module Pawns = struct
     let advantage pos phase = go pos phase White - go pos phase Black
   end
 
-  (* The pawn structure evaluations are static, therefore they aren't specific
-     to any particular game or search history. Given this property, we can
-     safely cache these results globally. *)
+  (* Cache the pawn structure evaluations. *)
   let table = Hashtbl.create (module Int64)
 
   (* Evaluate the pawn structure. *)

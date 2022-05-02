@@ -32,21 +32,22 @@ module T = struct
      performance advantage over a typical state monad pattern (where
      we are making a new copy every time we update a field). *)
   type t = {
-    mutable white      : Bb.t;
-    mutable black      : Bb.t;
-    mutable pawn       : Bb.t;
-    mutable knight     : Bb.t;
-    mutable bishop     : Bb.t;
-    mutable rook       : Bb.t;
-    mutable queen      : Bb.t;
-    mutable king       : Bb.t;
-    mutable active     : Piece.color;
-    mutable castle     : Cr.t;
-    mutable en_passant : Square.t Uopt.t;
-    mutable halfmove   : int;
-    mutable fullmove   : int;
-    mutable hash       : int64;
-    mutable pawn_hash  : int64;
+    mutable white         : Bb.t;
+    mutable black         : Bb.t;
+    mutable pawn          : Bb.t;
+    mutable knight        : Bb.t;
+    mutable bishop        : Bb.t;
+    mutable rook          : Bb.t;
+    mutable queen         : Bb.t;
+    mutable king          : Bb.t;
+    mutable active        : Piece.color;
+    mutable castle        : Cr.t;
+    mutable en_passant    : Square.t Uopt.t;
+    mutable halfmove      : int;
+    mutable fullmove      : int;
+    mutable hash          : int64;
+    mutable pawn_hash     : int64;
+    mutable material_hash : int64;
   } [@@deriving compare, equal, fields, sexp]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
@@ -54,21 +55,22 @@ module T = struct
   (* We make an explicit copy because our move generator will return
      a new position (thus adhering to a functional style). *)
   let[@inline] copy pos = {
-    white      = pos.white;
-    black      = pos.black;
-    pawn       = pos.pawn;
-    knight     = pos.knight;
-    bishop     = pos.bishop;
-    rook       = pos.rook;
-    queen      = pos.queen;
-    king       = pos.king;
-    active     = pos.active;
-    castle     = pos.castle;
-    en_passant = pos.en_passant;
-    halfmove   = pos.halfmove;
-    fullmove   = pos.fullmove;
-    hash       = pos.hash;
-    pawn_hash  = pos.pawn_hash;
+    white         = pos.white;
+    black         = pos.black;
+    pawn          = pos.pawn;
+    knight        = pos.knight;
+    bishop        = pos.bishop;
+    rook          = pos.rook;
+    queen         = pos.queen;
+    king          = pos.king;
+    active        = pos.active;
+    castle        = pos.castle;
+    en_passant    = pos.en_passant;
+    halfmove      = pos.halfmove;
+    fullmove      = pos.fullmove;
+    hash          = pos.hash;
+    pawn_hash     = pos.pawn_hash;
+    material_hash = pos.material_hash;
   }
 end
 
@@ -235,6 +237,13 @@ module Hash = struct
   let pawn_structure pos = Monad.State.exec begin
       collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
           M.update @@ Update.piece c Pawn sq)
+    end 0L
+
+  (* Get the hash of only of the material. *)
+  let material pos = Monad.State.exec begin
+      collect_all pos |> M.List.iter ~f:(fun (sq, p) ->
+          let c, k = Piece.decomp p in
+          M.update @@ Update.piece c k sq)
     end 0L
 end
 
@@ -932,9 +941,10 @@ module Fen = struct
       let pos = Fields.create
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove
-          ~hash:0L ~pawn_hash:0L in
+          ~hash:0L ~pawn_hash:0L ~material_hash:0L in
       set_hash pos @@ Hash.of_position pos;
       set_pawn_hash pos @@ Hash.pawn_structure pos;
+      set_material_hash pos @@ Hash.material pos;
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
 
@@ -991,6 +1001,9 @@ module Makemove = struct
   let[@inline] update_pawn_hash sq c pos =
     set_pawn_hash pos @@ Hash.Update.piece c Pawn sq pos.pawn_hash
 
+  let[@inline] update_material_hash sq c k pos =
+    set_material_hash pos @@ Hash.Update.piece c k sq pos.material_hash
+
   let[@inline] map_color c pos ~f = match c with
     | Piece.White -> set_white pos @@ f @@ white pos
     | Piece.Black -> set_black pos @@ f @@ black pos
@@ -1009,6 +1022,7 @@ module Makemove = struct
     map_color c pos ~f;
     map_kind k pos ~f;
     update_hash pos ~f:(Hash.Update.piece c k sq);
+    update_material_hash sq c k pos;
     begin match k with
       | Pawn -> update_pawn_hash sq c pos
       | _ -> ()
