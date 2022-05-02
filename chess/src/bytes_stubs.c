@@ -10,14 +10,14 @@ CAMLprim value ml_bytes_int64_be(value v, value pos) {
   uint64_t result = ((uint64_t)b[0] << 56) | ((uint64_t)b[1] << 48) |
                     ((uint64_t)b[2] << 40) | ((uint64_t)b[3] << 32) |
                     ((uint64_t)b[4] << 24) | ((uint64_t)b[5] << 16) |
-                    ((uint64_t)b[6] << 8) | ((uint64_t)b[7]);
+                    ((uint64_t)b[6] << 8)  | ((uint64_t)b[7]);
   return caml_copy_int64(result);
 }
 
 CAMLprim value ml_bytes_int32_be(value v, value pos) {
   uint8_t *b = Bytes_val(v) + Int_val(pos);
   uint32_t result = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) |
-                    ((uint32_t)b[2] << 8) | ((uint32_t)b[3]);
+                    ((uint32_t)b[2] << 8)  | ((uint32_t)b[3]);
   return caml_copy_int32(result);
 }
 
