@@ -152,6 +152,7 @@ module Tt = struct
   module Entry = struct
     type t = {
       depth : int;
+      ply   : int;
       score : int;
       best  : Position.legal;
       node  : node;
@@ -174,9 +175,9 @@ module Tt = struct
 
      For the same position, prefer the more recent search.
   *)
-  let store tt pos ~depth ~score ~best ~node =
+  let store tt pos ~depth ~ply ~score ~best ~node =
     let key = Position.hash pos in
-    let data = Entry.Fields.create ~depth ~score ~best ~node in
+    let data = Entry.Fields.create ~depth ~ply ~score ~best ~node in
     Hashtbl.set tt ~key ~data
 
   (* Check for a previous evaluation of the position at a comparable depth.
@@ -195,21 +196,25 @@ module Tt = struct
     | None -> Second (alpha, beta, None)
     | Some entry when Entry.depth entry < depth ->
       Second (alpha, beta, Some entry)
-    | Some (Entry.{score; best; node; _} as entry) ->
+    | Some entry ->
+      (* If this was a mate score, then adjust it to be relative to the
+         current distance from root. *)
       let score =
-        if is_mate score then score - ply
-        else if is_mated score then score + ply
-        else score in
-      match node with
-      | Pv when not pv -> First (score, best)
+        if is_mate entry.score then
+          entry.score + entry.ply - ply
+        else if is_mated entry.score then
+          entry.score - entry.ply + ply
+        else entry.score in
+      match entry.node with
+      | Pv when not pv -> First (score, entry.best)
       | Pv -> Second (alpha, beta, Some entry)
       | Cut ->
         let alpha = max alpha score in
-        if alpha >= beta then First (score, best)
+        if alpha >= beta then First (score, entry.best)
         else Second (alpha, beta, Some entry)
       | All ->
         let beta = min beta score in
-        if alpha >= beta then First (score, best)
+        if alpha >= beta then First (score, entry.best)
         else Second (alpha, beta, Some entry)
 
   (* Extract the principal variation from the table. *)
@@ -239,7 +244,7 @@ end
 type result = Result.t
 
 (* The input parameters to the search. *)
-type search = {
+type params = {
   limits  : limits;
   root    : Position.t;
   history : int Int64.Map.t;
@@ -251,7 +256,7 @@ let create_search ~limits ~root ~history ~tt =
     (* Make sure that the root position is in our history. *)
     Position.hash root |> Map.update history ~f:(function
         | Some n -> n | None -> 1) in
-  Fields_of_search.create ~limits ~root ~history ~tt
+  Fields_of_params.create ~limits ~root ~history ~tt
 
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
@@ -265,7 +270,7 @@ module State = struct
     type t = {
       start_time   : Time.t;
       nodes        : int;
-      search       : search;
+      params       : params;
       killer1      : Position.legal Option_array.t;
       killer2      : Position.legal Option_array.t;
       move_history : int array;
@@ -283,10 +288,10 @@ module State = struct
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
 
-  let create search = {
+  let create params = {
     start_time = Time.now ();
     nodes = 0;
-    search;
+    params;
     killer1 = Option_array.create ~len:killer_size;
     killer2 = Option_array.create ~len:killer_size;
     move_history = Array.create ~len:move_history_size 0;
@@ -344,9 +349,7 @@ let return = State.return
 
 let has_reached_limits =
   State.(gets elapsed) >>= fun elapsed ->
-  State.(gets search) >>= fun search ->
-  State.(gets nodes) >>| fun nodes ->
-  let limits = search.limits in
+  State.get () >>| fun {nodes; params = {limits; _}; _} ->
   Limits.stopped limits || begin
     match Limits.nodes limits with
     | Some n when nodes >= n -> true
@@ -360,8 +363,8 @@ let check_limits =
   State.(update_if result stop) >>| fun () -> result
 
 (* Will playing this position likely lead to a repetition draw? *)
-let check_repetition search pos =
-  Position.hash pos |> Map.find search.history |>
+let check_repetition params pos =
+  Position.hash pos |> Map.find params.history |>
   Option.value_map ~default:false ~f:(fun n -> n > 0)
 
 (* Move ordering is critical for optimizing the performance of alpha-beta
@@ -548,14 +551,14 @@ module Main = struct
 
   (* Will the position lead to a draw? *)
   let drawn pos =
-    State.(gets search) >>| fun search ->
-    check_repetition search pos ||
+    State.(gets params) >>| fun params ->
+    check_repetition params pos ||
     Position.halfmove pos >= 100 ||
     Position.is_insufficient_material pos
 
   (* Find a cached evaluation of the position. *)
   let lookup pos ~depth ~ply ~alpha ~beta ~node =
-    State.(gets search) >>| fun {tt; _} ->
+    State.(gets params) >>| fun {tt; _} ->
     let pv = equal_node node Pv in
     Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
@@ -610,13 +613,13 @@ module Main = struct
     reduce pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check ~depth ~null ~node >>= function
     | Some score -> return score
-    | None -> State.(gets search) >>= fun {tt; _} ->
+    | None -> State.(gets params) >>= fun {tt; _} ->
       Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
       let t = create ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
       Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
-      Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
+      Tt.store tt pos ~depth ~ply ~score ~best:t.best ~node:t.node;
       score
 
   (* Search a branch of the current node. *)
@@ -769,7 +772,7 @@ module Main = struct
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    State.(gets search) >>= fun {tt; root; _} ->
+    State.(gets params) >>= fun {tt; root; _} ->
     lookup root ~depth ~ply:0 ~alpha ~beta ~node:Pv >>= function
     | First result -> return result
     | Second (alpha, beta, ttentry) ->
@@ -831,7 +834,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
-  let {limits; tt; root; _} = st.search in
+  let {limits; tt; root; _} = st.params in
   let nodes = st.nodes in
   (* If the search was stopped, use the previous completed result, if
      available. *)
