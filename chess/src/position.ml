@@ -331,26 +331,33 @@ let in_check pos =
   Bb.((active_board & pos.king & attacks) <> empty)
 
 let is_insufficient_material pos = let open Bb in
-  let active = active_board pos in
-  let inactive = inactive_board pos in
-  let kb = pos.king + pos.bishop in
-  let kn = pos.king + pos.knight in
-  (* Lone king on either side. Check if the other player has two knights.
-     This rule is actually a bit fuzzy, because there is no forced mate
-     from two knights. Yet, a statemate is possible. The FIDE rules say
-     that this is not a draw by insufficient material, so we will play
-     by their rules. *)
-  if pos.king = active then
-    Int.(count (kn & inactive) < 3)
-  else if pos.king = inactive then
-    Int.(count (kn & active) < 3)
-  else
-    (* Both sides have king+bishop or king+knight. *)
-    let akb = (kb & active) = active && Int.equal 2 @@ count active in
-    let akn = (kn & active) = active && Int.equal 2 @@ count active in
-    let ikb = (kb & inactive) = inactive && Int.equal 2 @@ count inactive in
-    let ikn = (kn & inactive) = inactive && Int.equal 2 @@ count inactive in
-    (akb && ikb) || (akb && ikn) || (akn && ikb) || (akn && ikn)
+  (* If there are any pawns, rooks, or queens on the board then there is
+     enough material to deliver mate. *)
+  pos.pawn = empty && pos.rook = empty && pos.queen = empty && begin
+    let active = active_board pos in
+    let inactive = inactive_board pos in
+    (* Only kings are left. *)
+    pos.king = active + inactive || begin
+      let kb = pos.king + pos.bishop in
+      let kn = pos.king + pos.knight in
+      (* Lone king on either side. Check if the other player has two knights.
+         This rule is actually a bit fuzzy, because there is no forced mate
+         from two knights. Yet, a statemate is possible. The FIDE rules say
+         that this is not a draw by insufficient material, so we will play
+         by their rules. *)
+      if (pos.king & active) = active then
+        Int.(count (kn & inactive) < 3)
+      else if (pos.king & inactive) = inactive then
+        Int.(count (kn & active) < 3)
+      else
+        (* Both sides have king+bishop or king+knight. *)
+        let akb = (kb & active) = active && Int.equal 2 @@ count active in
+        let akn = (kn & active) = active && Int.equal 2 @@ count active in
+        let ikb = (kb & inactive) = inactive && Int.equal 2 @@ count inactive in
+        let ikn = (kn & inactive) = inactive && Int.equal 2 @@ count inactive in
+        (akb && ikb) || (akb && ikn) || (akn && ikb) || (akn && ikn)
+    end
+  end
 
 (* Relevant info about the position for generating moves, as well as performing
    sanity checks. *)
