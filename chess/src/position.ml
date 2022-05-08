@@ -336,7 +336,7 @@ let is_insufficient_material pos = let open Bb in
   pos.pawn = empty && pos.rook = empty && pos.queen = empty && begin
     let active = active_board pos in
     let inactive = inactive_board pos in
-    (* Only kings are left. *)
+    (* If only kings are left then mate is impossible. *)
     pos.king = active + inactive || begin
       let kb = pos.king + pos.bishop in
       let kn = pos.king + pos.knight in
