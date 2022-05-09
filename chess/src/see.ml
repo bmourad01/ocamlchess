@@ -102,8 +102,7 @@ let[@inline] see legal victim =
      square. *)
   let[@inline] lva () =
     let mask = Bb.(st.attackers & Position.board_of_color pos st.side) in
-    Bb.(mask <> empty) &&
-    (List.exists [@specialised]) lva_order ~f:(fun (b, k) ->
+    Bb.(mask <> empty) && List.exists lva_order ~f:(fun (b, k) ->
         Option.value_map Bb.(first_set (mask & b)) ~default:false ~f:(fun sq ->
             st.target_val <- Piece.Kind.value k;
             st.from <- sq;
