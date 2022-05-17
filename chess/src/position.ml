@@ -154,19 +154,18 @@ let which_kind_exn pos sq =
   else if sq @ pos.king then Piece.King
   else invalid_argf "No piece exists at square %s" (Square.to_string sq) ()
 
-let collect_color pos c =
-  board_of_color pos c |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      (sq, which_kind_exn pos sq) :: acc)
+let collect_color pos c = (Bb.fold [@specialised]) ~init:[] ~f:(fun acc sq ->
+    (sq, which_kind_exn pos sq) :: acc) @@ board_of_color pos c
 
 let collect_active pos = collect_color pos pos.active
 let collect_inactive pos = collect_color pos @@ inactive pos
 
-let collect_kind pos k =
-  board_of_kind pos k |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      (sq, which_color_exn pos sq) :: acc)
+let collect_kind pos k = (Bb.fold [@specialised]) ~init:[] ~f:(fun acc sq ->
+    (sq, which_color_exn pos sq) :: acc) @@ board_of_kind pos k
 
 let collect_piece pos p =
-  board_of_piece pos p |> Bb.fold ~init:[] ~f:(fun acc sq -> sq :: acc)
+  (Bb.fold [@specialised]) ~init:[] ~f:(fun acc sq -> sq :: acc) @@
+  board_of_piece pos p
 
 let piece_at_square_uopt pos sq =
   let c = which_color pos sq in
@@ -175,7 +174,7 @@ let piece_at_square_uopt pos sq =
     let c = Uopt.unsafe_value c in
     let k = which_kind pos sq in
     if Uopt.is_none k then
-      failwithf "Square %s is set for color %s, but no piece kind is available"
+      failwithf "Square %s is set for color %s, but no kind is available"
         (Square.to_string sq) (Piece.Color.to_string_hum c) ()
     else
       let k = Uopt.unsafe_value k in
@@ -186,11 +185,11 @@ let piece_at_square pos sq = Uopt.to_option @@ piece_at_square_uopt pos sq
 let piece_at_square_exn pos sq =
   Piece.create (which_color_exn pos sq) (which_kind_exn pos sq)
 
-let collect_all pos =
-  all_board pos |> Bb.fold ~init:[] ~f:(fun acc sq ->
-      let c = which_color_exn pos sq in
-      let k = which_kind_exn pos sq in
-      (sq, Piece.create c k) :: acc)
+let collect_all pos = (Bb.fold [@specialised]) ~init:[] ~f:(fun acc sq ->
+    let c = which_color_exn pos sq in
+    let k = which_kind_exn pos sq in
+    (sq, Piece.create c k) :: acc) @@
+  all_board pos
 
 (* Zobrist hashing *)
 
@@ -372,7 +371,7 @@ module Analysis = struct
       active_board          : Bb.t;
       inactive_board        : Bb.t;
       inactive_attacks      : Bb.t;
-      pinners               : Bb.t array;
+      pinners               : Bb.t Map.M(Square).t;
       num_checkers          : int;
       check_mask            : Bb.t;
       en_passant_check_mask : Bb.t;
@@ -404,22 +403,21 @@ module Analysis = struct
     let rook    = Pre.rook   king_sq occupied in
     let queen   = Pre.queen  king_sq occupied in
     let mask    = active_board -- king_sq in
-    let pinners = Array.create ~len:Square.count empty in
-    List.iter inactive_sliders ~f:(fun (sq, k) ->
+    let init    = Map.empty (module Square) in
+    List.fold inactive_sliders ~init ~f:(fun pinners (sq, k) ->
         let checker, king = match k with
           | Piece.Bishop -> Pre.bishop sq occupied, bishop
           | Piece.Rook   -> Pre.rook   sq occupied, rook
           | Piece.Queen  -> Pre.queen  sq occupied, queen
           | _ -> empty, empty in
-        let b = checker & king & mask & Pre.between king_sq sq in
-        if b <> empty then
-          let i = Square.to_int @@ first_set_exn b in
-          let b = Array.unsafe_get pinners i ++ sq in
-          Array.unsafe_set pinners i b);
-    pinners
+        match first_set (checker & king & mask & Pre.between king_sq sq) with
+        | None -> pinners
+        | Some key -> Map.update pinners key ~f:(function
+            | Some b -> b ++ sq
+            | None -> !!sq))
 
   (* Generate the masks which may restrict movement in the event of a check. *)
-  let[@inline] checks pos ~en_passant_pawn:pw ~num_checkers ~checkers ~king_sq =
+  let[@inline] checks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
     if num_checkers = 1 then
       (* Test if the checker is a sliding piece. If so, then we can try to
          block the attack. Otherwise, they may only be captured. *)
@@ -427,10 +425,11 @@ module Analysis = struct
       let sq = Bb.first_set_exn checkers in
       match which_kind_exn pos sq with
       | Bishop | Rook | Queen -> checkers + Pre.between king_sq sq, Bb.empty
-      | Pawn when Uopt.is_some pw ->
+      | Pawn when Uopt.is_some en_passant_pawn ->
         (* Edge case for being able to get out of check via en passant
            capture. *)
-        let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
+        let ep = Uopt.unsafe_value pos.en_passant in
+        let pw = Uopt.unsafe_value en_passant_pawn in
         if Square.(sq = pw) then checkers, !!ep else checkers, Bb.empty
       |  _ -> checkers, Bb.empty
     else Bb.(full, empty)
@@ -1260,42 +1259,37 @@ module Movegen = struct
          then this capture would be illegal, since it would lead to a discovery
          on the king. En passant moves arise rarely across all chess positions,
          so we can do a bit of heavy calculation here. *)
-      let[@inline] en_passant sq ep pw diag
-          {king_sq; occupied; inactive_sliders; _} = let open Bb.Syntax in
+      let[@inline] en_passant sq ep pw diag a = let open Bb.Syntax in
         (* Remove our pawn and the captured pawn from the board, but pretend
            that the en passant square is occupied. This covers the case where
            we can capture the pawn, but it may leave our pawn pinned. *)
-        let occupied = occupied -- sq -- pw ++ ep in
+        let occupied = a.occupied -- sq -- pw ++ ep in
         let init = diag ++ ep and finish = ident in
         (* Check if an appropriate diagonal attack from the king would reach
            that corresponding piece. *)
-        let bishop = Pre.bishop king_sq occupied in
-        let rook   = Pre.rook   king_sq occupied in
-        let queen  = Pre.queen  king_sq occupied in
-        (List.fold_until [@specialised]) inactive_sliders ~init ~finish
+        let bishop = Pre.bishop a.king_sq occupied in
+        let rook   = Pre.rook   a.king_sq occupied in
+        let queen  = Pre.queen  a.king_sq occupied in
+        (List.fold_until [@specialised]) a.inactive_sliders ~init ~finish
           ~f:(fun acc -> function
               | sq, Piece.Bishop when sq @ bishop -> Stop diag
               | sq, Piece.Rook   when sq @ rook   -> Stop diag
               | sq, Piece.Queen  when sq @ queen  -> Stop diag
               | _ -> Continue acc)
 
-      let[@inline] capture sq
-          ({pos; en_passant_pawn = pw; inactive_board; _} as a) =
-        let open Bb.Syntax in
-        let capture = Pre.pawn_capture sq pos.active in
-        let diag = capture & inactive_board in
+      let[@inline] capture sq a = let open Bb.Syntax in
+        let capture = Pre.pawn_capture sq a.pos.active in
+        let diag = capture & a.inactive_board in
+        let pw = a.en_passant_pawn in
         if Uopt.is_some pw then
-          let ep, pw = Uopt.(unsafe_value pos.en_passant, unsafe_value pw) in
+          let ep, pw = Uopt.(unsafe_value a.pos.en_passant, unsafe_value pw) in
           if ep @ capture then en_passant sq ep pw diag a
           else diag
         else diag
 
-      let promote_kinds = Move.Promote.[Knight; Bishop; Rook; Queen]
-
-      (* We need to multiply the move by the number of pieces we can
-         promote to. *)
       let[@inline] promote src dst =
-        List.map promote_kinds ~f:(Move.create_with_promote src dst)
+        let f = Move.create_with_promote src dst in
+        [f Knight; f Bishop; f Rook; f Queen]
     end
 
     module Knight = struct
@@ -1346,13 +1340,14 @@ module Movegen = struct
 
     (* Use this mask to restrict the movement of pinned pieces. *)
     let[@inline] pin_mask sq {king_sq; pinners; _} = let open Bb in
-      let p = Array.unsafe_get pinners @@ Square.to_int sq in
-      match count p with
-      | 1 ->
-        let pinner = first_set_exn p in
-        Pre.between king_sq pinner ++ pinner
-      | 0 -> full
-      | _ -> empty
+      match Map.find pinners sq with
+      | None -> full
+      | Some b -> match count b with
+        | 0 -> full
+        | 1 ->
+          let pinner = first_set_exn b in
+          Pre.between king_sq pinner ++ pinner
+        | _ -> empty
 
     (* Special case for pawns, with en passant capture being an option to
        escape check. *)
@@ -1429,7 +1424,7 @@ module Movegen = struct
     new_position, capture, is_en_passant, castle_side
 
   (* Accumulate a list of legal moves. *)
-  let[@inline] accum_makemove acc move ~pos:parent ~en_passant_pawn ~piece =
+  let[@inline] accum_makemove acc move ~parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
     let new_position, capture, is_en_passant, castle_side =
       run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
@@ -1446,11 +1441,12 @@ module Movegen = struct
   let[@inline] bb_to_moves src k b ~init ~a:{pos; en_passant_pawn; _} =
     let active = pos.active in
     let piece = Piece.create active k in
-    let f = accum_makemove ~pos ~en_passant_pawn ~piece in
+    let f = accum_makemove ~parent:pos ~en_passant_pawn ~piece in
     match k with
     | Piece.Pawn when is_promote_rank b active -> 
       (Bb.fold [@specialised]) b ~init ~f:(fun init dst ->
-          Pieces.Pawn.promote src dst |> List.fold ~init ~f)
+          Pieces.Pawn.promote src dst |>
+          (List.fold [@specialised]) ~init ~f)
     | _ ->
       (Bb.fold [@specialised]) b ~init
         ~f:(fun acc dst -> Move.create src dst |> f acc)
@@ -1469,7 +1465,7 @@ module Movegen = struct
        we can move. *)
     if num_checkers > 1
     then Pieces.king king_sq a |> bb_to_moves king_sq King ~init:[] ~a
-    else (List.fold [@specialised]) ~init:[] ~f:(fun init (sq, k) ->
+    else (List.fold [@speciailised]) ~init:[] ~f:(fun init (sq, k) ->
         bb_of_kind sq k a |> bb_to_moves sq k ~init ~a) @@ collect_active pos
 end
 
