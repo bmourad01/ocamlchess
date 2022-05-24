@@ -348,6 +348,9 @@ module Legal : sig
       performed on. Otherwise, returns [None]. *)
   val castle_side : legal -> Castling_rights.side option
 
+  (** Returns [true] id the move gives check to the opponent, *)
+  val gives_check : legal -> bool
+
   (** A legal move. *)
   type t = legal [@@deriving compare, equal, sexp]
 

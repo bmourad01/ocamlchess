@@ -1226,6 +1226,7 @@ module Legal = struct
   let is_move legal m = Move.(m = legal.move)
   let capture legal = Uopt.to_option legal.capture
   let castle_side legal = Uopt.to_option legal.castle_side
+  let gives_check legal = in_check legal.new_position
 
   let capture_square legal =
     if Uopt.is_none legal.capture then None
