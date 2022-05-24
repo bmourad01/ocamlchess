@@ -101,9 +101,16 @@ let[@inline] see legal victim =
   (* Get the least valuable piece that is currently able to attack the
      square. *)
   let[@inline] lva () =
-    let mask = Bb.(st.attackers & Position.board_of_color pos st.side) in
-    Bb.(mask <> empty) && List.exists lva_order ~f:(fun (b, k) ->
-        Option.value_map Bb.(first_set (mask & b)) ~default:false ~f:(fun sq ->
+    let default = false in
+    let us = Position.board_of_color pos st.side in
+    let them = Bb.(all - us) in
+    let mask = Bb.(st.attackers & us) in
+    Bb.(mask <> empty) && List.exists lva_order ~f:(fun (b, k) -> match k with
+        (* We can't attack with the king if our opponent still has pieces left
+           to exchange. Since we've used up our remaining pieces, we terminate
+           the evaluation here. *)
+        | Piece.King when Bb.((st.attackers & them) <> empty) -> false
+        | _ -> Option.value_map Bb.(first_set (mask & b)) ~default ~f:(fun sq ->
             st.target_val <- Piece.Kind.value k;
             st.from <- sq;
             true)) in
