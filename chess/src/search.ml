@@ -414,7 +414,16 @@ module Order = struct
 
   (* Score each move according to `eval`. *)
   let score_aux moves ~eval =
-    Array.of_list @@ List.map moves ~f:(fun m -> m, eval m)
+    let best_score = ref (-inf) in
+    let best_move = ref @@ List.hd_exn moves in
+    let moves = Array.of_list @@ List.map moves ~f:(fun m ->
+        let score = eval m in
+        if score > !best_score then begin
+          best_score := score;
+          best_move := m;
+        end;
+        m, score) in
+    moves, !best_move
 
   (* Returns a thunk that incrementally applies insertion sort to the list.
      In the context of alpha-beta pruning, we may not actually visit all the
@@ -454,7 +463,7 @@ module Order = struct
      5. Move history score (the "distance" heuristic).
      6. Captures that produced a negative SEE score.
   *)
-  let score moves ~ply ~pos ~tt ~ttentry =
+  let score moves ~ply ~pos ~tt =
     State.(gets prev_pv) >>= fun pv ->
     let is_pv = is_pv pv in
     let is_hash = is_hash pos tt in
@@ -468,7 +477,7 @@ module Order = struct
     let move_history m =
       let i = State.history_idx m in
       Array.unsafe_get move_history i in
-    let moves = score_aux moves ~eval:(fun m ->
+    let moves, best = score_aux moves ~eval:(fun m ->
         if is_pv m then inf * 2
         else if is_hash m then inf
         else match See.go m with
@@ -481,13 +490,10 @@ module Order = struct
             else let killer = killer m in
               if killer <> 0 then killer
               else move_history m) in
-    let best = match ttentry with
-      | None -> fst @@ Array.unsafe_get moves 0
-      | Some Tt.Entry.{best; _} -> best in
     best, make_picker moves
 
   (* Score the moves for quiescence search. *)
-  let qscore moves = make_picker @@ score_aux moves ~eval:(fun m ->
+  let qscore moves = make_picker @@ fst @@ score_aux moves ~eval:(fun m ->
       let p = promote m ~offset:0 in
       if p <> 0 then p
       else match See.go m with
@@ -618,7 +624,7 @@ module Main = struct
       ~eval ~alpha ~beta ~ply ~depth ~check ~null ~node >>= function
     | Some score -> return score
     | None -> State.(gets params) >>= fun {tt; _} ->
-      Order.score moves ~ply ~pos ~tt ~ttentry >>= fun (best, next) ->
+      Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
