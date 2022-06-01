@@ -412,7 +412,8 @@ module Order = struct
         let k = Move.Promote.to_piece_kind k in
         offset + Piece.Kind.value k * Eval.material_weight)
 
-  (* Score each move according to `eval`. *)
+  (* Score each move according to `eval`. Note that `moves` is assumed to be
+     non-empty. *)
   let score_aux moves ~eval =
     let best_score = ref (-inf) in
     let best_move = ref @@ List.hd_exn moves in
@@ -493,12 +494,14 @@ module Order = struct
     best, make_picker moves
 
   (* Score the moves for quiescence search. *)
-  let qscore moves = make_picker @@ fst @@ score_aux moves ~eval:(fun m ->
-      let p = promote m ~offset:0 in
-      if p <> 0 then p
-      else match See.go m with
-        | Some value -> value * Eval.material_weight
-        | None -> 0)
+  let qscore = function
+    | [] -> fun () -> None
+    | moves -> make_picker @@ fst @@ score_aux moves ~eval:(fun m ->
+        let p = promote m ~offset:0 in
+        if p <> 0 then p
+        else match See.go m with
+          | Some value -> value * Eval.material_weight
+          | None -> 0)
 
   (* Iterate using the thunk. *)
   let fold_until =
