@@ -873,10 +873,6 @@ module Main = struct
       aspire moves depth ~delta_low ~delta_high
 end
 
-type iter = result -> unit
-
-let default_iter : iter = ignore
-
 (* We'll use the UCI datatype, which is either a numerical score in centipawns,
    or our distance from checkmate. *)
 let convert_score score tt root ~pv ~mate ~mated =

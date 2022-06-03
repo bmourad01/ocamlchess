@@ -140,9 +140,6 @@ end
 (** The search result. *)
 type result = Result.t
 
-(** The callback function for each iteration of the search. *)
-type iter = result -> unit
-
 (** Raised when the root position has no legal moves. *)
 exception No_moves
 
@@ -160,7 +157,7 @@ exception No_moves
     iteration of the search. By default, it will do nothing.
 *)
 val go :
-  ?iter:iter ->
+  ?iter:(result -> unit) ->
   root:Position.t ->
   limits:limits ->
   history:int Core_kernel.Int64.Map.t ->
