@@ -830,18 +830,20 @@ module Main = struct
     let f ?(r = 0) alpha node =
       go pos ~node ~alpha ~beta:(-t.alpha)
         ~ply:(ply + 1) ~depth:(depth - r - 1) >>= negm in
+    let zw = -t.alpha - 1 in
+    let fw = -beta in
     if equal_node node Pv then
-      if i = 0 then f (-beta) node
-      else f (-t.alpha - 1) All ~r >>= fun score ->
-        if score > t.alpha && (ply = 1 || score < beta)
-        then f (-beta) node else return score
-    else f (-t.alpha - 1) All ~r >>= fun score ->
-      if score > t.alpha && (score < beta || r > 0)
-      then f (-beta) node else return score
+      if i = 0 then f fw node
+      else f zw All ~r >>= fun score ->
+        if score > t.alpha && (ply = 0 || score < beta)
+        then f fw node else return score
+    else f zw All ~r >>= fun score ->
+      if score > t.alpha && (r > 0 || score < beta)
+      then f fw node else return score
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    let ply = 1 and null = false and node = Pv in
+    let ply = 0 and null = false and node = Pv in
     State.(gets params) >>= fun {tt; root; _} ->
     let check = Position.in_check root in
     with_moves root moves
@@ -873,7 +875,7 @@ end
 
 type iter = result -> unit
 
-let default_iter : iter = fun _ -> ()
+let default_iter : iter = ignore
 
 (* We'll use the UCI datatype, which is either a numerical score in centipawns,
    or our distance from checkmate. *)
@@ -949,13 +951,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
 
 exception No_moves
 
-let go
-    ?(tt = Tt.create ())
-    ?(iter = default_iter)
-    ~root
-    ~limits
-    ~history
-    () =
+let go ?(iter = ignore) ~root ~limits ~history ~tt () =
   match Position.legal_moves root with
   | [] -> raise No_moves
   | moves ->

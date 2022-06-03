@@ -160,10 +160,10 @@ exception No_moves
     iteration of the search. By default, it will do nothing.
 *)
 val go :
-  ?tt:Tt.t ->
   ?iter:iter ->
   root:Position.t ->
   limits:limits ->
   history:int Core_kernel.Int64.Map.t ->
+  tt:Tt.t ->
   unit ->
   result
