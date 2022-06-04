@@ -371,7 +371,7 @@ module Analysis = struct
       active_board          : Bb.t;
       inactive_board        : Bb.t;
       inactive_attacks      : Bb.t;
-      pinners               : Bb.t Map.M(Square).t;
+      pinners               : Square.t Map.M(Square).t;
       num_checkers          : int;
       check_mask            : Bb.t;
       en_passant_check_mask : Bb.t;
@@ -410,11 +410,13 @@ module Analysis = struct
           | Piece.Rook   -> Pre.rook   sq occupied, rook
           | Piece.Queen  -> Pre.queen  sq occupied, queen
           | _ -> empty, empty in
-        match first_set (checker & king & mask & Pre.between king_sq sq) with
-        | None -> pinners
-        | Some key -> Map.update pinners key ~f:(function
-            | Some b -> b ++ sq
-            | None -> !!sq))
+        first_set (checker & king & mask & Pre.between king_sq sq) |>
+        Option.value_map ~default:pinners ~f:(fun key ->
+            Map.update pinners key ~f:(function
+                | None -> sq | Some _ ->
+                  (* It is impossible for a piece to be pinned by more than
+                     one attacker. *)
+                  assert false)))
 
   (* Generate the masks which may restrict movement in the event of a check. *)
   let[@inline] checks pos ~en_passant_pawn ~num_checkers ~checkers ~king_sq =
@@ -1340,15 +1342,9 @@ module Movegen = struct
     end
 
     (* Use this mask to restrict the movement of pinned pieces. *)
-    let[@inline] pin_mask sq {king_sq; pinners; _} = let open Bb in
-      match Map.find pinners sq with
-      | None -> full
-      | Some b -> match count b with
-        | 0 -> full
-        | 1 ->
-          let pinner = first_set_exn b in
-          Pre.between king_sq pinner ++ pinner
-        | _ -> empty
+    let[@inline] pin_mask sq a = match Map.find a.pinners sq with
+      | Some p -> Bb.(Pre.between a.king_sq p ++ p)
+      | None -> Bb.full
 
     (* Special case for pawns, with en passant capture being an option to
        escape check. *)
