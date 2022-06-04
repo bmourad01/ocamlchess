@@ -371,7 +371,7 @@ module Analysis = struct
       active_board          : Bb.t;
       inactive_board        : Bb.t;
       inactive_attacks      : Bb.t;
-      pinners               : Square.t Map.M(Square).t;
+      pinners               : Bb.t Map.M(Square).t;
       num_checkers          : int;
       check_mask            : Bb.t;
       en_passant_check_mask : Bb.t;
@@ -410,10 +410,11 @@ module Analysis = struct
           | Piece.Rook   -> Pre.rook   sq occupied, rook
           | Piece.Queen  -> Pre.queen  sq occupied, queen
           | _ -> empty, empty in
-        first_set (checker & king & mask & Pre.between king_sq sq) |>
+        let between = Pre.between king_sq sq in
+        first_set (checker & king & mask & between) |>
         Option.value_map ~default:pinners ~f:(fun key ->
             Map.update pinners key ~f:(function
-                | None -> sq | Some _ ->
+                | None -> between ++ sq | Some _ ->
                   (* It is impossible for a piece to be pinned by more than
                      one attacker. *)
                   assert false)))
@@ -1342,9 +1343,8 @@ module Movegen = struct
     end
 
     (* Use this mask to restrict the movement of pinned pieces. *)
-    let[@inline] pin_mask sq a = match Map.find a.pinners sq with
-      | Some p -> Bb.(Pre.between a.king_sq p ++ p)
-      | None -> Bb.full
+    let[@inline] pin_mask sq a =
+      Option.value ~default:Bb.full @@ Map.find a.pinners sq
 
     (* Special case for pawns, with en passant capture being an option to
        escape check. *)
