@@ -32,20 +32,20 @@ module T = struct
      performance advantage over a typical state monad pattern (where
      we are making a new copy every time we update a field). *)
   type t = {
-    mutable white         : Bb.t;
-    mutable black         : Bb.t;
-    mutable pawn          : Bb.t;
-    mutable knight        : Bb.t;
-    mutable bishop        : Bb.t;
-    mutable rook          : Bb.t;
-    mutable queen         : Bb.t;
-    mutable king          : Bb.t;
-    mutable active        : Piece.color;
-    mutable castle        : Cr.t;
-    mutable en_passant    : Square.t Uopt.t;
-    mutable halfmove      : int;
-    mutable fullmove      : int;
-    mutable hash          : int64;
+    mutable white      : Bb.t;
+    mutable black      : Bb.t;
+    mutable pawn       : Bb.t;
+    mutable knight     : Bb.t;
+    mutable bishop     : Bb.t;
+    mutable rook       : Bb.t;
+    mutable queen      : Bb.t;
+    mutable king       : Bb.t;
+    mutable active     : Piece.color;
+    mutable castle     : Cr.t;
+    mutable en_passant : Square.t Uopt.t;
+    mutable halfmove   : int;
+    mutable fullmove   : int;
+    mutable hash       : int64;
   } [@@deriving compare, equal, fields, sexp]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
@@ -53,20 +53,20 @@ module T = struct
   (* We make an explicit copy because our move generator will return
      a new position (thus adhering to a functional style). *)
   let[@inline] copy pos = {
-    white         = pos.white;
-    black         = pos.black;
-    pawn          = pos.pawn;
-    knight        = pos.knight;
-    bishop        = pos.bishop;
-    rook          = pos.rook;
-    queen         = pos.queen;
-    king          = pos.king;
-    active        = pos.active;
-    castle        = pos.castle;
-    en_passant    = pos.en_passant;
-    halfmove      = pos.halfmove;
-    fullmove      = pos.fullmove;
-    hash          = pos.hash;
+    white      = pos.white;
+    black      = pos.black;
+    pawn       = pos.pawn;
+    knight     = pos.knight;
+    bishop     = pos.bishop;
+    rook       = pos.rook;
+    queen      = pos.queen;
+    king       = pos.king;
+    active     = pos.active;
+    castle     = pos.castle;
+    en_passant = pos.en_passant;
+    halfmove   = pos.halfmove;
+    fullmove   = pos.fullmove;
+    hash       = pos.hash;
   }
 end
 
