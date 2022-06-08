@@ -5,6 +5,8 @@ module Pre = Precalculated
 
 let material_weight = 100
 
+let sum2 (w, x) (y, z) = w + y, x + z
+
 module Phase = struct
   type t = Opening | Endgame
 
@@ -265,24 +267,13 @@ module Pawns = struct
 
   (* Evaluate the overall pawn structure. *)
   let evaluate = evaluate @@ fun pos c ->
-    let passed_start, passed_end = Passed.go pos c in
-    let doubled_start, doubled_end = Doubled.go pos c in
-    let isolated_start, isolated_end = Isolated.go pos c in
-    let chained_start, chained_end = Chained.go pos c in
-    let shield_start, shield_end = Shield.go pos c in
-    let start =
-      passed_start +
-      doubled_start +
-      isolated_start +
-      chained_start +
-      shield_start in
-    let end_ =
-      passed_end +
-      doubled_end +
-      isolated_end +
-      chained_end +
-      shield_end in
-    start, end_
+    Array.fold ~init:(0, 0) ~f:sum2 [|
+      Passed.go pos c;
+      Doubled.go pos c;
+      Isolated.go pos c;
+      Chained.go pos c;
+      Shield.go pos c;
+    |]
 end
 
 module Placement = struct
@@ -420,7 +411,7 @@ module Placement = struct
       -50; -30; -30; -30; -30; -30; -30; -50;
     |]
 
-    let get t sq c =
+    let get sq c t =
       let sq = match c with
         | Piece.White -> Square.(with_rank_exn sq (7 - rank sq))
         | Piece.Black -> sq in
@@ -439,10 +430,11 @@ module Placement = struct
   (* Weighted sum of piece placement (using piece-square tables). *)
   let evaluate = evaluate @@ fun pos c ->
     Position.collect_color pos c |>
-    List.fold ~init:(0, 0) ~f:(fun (s, e) (sq, k) ->
-        let open Tables in
-        let start, end_ = Array.unsafe_get kinds @@ Piece.Kind.to_int k in
-        s + get start sq c, e + get end_ sq c)
+    List.fold ~init:(0, 0) ~f:(fun acc (sq, k) ->
+        Piece.Kind.to_int k |>
+        Array.unsafe_get Tables.kinds |>
+        Tuple2.map ~f:(Tables.get sq c) |>
+        sum2 acc)
 end
 
 module Mop_up = struct
@@ -482,8 +474,6 @@ module Mop_up = struct
 end
 
 let is_endgame pos = Phase.weight pos > 150
-
-let sum2 (w, x) (y, z) = w + y, x + z
 
 (* Overall evaluation of the position.
 
