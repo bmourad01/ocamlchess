@@ -88,11 +88,11 @@ module Gui = struct
 
   let white =
     let doc = "The AI player to play as white, if any." in
-    Arg.(value & opt string "" (info ["white"] ~docv:"PLAYER" ~doc))
+    Arg.(value & opt string "" (info ["w"; "white"] ~docv:"PLAYER" ~doc))
 
   let black =
     let doc = "The AI player to play as black, if any." in
-    Arg.(value & opt string "" (info ["black"] ~docv:"PLAYER" ~doc))
+    Arg.(value & opt string "" (info ["b"; "black"] ~docv:"PLAYER" ~doc))
 
   let delay =
     let doc = "Delay (in seconds) between AI moves \
@@ -102,17 +102,17 @@ module Gui = struct
   let depth =
     let doc = "Depth limit for search (only used by the 'caml' player). \
                The value must be positive and non-zero." in
-    Arg.(value & opt int 7 (info ["depth"] ~docv:"NUMBER" ~doc))
+    Arg.(value & opt int 7 (info ["d"; "depth"] ~docv:"NUMBER" ~doc))
 
   let nodes =
     let doc = "Node limit for search (only used by the 'caml' player). \
                The value must be positive and non-zero." in
-    Arg.(value & opt (some int) None (info ["nodes"] ~docv:"NUMBER" ~doc))
+    Arg.(value & opt (some int) None (info ["n"; "nodes"] ~docv:"NUMBER" ~doc))
 
   let book =
     let doc = "Path of opening book in Polyglot .bin format \
                (only used by the 'caml' player)" in
-    Arg.(value & opt (some string) None (info ["book"] ~docv:"FILE" ~doc))
+    Arg.(value & opt (some string) None (info ["B"; "book"] ~docv:"FILE" ~doc))
 
 
   let t = Term.(
