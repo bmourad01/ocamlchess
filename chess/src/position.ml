@@ -227,19 +227,6 @@ module Hash = struct
       | White -> M.update Update.active_player
       | Black -> M.return ()
     end 0L
-
-  (* Get the hash of only the pawn placement. *)
-  let pawn_structure pos = Monad.State.exec begin
-      collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
-          M.update @@ Update.piece c Pawn sq)
-    end 0L
-
-  (* Get the hash of only of the material. *)
-  let material pos = Monad.State.exec begin
-      collect_all pos |> M.List.iter ~f:(fun (sq, p) ->
-          let c, k = Piece.decomp p in
-          M.update @@ Update.piece c k sq)
-    end 0L
 end
 
 let same_hash pos1 pos2 = Int64.(pos1.hash = pos2.hash)
