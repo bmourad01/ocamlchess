@@ -235,7 +235,8 @@ module Pawns = struct
       score * start_weight, score * end_weight
   end
 
-  module King_shield = struct
+  (* Pawns shielding the king. *)
+  module Shield = struct
     let start_weight = 12
     let end_weight = 5
 
@@ -246,6 +247,24 @@ module Pawns = struct
       let king_sq = Bb.first_set_exn king in
       let score = Bb.(count (pawn & Pre.king king_sq)) in
       score * start_weight, score * end_weight
+  end
+
+  (* Count the files immediately near the king that do not have any pawns. *)
+  module Open_file = struct
+    let start_weight = -30
+    let end_weight = 2
+
+    let go pos c =
+      let b = Position.board_of_color pos c in
+      let king = Bb.(b & Position.king pos) in
+      let pawn = Bb.(b & Position.pawn pos) in
+      let king_sq = Bb.first_set_exn king in
+      let file = Square.file king_sq in
+      let score = ref 0 in
+      for i = max 0 (file - 1) to min 7 (file + 1) do
+        if Bb.((file_exn i & pawn) = empty) then incr score;
+      done;
+      !score * start_weight, !score * end_weight
   end
 
   module Chained = struct
@@ -268,19 +287,22 @@ module Pawns = struct
     let doubled_start, doubled_end = Doubled.go pos c in
     let isolated_start, isolated_end = Isolated.go pos c in
     let chained_start, chained_end = Chained.go pos c in
-    let king_shield_start, king_shield_end = King_shield.go pos c in
+    let shield_start, shield_end = Shield.go pos c in
+    let open_file_start, open_file_end = Open_file.go pos c in
     let start =
       passed_start +
       doubled_start +
       isolated_start +
       chained_start +
-      king_shield_start in
+      shield_start +
+      open_file_start in
     let end_ =
       passed_end +
       doubled_end +
       isolated_end +
       chained_end +
-      king_shield_end in
+      shield_end +
+      open_file_end in
     start, end_
 end
 
