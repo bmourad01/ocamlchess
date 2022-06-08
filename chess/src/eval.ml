@@ -132,8 +132,8 @@ module Bishop_pair = struct
     let b = Position.board_of_color pos c in
     let bishop = Bb.(b & Position.bishop pos) in
     let has_pair =
-      Bb.(count (bishop & black)) <> 0 &&
-      Bb.(count (bishop & white)) <> 0 in
+      Bb.((bishop & black) <> empty) &&
+      Bb.((bishop & white) <> empty) in
     let score = Bool.to_int has_pair in
     score * start_weight, score * end_weight
 end
