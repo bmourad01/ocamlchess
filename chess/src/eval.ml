@@ -71,10 +71,16 @@ module Mobility = struct
      important. These pieces are better evaluated by other features. *)
   let kinds = Piece.[|Knight; Bishop; Rook; Queen|]
 
-  (* Weighted sum of the "mobility" of the material. *)
-  let evaluate = evaluate @@ fun pos c ->
+  (* Weighted sum of the "mobility" of the material. Also, collect the number
+     of attacks near the squares immediately surrounding the enemy king. This
+     can be used later to evaluate king safety. *)
+  let evaluate (wk, bk) = evaluate @@ fun pos c ->
     let occupied = Position.all_board pos in
     let us = Position.board_of_color pos c in
+    let them = Bb.(occupied - us) in
+    let king_sq = Bb.(first_set_exn (them & Position.king pos)) in
+    let box = Pre.king king_sq in
+    let king_danger = match c with White -> bk | Black -> wk in
     let bishop = Bb.(Position.bishop pos & us) in
     let rook = Bb.(Position.rook pos & us) in
     let queen = Bb.(Position.queen pos & us) in
@@ -92,6 +98,7 @@ module Mobility = struct
         Bb.(Position.board_of_kind pos k & us) |>
         Bb.fold ~init ~f:(fun score sq ->
             let b = Bb.(f sq - us) in
+            king_danger := !king_danger + Bb.(count (b & box));
             Bb.(count (b & center)) * center_bonus +
             Bb.(count (b - center)))) in
     score * start_weight, score * end_weight
@@ -136,11 +143,9 @@ module King_danger = struct
   let end_weight = 3
 
   (* Count the squares surrounding the king that are attacked. *)
-  let evaluate = evaluate @@ fun pos c ->
-    let box = Pre.king @@ Bb.first_set_exn @@ Position.king pos in
-    let attacks = Position.Attacks.all pos @@ Piece.Color.opposite c in
-    let score = Bb.(count (box & attacks)) in
-    score * start_weight, score * end_weight
+  let evaluate (wk, bk) = evaluate @@ fun _ -> function
+    | White -> !wk * start_weight, !wk * end_weight
+    | Black -> !bk * start_weight, !bk * end_weight
 end
 
 (* Pawn structure. *)
@@ -487,12 +492,14 @@ let sum2 (w, x) (y, z) = w + y, x + z
 let go pos =
   let phase_weight = Phase.weight pos in
   let material = Material.evaluate pos in
+  let king_danger = ref 0, ref 0 in
+  let mobility = Mobility.evaluate king_danger pos in
   let start, end_ = Array.fold ~init:(0, 0) ~f:sum2 [|
       material;
-      Mobility.evaluate pos;
+      mobility;
       Rook_open_file.evaluate pos;
       Bishop_pair.evaluate pos;
-      King_danger.evaluate pos;
+      King_danger.evaluate king_danger pos;
       Pawns.evaluate pos;
       Placement.evaluate pos;
       Mop_up.evaluate pos @@ snd material;
