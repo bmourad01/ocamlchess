@@ -407,7 +407,9 @@ module Order = struct
   let killer2_offset = 1000
   let bad_capture_offset = -1000
 
-  let is_pv pv m = List.exists pv ~f:(Legal.same m)
+  (* Check if the move is in the previous PV at the current ply. *)
+  let is_pv pv ply m =
+    List.nth pv ply |> Option.value_map ~default:false ~f:(Legal.same m)
 
   (* Check if a particular move has been evaluated already. *)
   let is_hash pos tt =
@@ -471,8 +473,8 @@ module Order = struct
 
   (* Score the moves for normal search. Priority (from best to worst):
 
-     1. Moves that were part of the previous PV.
-     2. Moves that were cached in the TT as PV or cut nodes.
+     1. Moves that were part of the previous PV at the current ply.
+     2. Moves that were cached in the TT as PV or CUT nodes.
      3. Captures that produced a non-negative SEE score.
      4. Killer moves.
      5. Move history score (the "distance" heuristic).
@@ -480,7 +482,7 @@ module Order = struct
   *)
   let score moves ~ply ~pos ~tt =
     State.(gets prev_pv) >>= fun pv ->
-    let is_pv = is_pv pv in
+    let is_pv = is_pv pv ply in
     let is_hash = is_hash pos tt in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
@@ -669,15 +671,12 @@ module Main = struct
      function (or whether to skip altogether). *)
   and eval pos ~check ~ttentry =
     if not check then
+      let open Tt.Entry in
       let eval = Eval.go pos in
       match ttentry with
-      | None -> Some eval
-      | Some Tt.Entry.{score; node; _} ->
-        let better = match node with
-          | Pv -> false
-          | Cut -> score > eval
-          | All -> score < eval in
-        Some (if better then score else eval)
+      | Some {score; node = Cut; _} when score > eval -> Some score
+      | Some {score; node = All; _} when score < eval -> Some score
+      | None | Some _ -> Some eval
     else None
 
   (* Search a branch of the current node. *)
