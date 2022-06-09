@@ -62,6 +62,19 @@ let[@inline] dst m =
 let[@inline] promote m = Promote.of_int @@ m lsr (Square.bits * 2)
 let[@inline] decomp m = src m, dst m, promote m
 
+let[@inline] with_src m src =
+  (m land lnot square_mask) lor Square.to_int src
+
+let[@inline] with_dst m dst =
+  let mask = lnot (square_mask lsl Square.bits) in
+  (m land mask) lor (Square.to_int dst lsl Square.bits)
+
+let[@inline] with_promote m promote =
+  let mask = (square_mask lsl Square.bits) lor square_mask in
+  (m land mask) lor Promote.to_int promote
+
+let[@inline] without_promote m = m lor ((-1) lsl (Square.bits * 2))
+
 let pp ppf m =
   Format.fprintf ppf "%a%a" Square.pp (src m) Square.pp (dst m);
   promote m |> Option.iter ~f:(fun k ->

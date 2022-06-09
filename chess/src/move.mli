@@ -52,6 +52,18 @@ val promote : t -> promote option
     promotion of move [m], in that order. *)
 val decomp : t -> Square.t * Square.t * promote option
 
+(** [with_src m src] sets the source square of [m] to [src]. *)
+val with_src : t -> Square.t -> t
+
+(** [with_dst m dst] sets the destination square of [m] to [dst]. *)
+val with_dst : t -> Square.t -> t
+
+(** [with_promote m promote] sets the promotion type of [m] to [promote]. *)
+val with_promote : t -> promote -> t
+
+(** [without_promote m] removes any promotion type from the move [m]. *)
+val without_promote : t -> t
+
 (** [to_string m] returns the UCI-compatible string notation of move [m]. *)
 val to_string : t -> string
 
