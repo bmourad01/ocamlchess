@@ -29,7 +29,7 @@ module State = struct
     {st with pos; history}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
-  let set_stop stop = update @@ fun st -> {st with stop}
+  let set_stop stop = update @@ fun st -> {st with stop = Some stop}
 end
 
 open State.Syntax
@@ -227,20 +227,17 @@ let go g =
   (* Start the search. *)
   State.(gets history) >>= fun history ->
   State.(gets tt) >>= fun tt ->
-  State.set_stop (Some promise) >>= fun () ->
+  State.set_stop promise >>= fun () ->
   Atomic.set search_thread @@
   Option.return @@
   Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ();
   cont ()
 
-let stop =
-  (* Fulfill the promise if it exists. *)
-  State.(gets stop) >>= begin function
-    | Some stop -> return @@ Promise.fulfill stop ()
-    | None -> return ()
-  end >>= fun () ->
-  (* Reset. *)
-  State.set_stop None
+let stop = State.update @@ function
+  | {stop = Some stop; _} as st ->
+    Promise.fulfill stop ();
+    {st with stop = None}
+  | st -> st
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
 let recv cmd =
