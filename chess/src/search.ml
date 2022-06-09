@@ -294,12 +294,14 @@ module State = struct
 
   include Monad.Make(M)
 
-  let get () = {run = fun g s -> g s s}
-  let gets f = {run = fun g s -> g (f s) s}
-  let update f = {run = fun g s -> g () (f s)}
-  let run x s = x.run (fun x s -> x, s) s
-  let update_if cnd f = if cnd then update f else return ()
-  let gets_if cnd f ~default = if cnd then gets f else return default
+  include struct
+    let get () = {run = fun g s -> g s s}
+    let gets f = {run = fun g s -> g (f s) s}
+    let update f = {run = fun g s -> g () (f s)}
+    let run x s = x.run (fun x s -> x, s) s
+    let update_if cnd f = if cnd then update f else return ()
+    let gets_if cnd f ~default = if cnd then gets f else return default
+  end
 
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
