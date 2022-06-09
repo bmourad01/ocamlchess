@@ -6,6 +6,7 @@ module Pre = Precalculated
 let material_weight = 100
 
 let sum2 (w, x) (y, z) = w + y, x + z
+let mul2 (x, y) z = x * z, y * z
 
 module Phase = struct
   type t = Opening | Endgame
@@ -49,19 +50,19 @@ let evaluate (go : go) pos =
   start_white - start_black, end_white - end_black
 
 module Material = struct
-  (* In order: Pawn, Knight, Bishop, Rook, Queen *)
-  let start_weight = [|100; 300; 300; 500; 900|]
-  let end_weight   = [|140; 320; 330; 500; 900|]
-  let kinds        = Piece.[|Pawn; Knight; Bishop; Rook; Queen|]
+  let weights = Piece.[|
+    Pawn,   (100, 140);
+    Knight, (300, 320);
+    Bishop, (300, 330);
+    Rook,   (500, 500);
+    Queen,  (900, 900);
+  |]
 
+  (* Count the material on the board. *)
   let evaluate = evaluate @@ fun pos c ->
     let b = Position.board_of_color pos c in
-    Array.fold kinds ~init:(0, 0) ~f:(fun (s, e) k ->
-        let n = Bb.(count (b & Position.board_of_kind pos k)) in
-        let i = Piece.Kind.to_int k in
-        let start = n * Array.unsafe_get start_weight i in
-        let end_ = n * Array.unsafe_get end_weight i in
-        s + start, e + end_)
+    Array.fold weights ~init:(0, 0) ~f:(fun acc (k, w)  ->
+        sum2 acc @@ mul2 w Bb.(count (b & Position.board_of_kind pos k)))
 end
 
 module Mobility = struct
@@ -442,7 +443,7 @@ module Mop_up = struct
   let md_weight = 4
 
   (* Margin for material advantage. *)
-  let margin = Material.end_weight.(Piece.Kind.pawn) * 2
+  let margin = Material.(snd @@ snd @@ weights.(Piece.Kind.pawn)) * 2
 
   (* Mop-up: https://www.chessprogramming.org/Mop-up_Evaluation
 
