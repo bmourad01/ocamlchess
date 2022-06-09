@@ -269,23 +269,35 @@ let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
-  module T = struct
-    type t = {
-      start_time   : Time.t;
-      nodes        : int;
-      params       : params;
-      killer1      : Position.legal Option_array.t;
-      killer2      : Position.legal Option_array.t;
-      move_history : int array;
-      best_score   : int;
-      prev_pv      : Position.legal list;
-      stopped      : bool;
-    } [@@deriving fields]
+  type state = {
+    start_time   : Time.t;
+    nodes        : int;
+    params       : params;
+    killer1      : Position.legal Option_array.t;
+    killer2      : Position.legal Option_array.t;
+    move_history : int array;
+    best_score   : int;
+    prev_pv      : Position.legal list;
+    stopped      : bool;
+  } [@@deriving fields]
+
+  type 'a m = {run : 'r. ('a -> state -> 'r) -> state -> 'r}
+
+  module M = struct
+    type 'a t = 'a m
+
+    let return x = {run = fun g s -> g x s}
+    let bind x f = {run = fun g s -> x.run (fun x s -> (f x).run g s) s}
+    let map x ~f = {run = fun g s -> x.run (fun x s -> g (f x) s) s}
+    let map = `Custom map
   end
 
-  include T
-  include Monad.State.Make(T)(Monad.Ident)
+  include Monad.Make(M)
 
+  let get () = {run = fun g s -> g s s}
+  let gets f = {run = fun g s -> g (f s) s}
+  let update f = {run = fun g s -> g () (f s)}
+  let run x s = x.run (fun x s -> x, s) s
   let update_if cnd f = if cnd then update f else return ()
   let gets_if cnd f ~default = if cnd then gets f else return default
 
@@ -898,7 +910,7 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
    which makes pruning more effective. *)
 let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves in
-  let (score, best), st = Monad.State.run (Main.aspire moves depth) st in
+  let (score, best), st = State.run (Main.aspire moves depth) st in
   let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
