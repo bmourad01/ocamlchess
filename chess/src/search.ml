@@ -408,9 +408,9 @@ module Order = struct
   let bad_capture_offset = -1000
 
   (* Check if the move is in the previous PV at the current ply. *)
-  let is_pv pv ply =
-    let m' = List.nth pv ply in
-    fun m -> Option.value_map m' ~default:false ~f:(Legal.same m)
+  let is_pv pv ply = match List.nth pv ply with
+    | Some m' -> Legal.same m'
+    | None -> fun _ -> false
 
   (* Check if a particular move has been evaluated already. *)
   let is_hash pos tt =
