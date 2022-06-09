@@ -6,7 +6,7 @@ module Pre = Precalculated
 let material_weight = 100
 
 let sum2 (w, x) (y, z) = w + y, x + z
-let mul2 (x, y) z = x * z, y * z
+let scale2 (x, y) z = x * z, y * z
 
 module Phase = struct
   type t = Opening | Endgame
@@ -62,7 +62,7 @@ module Material = struct
   let evaluate = evaluate @@ fun pos c ->
     let b = Position.board_of_color pos c in
     Array.fold weights ~init:(0, 0) ~f:(fun acc (k, w)  ->
-        sum2 acc @@ mul2 w Bb.(count (b & Position.board_of_kind pos k)))
+        sum2 acc @@ scale2 w Bb.(count (b & Position.board_of_kind pos k)))
 end
 
 module Mobility = struct
