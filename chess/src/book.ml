@@ -56,24 +56,29 @@ let decode_move i =
    - `learn` is used to record learning information, and we will
       leave it unused.
 *)
+let read file =
+  let book = Hashtbl.create (module Int64) in
+  let len = entry_size in
+  let buf = Bytes.create len in
+  let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
+    | n when n = len ->
+      let key = b64 buf 0 in
+      let move = decode_move @@ b16 buf 8 in
+      let weight = b16 buf 10 in
+      let learn = b32 buf 12 in
+      Hashtbl.add_multi book ~key ~data:{move; weight; learn};
+      read ()
+    | 0 -> book
+    | n ->
+      failwithf "Invalid length of book file, must be divisible \
+                 by %d (%d bytes remaining)" len n () in
+  read ()
+
 let create filepath =
-  In_channel.with_file filepath ~binary:true ~f:(fun file ->
-      let book = Hashtbl.create (module Int64) in
-      let len = entry_size in
-      let buf = Bytes.create len in
-      let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
-        | n when n = len ->
-          let key = b64 buf 0 in
-          let move = decode_move @@ b16 buf 8 in
-          let weight = b16 buf 10 in
-          let learn = b32 buf 12 in
-          Hashtbl.add_multi book ~key ~data:{move; weight; learn};
-          read ()
-        | 0 -> book
-        | n ->
-          failwithf "Invalid length of book file, must be divisible \
-                     by %d (%d bytes remaining)" len n () in
-      read ())
+  let book = In_channel.with_file filepath ~binary:true ~f:read in
+  let compare x y = compare y.weight x.weight in
+  Hashtbl.map_inplace book ~f:(List.sort ~compare);
+  book
 
 module Error = struct
   type t =
