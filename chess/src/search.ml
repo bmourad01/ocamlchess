@@ -443,6 +443,62 @@ module Order = struct
           fill (succ i) xs in
       fill 1 xs
 
+  (* We use an iterator object that incrementally applies insertion sort to
+     the list. In the context of alpha-beta pruning, we may not actually
+     visit all the moves for a given position, so it makes no sense to waste
+     time sorting the entire thing. *)
+  module Iterator : sig
+    type move = Position.legal * int
+    type t
+
+    val empty : t
+    val create : move array -> t
+    val next : t -> move Uopt.t
+  end = struct
+    type move = Position.legal * int
+
+    type t = {
+      mutable index : int;
+      length        : int;
+      moves         : move array;
+    }
+
+    let empty = {
+      index = 0;
+      length = 0;
+      moves = [||];
+    }
+
+    let create moves = {
+      index = 0;
+      length = Array.length moves;
+      moves;
+    }
+
+    let next it =
+      let c = it.index in
+      let n = it.length in
+      if c < n then
+        let best_score = ref (-inf) in
+        let best_index = ref c in
+        let moves = it.moves in
+        for i = c to n - 1 do
+          let _, score = Array.unsafe_get moves i in
+          if score > !best_score then begin
+            best_score := score;
+            best_index := i;
+          end
+        done;
+        let i = !best_index in
+        let result = Array.unsafe_get moves i in
+        if i > c then
+          Array.unsafe_get moves c |>
+          Array.unsafe_set moves i;
+        it.index <- c + 1;
+        Uopt.some result
+      else Uopt.none
+  end
+
   (* Score each move according to `eval`. Note that `moves` is assumed to be
      non-empty. *)
   let score_aux moves ~eval =
@@ -456,34 +512,6 @@ module Order = struct
         end;
         m, score) in
     moves, !best_move
-
-  (* Returns a thunk that incrementally applies insertion sort to the list.
-     In the context of alpha-beta pruning, we may not actually visit all the
-     moves for a given position, so it makes no sense to waste time sorting
-     the entire thing. *)
-  let make_picker moves =
-    let current = ref 0 in
-    let n = Array.length moves in
-    fun () ->
-      let c = !current in
-      if c < n then
-        let best_score = ref (-inf) in
-        let best_index = ref c in
-        for i = c to n - 1 do
-          let _, score = Array.unsafe_get moves i in
-          if score > !best_score then begin
-            best_score := score;
-            best_index := i;
-          end
-        done;
-        let i = !best_index in
-        let result = Array.unsafe_get moves i in
-        if i > c then
-          Array.unsafe_get moves c |>
-          Array.unsafe_set moves i;
-        current := c + 1;
-        Uopt.some result
-      else Uopt.none
 
   (* Score the moves for normal search. Priority (from best to worst):
 
@@ -521,12 +549,12 @@ module Order = struct
             else let killer = killer m in
               if killer <> 0 then killer
               else move_history m) in
-    best, make_picker moves
+    best, Iterator.create moves
 
   (* Score the moves for quiescence search. *)
   let qscore = function
-    | [] -> fun () -> Uopt.none
-    | moves -> make_picker @@ fst @@ score_aux moves ~eval:(fun m ->
+    | [] -> Iterator.empty
+    | moves -> Iterator.create @@ fst @@ score_aux moves ~eval:(fun m ->
         let p = promote m ~offset:0 in
         if p <> 0 then p
         else match See.go m with
@@ -536,13 +564,13 @@ module Order = struct
   (* Iterate using the thunk. *)
   let fold_until =
     let open Continue_or_stop in
-    let[@specialise] rec aux acc next ~f ~finish =
-      let x = next () in
+    let[@specialise] rec aux acc it ~f ~finish =
+      let x = Iterator.next it in
       if Uopt.is_some x then f acc @@ Uopt.unsafe_value x >>= function
-        | Continue y -> aux y next ~f ~finish
+        | Continue y -> aux y it ~f ~finish
         | Stop z -> return z
       else finish acc in
-    fun next ~init -> aux init next
+    fun it ~init -> aux init it
 end
 
 (* Quiescence search is used when we reach our maximum depth for the main
