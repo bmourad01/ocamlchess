@@ -429,12 +429,26 @@ module Order = struct
         let k = Move.Promote.to_piece_kind k in
         offset + Piece.Kind.value k * Eval.material_weight)
 
+  (* This is exactly what the OCaml standard library implementation does,
+     except we fuse it with a `map` operation so that we avoid allocating
+     a new list or array. *)
+  let array_of_list_map ~f = function
+    | [] -> [||]
+    | (x :: xs) as l ->
+      let a = Array.create ~len:(List.length l) @@ f x in
+      let rec fill i = function
+        | [] -> a
+        | x :: xs ->
+          Array.unsafe_set a i @@ f x;
+          fill (succ i) xs in
+      fill 1 xs
+
   (* Score each move according to `eval`. Note that `moves` is assumed to be
      non-empty. *)
   let score_aux moves ~eval =
     let best_score = ref (-inf) in
     let best_move = ref @@ List.hd_exn moves in
-    let moves = Array.of_list @@ List.map moves ~f:(fun m ->
+    let moves = array_of_list_map moves ~f:(fun m ->
         let score = eval m in
         if score > !best_score then begin
           best_score := score;
@@ -464,13 +478,12 @@ module Order = struct
         done;
         let i = !best_index in
         let result = Array.unsafe_get moves i in
-        if i > c then begin
-          let old = Array.unsafe_get moves c in
-          Array.unsafe_set moves i old;
-        end;
-        incr current;
-        Some result
-      else None
+        if i > c then
+          Array.unsafe_get moves c |>
+          Array.unsafe_set moves i;
+        current := c + 1;
+        Uopt.some result
+      else Uopt.none
 
   (* Score the moves for normal search. Priority (from best to worst):
 
@@ -512,7 +525,7 @@ module Order = struct
 
   (* Score the moves for quiescence search. *)
   let qscore = function
-    | [] -> fun () -> None
+    | [] -> fun () -> Uopt.none
     | moves -> make_picker @@ fst @@ score_aux moves ~eval:(fun m ->
         let p = promote m ~offset:0 in
         if p <> 0 then p
@@ -523,11 +536,12 @@ module Order = struct
   (* Iterate using the thunk. *)
   let fold_until =
     let open Continue_or_stop in
-    let rec aux acc next ~f ~finish = match next () with
-      | None -> finish acc
-      | Some x -> f acc x >>= function
+    let[@specialise] rec aux acc next ~f ~finish =
+      let x = next () in
+      if Uopt.is_some x then f acc @@ Uopt.unsafe_value x >>= function
         | Continue y -> aux y next ~f ~finish
-        | Stop z -> return z in
+        | Stop z -> return z
+      else finish acc in
     fun next ~init -> aux init next
 end
 
@@ -610,7 +624,7 @@ module Main = struct
     Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
   (* Search from a new position. *)
-  let rec go ?(null = false) ?(node = Pv) pos ~alpha ~beta ~ply ~depth =
+  let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
     check_limits >>= function
     | true -> return 0
     | false -> drawn pos >>= function
@@ -637,8 +651,8 @@ module Main = struct
                 ~alpha ~beta ~ply ~depth ~check ~node ~null ~ttentry
 
   (* Search the available moves for the given position. *)
-  and with_moves ?(ttentry = None) pos moves
-      ~alpha ~beta ~ply ~depth ~check ~node ~null =
+  and with_moves ?(ttentry = None) ?(null = false)
+      pos moves ~alpha ~beta ~ply ~depth ~check ~node =
     let eval = eval pos ~check ~ttentry in
     try_pruning_before_branch pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check ~null ~node >>= function
@@ -857,11 +871,10 @@ module Main = struct
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    let ply = 0 and null = false and node = Pv in
     State.(gets params) >>= fun {tt; root; _} ->
     let check = Position.in_check root in
     with_moves root moves
-      ~alpha ~beta ~ply ~depth ~check ~node ~null >>| fun score ->
+      ~alpha ~beta ~ply:0 ~depth ~check ~node:Pv >>| fun score ->
     let entry = Hashtbl.find_exn tt @@ Position.hash root in
     score, entry.best
 
