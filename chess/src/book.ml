@@ -8,7 +8,10 @@ type entry = {
 
 let entry_size = 16
 
-type t = (int64, entry list) Hashtbl.t
+type t = {
+  filename : string;
+  table    : (int64, entry list) Hashtbl.t;
+}
 
 external b64 : bytes -> int -> int64 = "ml_bytes_int64_be"
 external b32 : bytes -> int -> int32 = "ml_bytes_int32_be"
@@ -74,11 +77,11 @@ let read file =
                  by %d (%d bytes remaining)" len n () in
   read ()
 
-let create filepath =
-  let book = In_channel.with_file filepath ~binary:true ~f:read in
+let create filename =
+  let table = In_channel.with_file filename ~binary:true ~f:read in
   let compare x y = compare y.weight x.weight in
-  Hashtbl.map_inplace book ~f:(List.sort ~compare);
-  book
+  Hashtbl.map_inplace table ~f:(List.sort ~compare);
+  {filename = Filename.basename filename; table}
 
 module Error = struct
   type t =
@@ -123,7 +126,7 @@ let make_move pos move =
   Position.make_move pos move
 
 let lookup book pos = let open Error in
-  match Hashtbl.find book @@ Position.hash pos with
+  match Hashtbl.find book.table @@ Position.hash pos with
   | None | Some [] -> Error (Position_not_found pos)
   | Some entries ->
     let sum =
@@ -140,8 +143,9 @@ let lookup book pos = let open Error in
                collision. Even if the book contains an illegal move, we
                should simply emit a warning and try to find a legal response
                to the position. *)
-            Format.eprintf "Warning: illegal move %a found for position %a\n%!"
-              Move.pp move Position.pp pos;
+            Format.eprintf "Warning: in book %s, illegal move %a was found \
+                            for position %a\n%!"
+              book.filename Move.pp move Position.pp pos;
             find sum rest
           | legal -> Ok legal
         else find sum rest in
