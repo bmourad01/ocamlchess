@@ -97,12 +97,12 @@ let[@inline] mem x color side = match color, side with
 let string_pairs =
   List.zip_exn (List.init bits ~f:Int.((lsl) 1)) ["K"; "Q"; "k"; "q"]
 
-let to_string = function
-  | 0 -> "-"
-  | x -> List.fold string_pairs ~init:"" ~f:(fun acc (y, s) ->
-      if inter x y <> none then acc ^ s else acc)
+let pp ppf = function
+  | 0 -> Format.fprintf ppf "-%!"
+  | x -> List.iter string_pairs ~f:(fun (y, s) ->
+      if inter x y <> none then Format.fprintf ppf "%s%!" s)
 
-let pp ppf cr = Format.fprintf ppf "%s" @@ to_string cr
+let to_string cr = Format.asprintf "%a%!" pp cr
 
 let of_string_exn = function
   | "-" -> none

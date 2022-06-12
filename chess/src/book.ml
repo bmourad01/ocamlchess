@@ -84,7 +84,7 @@ module Error = struct
   type t =
     | Position_not_found of Position.t
     | Illegal_move of Move.t * Position.t
-    | Bad_weight of Position.t
+    | No_moves of Position.t
 
   let to_string = function
     | Position_not_found pos ->
@@ -93,7 +93,7 @@ module Error = struct
     | Illegal_move (m, pos) ->
       sprintf "Lookup found illegal move %s for position %s"
         (Move.to_string m) (Position.Fen.to_string pos)
-    | Bad_weight pos ->
+    | No_moves pos ->
       sprintf "Failed to find best weighted move for positon %s"
         (Position.Fen.to_string pos)
 end
@@ -131,11 +131,18 @@ let lookup book pos = let open Error in
           acc + weight) in
     let target = Random.int_incl 0 sum in
     let rec find sum = function
-      | [] -> Error (Bad_weight pos)
+      | [] -> Error (No_moves pos)
       | {move; weight; _} :: rest ->
         let sum = sum - weight in
         if sum <= target then match make_move pos move with
-          | exception _ -> Error (Illegal_move (move, pos))
+          | exception _ ->
+            (* In some rare instances, this can be the result of a hash
+               collision. Even if the book has an illegal move as a
+               response, we should simply emit a warning and try to find
+               a legal response to the position. *)
+            Format.eprintf "Warning: illegal move %a found for position %a\n%!"
+              Move.pp move Position.pp pos;
+            find sum rest
           | legal -> Ok legal
         else find sum rest in
     find sum entries

@@ -38,6 +38,7 @@ let try_book in_book root history =
         let history = update_history history new_pos in
         Some (m, history)
       | Error (Book.Error.Position_not_found _) -> None
+      | Error (Book.Error.No_moves _) -> None
       | Error err ->
         failwithf "Opening book error: %s" (Book.Error.to_string err) ())
 

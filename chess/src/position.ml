@@ -806,44 +806,42 @@ module Fen = struct
 
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-  let emit_placement buf pos =
-    let adds = Buffer.add_string buf and addc = Buffer.add_char buf in
+  let pp_placement ppf pos =
     let rec aux rank file skip =
       if rank < 0 then ()
       else if file > 7 then begin
-        if skip > 0 then adds @@ Int.to_string skip;
-        if rank > 0 then addc '/';
+        if skip > 0 then Format.fprintf ppf "%d%!" skip;
+        if rank > 0 then Format.fprintf ppf "/%!";
         aux (rank - 1) 0 0
       end else
         let p = piece_at_square_uopt pos @@ Square.create_exn ~rank ~file in
         if Uopt.is_none p then aux rank (file + 1) (skip + 1)
         else
           let p = Uopt.unsafe_value p in
-          if skip > 0 then adds @@ Int.to_string skip;
-          addc @@ Piece.to_fen p;
+          if skip > 0 then Format.fprintf ppf "%d%!" skip;
+          Format.fprintf ppf "%c%!" @@ Piece.to_fen p;
           aux rank (file + 1) 0 in
     aux 7 0 0
 
-  let emit_active buf = function
-    | Piece.White -> Buffer.add_char buf 'w'
-    | Piece.Black -> Buffer.add_char buf 'b'
+  let pp_active ppf = function
+    | Piece.White -> Format.fprintf ppf "w%!"
+    | Piece.Black -> Format.fprintf ppf "b%!"
 
-  let emit_castle buf cr = Buffer.add_string buf @@ Cr.to_string cr
+  let pp_castle ppf cr = Format.fprintf ppf "%a%!" Cr.pp cr
 
-  let emit_en_passant buf ep =
-    Buffer.add_string buf @@
-    Uopt.value_map ep ~default:"-" ~f:Square.to_string
+  let pp_en_passant ppf = function
+    | None -> Format.fprintf ppf "-%!"
+    | Some ep -> Format.fprintf ppf "%a!" Square.pp ep
 
-  let to_string pos =
-    let buf = Buffer.create 100 in
-    let sep () = Buffer.add_char buf ' ' in
-    emit_placement buf pos; sep ();
-    emit_active buf @@ active pos; sep ();
-    emit_castle buf @@ castle pos; sep ();
-    emit_en_passant buf @@ pos.en_passant; sep ();
-    Buffer.add_string buf @@ Int.to_string @@ halfmove pos; sep ();
-    Buffer.add_string buf @@ Int.to_string @@ fullmove pos;
-    Buffer.contents buf
+  let pp ppf pos =
+    let sep () = Format.fprintf ppf " %!" in
+    pp_placement ppf pos; sep ();
+    pp_active ppf @@ active pos; sep ();
+    pp_castle ppf @@ castle pos; sep ();
+    pp_en_passant ppf @@ Uopt.to_option pos.en_passant; sep ();
+    Format.fprintf ppf "%d %d%!" pos.halfmove pos.fullmove
+
+  let to_string pos = Format.asprintf "%a%!" pp pos
 
   let parse_placement s =
     (* Split the ranks so we can parse them individually. *)
@@ -943,7 +941,7 @@ module Fen = struct
     | Ok pos -> pos
 end
 
-let pp ppf pos = Format.fprintf ppf "%s" @@ Fen.to_string pos
+let pp ppf pos = Format.fprintf ppf "%a%!" Fen.pp pos
 
 let start = Fen.(of_string_exn start)
 

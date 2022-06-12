@@ -14,7 +14,7 @@ module Error : sig
   type t =
     | Position_not_found of Position.t
     | Illegal_move of Move.t * Position.t
-    | Bad_weight of Position.t
+    | No_moves of Position.t
 
   (** Returns the error as a human-readable message. *)
   val to_string : t -> string
