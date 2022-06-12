@@ -137,9 +137,9 @@ let lookup book pos = let open Error in
         if sum <= target then match make_move pos move with
           | exception _ ->
             (* In some rare instances, this can be the result of a hash
-               collision. Even if the book has an illegal move as a
-               response, we should simply emit a warning and try to find
-               a legal response to the position. *)
+               collision. Even if the book contains an illegal move, we
+               should simply emit a warning and try to find a legal response
+               to the position. *)
             Format.eprintf "Warning: illegal move %a found for position %a\n%!"
               Move.pp move Position.pp pos;
             find sum rest
