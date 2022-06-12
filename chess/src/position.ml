@@ -831,7 +831,7 @@ module Fen = struct
 
   let pp_en_passant ppf = function
     | None -> Format.fprintf ppf "-%!"
-    | Some ep -> Format.fprintf ppf "%a!" Square.pp ep
+    | Some ep -> Format.fprintf ppf "%a%!" Square.pp ep
 
   let pp ppf pos =
     let sep () = Format.fprintf ppf " %!" in
