@@ -1,4 +1,12 @@
-(** This module implements a data structure for representing UCI moves. *)
+(** This module implements a data structure for representing Chess moves.
+
+    Note that illegal moves can be instantiated with this datatype; the only
+    information that is stored is the source square, destination square, and
+    the (optional) promotion kind.
+
+    For the legal moves, see the [Position.Legal] module and its corresponding
+    datatype.
+*)
 
 (** The number of bits required to store the move information. *)
 val bits : int
