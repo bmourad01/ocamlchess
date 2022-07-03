@@ -79,7 +79,7 @@ module Limits = struct
         our_time / int_of_float (20.0 *. ratio) in
     time + our_inc
 
-  let default_depth = 7
+  let default_depth = 8
 
   let create
       ?(nodes = None)
@@ -155,7 +155,6 @@ module Tt = struct
   module Entry = struct
     type t = {
       depth : int;
-      ply   : int;
       score : int;
       best  : Position.legal;
       node  : node;
@@ -165,11 +164,7 @@ module Tt = struct
   end
 
   type entry = Entry.t
-  type t = (int64, entry) Hashtbl.t
-
-  let find tt pos = Hashtbl.find tt @@ Position.hash pos
-  let create () = Hashtbl.create (module Int64)
-  let clear = Hashtbl.clear
+  type t = entry Zobrist.Table.t
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
@@ -178,10 +173,10 @@ module Tt = struct
 
      For the same position, prefer the more recent search.
   *)
-  let store tt pos ~depth ~ply ~score ~best ~node =
+  let store tt pos ~depth ~score ~best ~node =
     let key = Position.hash pos in
-    let data = Entry.Fields.create ~depth ~ply ~score ~best ~node in
-    Hashtbl.set tt ~key ~data
+    let data = Entry.Fields.create ~depth ~score ~best ~node in
+    Zobrist.Table.set tt key data
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
@@ -195,7 +190,8 @@ module Tt = struct
             we can use that score to prune the rest of the branch being
             searched.
   *)
-  let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
+  let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv =
+    match Zobrist.Table.get_entry tt @@ Position.hash pos with
     | None -> Second (alpha, beta, None)
     | Some entry when Entry.depth entry < depth ->
       Second (alpha, beta, Some entry)
@@ -204,9 +200,9 @@ module Tt = struct
          current distance from root. *)
       let score =
         if is_mate entry.score then
-          entry.score + entry.ply - ply
+          entry.score - ply
         else if is_mated entry.score then
-          entry.score - entry.ply + ply
+          entry.score + ply
         else entry.score in
       match entry.node with
       | Pv when not pv -> First (score, entry.best)
@@ -222,7 +218,8 @@ module Tt = struct
 
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
-    let rec aux i acc pos = match find tt pos with
+    let rec aux i acc pos =
+      match Zobrist.Table.get_entry tt @@ Position.hash pos with
       | None -> List.rev acc
       | Some Entry.{best; _} when mate || n > i ->
         let i = i + 1 in
@@ -409,13 +406,13 @@ module Order = struct
 
   (* Check if the move is in the previous PV at the current ply. *)
   let is_pv pv ply = match List.nth pv ply with
-    | Some m' -> Legal.same m'
+    | Some m -> Legal.same m
     | None -> fun _ -> false
 
   (* Check if a particular move has been evaluated already. *)
   let is_hash pos tt =
     let best =
-      Position.hash pos |> Hashtbl.find tt |>
+      Position.hash pos |> Zobrist.Table.get_entry tt |>
       Option.bind ~f:(fun entry ->
           match Tt.Entry.node entry with
           | Pv | Cut -> Some (Tt.Entry.best entry)
@@ -691,7 +688,7 @@ module Main = struct
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
       Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
-      Tt.store tt pos ~depth ~ply ~score ~best:t.best ~node:t.node;
+      Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
       score
 
   (* There are a number of pruning heuristics we can use before we even try
@@ -901,10 +898,15 @@ module Main = struct
   let root moves ~alpha ~beta ~depth =
     State.(gets params) >>= fun {tt; root; _} ->
     let check = Position.in_check root in
-    with_moves root moves
-      ~alpha ~beta ~ply:0 ~depth ~check ~node:Pv >>| fun score ->
-    let entry = Hashtbl.find_exn tt @@ Position.hash root in
-    score, entry.best
+    let eval = eval root ~check ~ttentry:None in
+    State.(gets params) >>= fun {tt; _} ->
+    Order.score moves ~ply:0 ~pos:root ~tt >>= fun (best, next) ->
+    let t = new_search ~alpha ~best () in
+    let finish _ = return t.alpha in
+    let f = branch t ~eval ~beta ~depth ~ply:0 ~check ~node:Pv in
+    Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
+    Tt.store tt root ~depth ~score ~best:t.best ~node:t.node;
+    score, t.best
 
   (* Aspiration window.
 
@@ -936,7 +938,7 @@ let convert_score score tt root ~pv ~mate ~mated =
   let full = (len + (len land 1)) / 2 in
   if mate then Mate full
   else if mated then Mate (-full)
-  else match Tt.find tt root with
+  else match Zobrist.Table.get_entry tt @@ Position.hash root with
     | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
     | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
     | Some Tt.Entry.{node = all; _} -> Cp (score, Some `upper)

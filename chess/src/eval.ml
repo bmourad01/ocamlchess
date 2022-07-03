@@ -51,12 +51,12 @@ let evaluate (go : go) pos =
 
 module Material = struct
   let weights = Piece.[|
-    Pawn,   (100, 140);
-    Knight, (300, 320);
-    Bishop, (300, 330);
-    Rook,   (500, 500);
-    Queen,  (900, 900);
-  |]
+      Pawn,   (100, 140);
+      Knight, (300, 320);
+      Bishop, (300, 330);
+      Rook,   (500, 500);
+      Queen,  (900, 900);
+    |]
 
   (* Count the material on the board. *)
   let evaluate = evaluate @@ fun pos c ->

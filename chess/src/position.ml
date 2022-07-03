@@ -45,7 +45,7 @@ module T = struct
     mutable en_passant : Square.t Uopt.t;
     mutable halfmove   : int;
     mutable fullmove   : int;
-    mutable hash       : int64;
+    mutable hash       : Zobrist.key;
   } [@@deriving compare, equal, fields, sexp]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant

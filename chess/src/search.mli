@@ -99,16 +99,7 @@ module Tt : sig
   type entry = Entry.t
 
   (** The transposition table. *)
-  type t
-
-  (** Creates the table. *)
-  val create : unit -> t
-
-  (** Clears the table. *)
-  val clear : t -> unit
-
-  (** Returns the entry for a given position, if it exists *)
-  val find : t -> Position.t -> entry option
+  type t = entry Zobrist.Table.t
 end
 
 (** The search result. *)

@@ -54,12 +54,28 @@ let choice (history, tt, in_book) moves =
     print_res res;
     let new_pos = Position.Legal.new_position m in
     let history = update_history history new_pos in
+    Zobrist.Table.age tt;
     m, (history, tt, false)
 
 let name = "caml"
+let capacity = 0x400000
+
+module Slot = Zobrist.Table.Slot
+
+let replace ~prev entry key =
+  let open Search.Tt.Entry in
+  let prev_entry = Slot.entry prev in
+  Zobrist.equal_key key (Slot.key prev) ||
+  depth prev_entry <= depth entry
+
+let age slot = Slot.age slot < 31
+
+let create_tt () =
+  Zobrist.Table.create ~capacity ~replace ~age
+
 let create () =
   let player =
-    let state = Int64.Map.empty, Search.Tt.create (), true in
+    let state = Int64.Map.empty, create_tt (), true in
     Player.create ~choice ~state ~name
       ~desc:"The flagship player, based on traditional game tree search and \
              evaluation." in
