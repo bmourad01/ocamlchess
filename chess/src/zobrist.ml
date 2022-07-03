@@ -2,6 +2,82 @@ open Core_kernel
 
 type key = int64 [@@deriving equal, compare, sexp]
 
+module Table = struct
+  module A = Option_array
+
+  type 'a slot = {
+    entry : 'a;
+    key   : key;
+    age   : int;
+  }
+
+  module Slot = struct
+    type 'a t = 'a slot
+
+    let entry s = s.entry
+    let key s = s.key
+    let age s = s.age
+  end
+
+  type 'a replace = prev:'a slot -> 'a -> key -> bool
+  type 'a age = 'a slot -> bool
+
+  type 'a t = {
+    table   : 'a slot A.t;
+    replace : 'a replace;
+    age     : 'a age;
+  }
+
+  exception Not_found
+
+  let create ~capacity ~replace ~age =
+    if capacity > 0 then
+      let len = Int.ceil_pow2 capacity in {
+        table = A.create ~len;
+        replace;
+        age;
+      } else invalid_argf "Invalid table capacity %d" capacity ()
+
+  let clear t = A.clear t.table
+
+  let slot t key =
+    let n = A.length t.table - 1 in
+    Int64.(to_int_trunc (key land of_int n))
+
+  let get t key =
+    slot t key |> A.unsafe_get t.table |>
+    Option.bind ~f:(fun slot ->
+        Option.some_if (equal_key key slot.key) slot)
+
+  let get_exn t key = match get t key with
+    | None -> raise Not_found
+    | Some slot -> slot
+
+  let get_entry t key = get t key |> Option.map ~f:Slot.entry
+  let get_entry_exn t key = get_exn t key |> Slot.entry
+
+  let set t key entry =
+    let i = slot t key in
+    let[@inline] set () =
+      A.unsafe_set_some t.table i {entry; key; age = 0} in
+    match A.unsafe_get t.table i with
+    | None -> set ()
+    | Some prev when t.replace ~prev entry key -> set ()
+    | Some _ -> ()
+
+  let age t =
+    let n = A.length t.table - 1 in
+    for i = 0 to n do
+      A.unsafe_get t.table i |>
+      Option.iter ~f:(fun slot ->
+          if t.age slot then A.unsafe_set_some t.table i {
+              slot with age = slot.age + 1
+            } else A.unsafe_set_none t.table i)
+    done
+end
+
+type 'a table = 'a Table.t
+
 let piece = [|
   0x9D39247E33776D41L;
   0x2AF7398005AAA5C7L;
@@ -807,76 +883,3 @@ let en_passant sq =
 
 let white_to_move = 0xF8D626AAAF278509L
 
-module Table = struct
-  module A = Option_array
-
-  type 'a slot = {
-    entry : 'a;
-    key   : key;
-    age   : int;
-  }
-
-  module Slot = struct
-    type 'a t = 'a slot
-
-    let entry s = s.entry
-    let key s = s.key
-    let age s = s.age
-  end
-
-  type 'a replace = prev:'a slot -> 'a -> key -> bool
-  type 'a age = 'a slot -> bool
-
-  type 'a t = {
-    table   : 'a slot A.t;
-    replace : 'a replace;
-    age     : 'a age;
-  }
-
-  exception Not_found
-
-  let create ~capacity ~replace ~age =
-    if capacity > 0 then
-      let len = Int.ceil_pow2 capacity in {
-        table = A.create ~len;
-        replace;
-        age;
-      } else invalid_argf "Invalid table capacity %d" capacity ()
-
-  let clear t = A.clear t.table
-
-  let slot t key =
-    let n = A.length t.table - 1 in
-    Int64.(to_int_trunc (key land of_int n))
-
-  let get t key =
-    slot t key |> A.unsafe_get t.table |>
-    Option.bind ~f:(fun slot ->
-        Option.some_if (equal_key key slot.key) slot)
-
-  let get_exn t key = match get t key with
-    | None -> raise Not_found
-    | Some slot -> slot
-
-  let get_entry t key = get t key |> Option.map ~f:Slot.entry
-  let get_entry_exn t key = get_exn t key |> Slot.entry
-
-  let set t key entry =
-    let i = slot t key in
-    let[@inline] set () =
-      A.unsafe_set_some t.table i {entry; key; age = 0} in
-    match A.unsafe_get t.table i with
-    | None -> set ()
-    | Some prev when t.replace ~prev entry key -> set ()
-    | Some _ -> ()
-
-  let age t =
-    let n = A.length t.table - 1 in
-    for i = 0 to n do
-      A.unsafe_get t.table i |>
-      Option.iter ~f:(fun slot ->
-          if t.age slot then A.unsafe_set_some t.table i {
-              slot with age = slot.age + 1
-            } else A.unsafe_set_none t.table i)
-    done
-end

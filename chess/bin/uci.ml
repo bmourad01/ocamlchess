@@ -8,7 +8,7 @@ module State = struct
     type t = {
       pos     : Position.t;
       history : int Int64.Map.t;
-      tt      : Search.Tt.t;
+      tt      : Search.tt;
       stop    : unit promise option;
     } [@@deriving fields]
   end

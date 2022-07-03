@@ -99,8 +99,10 @@ module Tt : sig
   type entry = Entry.t
 
   (** The transposition table. *)
-  type t = entry Zobrist.Table.t
+  type t = entry Zobrist.table
 end
+
+type tt = Tt.t
 
 (** The search result. *)
 module Result : sig
@@ -152,6 +154,6 @@ val go :
   root:Position.t ->
   limits:limits ->
   history:int Core_kernel.Int64.Map.t ->
-  tt:Tt.t ->
+  tt:tt ->
   unit ->
   result

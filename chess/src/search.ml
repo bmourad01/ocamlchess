@@ -164,7 +164,7 @@ module Tt = struct
   end
 
   type entry = Entry.t
-  type t = entry Zobrist.Table.t
+  type t = entry Zobrist.table
 
   (* Store the evaluation results for the position. There is consideration to
      be made for the replacement strategy:
@@ -229,6 +229,8 @@ module Tt = struct
     aux 1 [m] @@ Legal.new_position m
 end
 
+type tt = Tt.t
+
 module Result = struct
   type t = {
     pv    : Position.legal list;
@@ -248,7 +250,7 @@ type params = {
   limits  : limits;
   root    : Position.t;
   history : int Int64.Map.t;
-  tt      : Tt.t;
+  tt      : tt;
 } [@@deriving fields]
 
 let create_search ~limits ~root ~history ~tt =

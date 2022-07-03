@@ -10,7 +10,7 @@ val book : Chess.Book.t option ref
 val name : string
 
 (** Create the transposition table. *)
-val create_tt : unit -> Chess.Search.Tt.t
+val create_tt : unit -> Chess.Search.tt
 
 (** Create the player. *)
 val create : unit -> Player.e
