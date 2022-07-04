@@ -233,11 +233,12 @@ type tt = Tt.t
 
 module Result = struct
   type t = {
-    pv    : Position.legal list;
-    score : Uci.Send.Info.score;
-    nodes : int;
-    depth : int;
-    time  : int;
+    pv       : Position.legal list;
+    score    : Uci.Send.Info.score;
+    nodes    : int;
+    depth    : int;
+    seldepth : int;
+    time     : int;
   } [@@deriving fields]
 
   let best {pv; _} = List.hd_exn pv
@@ -269,6 +270,7 @@ module State = struct
     move_history_max_b : int;
     best_score         : int;
     stopped            : bool;
+    seldepth           : int;
   } [@@deriving fields]
 
   type 'a m = {run : 'r. ('a -> state -> 'r) -> state -> 'r}
@@ -313,6 +315,7 @@ module State = struct
       move_history_max_b = 1;
       best_score = -inf;
       stopped = false;
+      seldepth = 0;
     }
 
   let elapsed st =
@@ -320,7 +323,10 @@ module State = struct
 
   (* Start a new search while reusing the transposition table. *)
   let new_iter best_score st = {
-    st with best_score; stopped = false
+    st with
+    best_score;
+    stopped = false;
+    seldepth = 0;
   }
 
   (* Increment the number of nodes we've evaluated. *)
@@ -388,6 +394,11 @@ type 'a state = 'a State.m
 
 let return = State.return
 let negm = Fn.compose return Int.neg
+
+let leaf score ~ply =
+  begin State.update @@ fun st -> {
+      st with seldepth = max st.seldepth ply;
+    } end >>| fun () -> score
 
 let has_reached_limits =
   State.(gets elapsed) >>= fun elapsed ->
@@ -616,11 +627,11 @@ module Quiescence = struct
   (* Search a position until it becomes "quiet". *)
   let rec go pos ~alpha ~beta ~ply =
     check_limits >>= function
-    | true -> return 0
+    | true -> leaf 0 ~ply
     | false -> drawn pos >>= function
-      | true -> return 0
+      | true -> leaf 0 ~ply
       | false -> Position.legal_moves pos |> function
-        | [] -> return @@ if Position.in_check pos then mated ply else 0
+        | [] -> leaf (if Position.in_check pos then mated ply else 0) ~ply
         | moves -> with_moves pos moves ~alpha ~beta ~ply
 
   (* Search the available moves for a given position, but only if they are
@@ -628,8 +639,8 @@ module Quiescence = struct
   and with_moves pos moves ~alpha ~beta ~ply =
     State.(update inc_nodes) >>= fun () ->
     let eval = Eval.go pos in
-    if eval >= beta then return beta
-    else if delta pos ~eval ~alpha then return alpha
+    if eval >= beta then leaf beta ~ply
+    else if delta pos ~eval ~alpha then leaf alpha ~ply
     else List.filter moves ~f:is_noisy |>
          Order.qscore |> Order.Iterator.fold_until
            ~init:(max eval alpha)
@@ -693,11 +704,11 @@ module Main = struct
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
     check_limits >>= function
-    | true -> return 0
+    | true -> leaf 0 ~ply
     | false -> drawn pos >>= function
-      | true -> return 0
+      | true -> leaf 0 ~ply
       | false -> lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-        | First (score, _) -> return score
+        | First (score, _) -> leaf score ~ply
         | Second (alpha, beta, ttentry) ->
           let moves = Position.legal_moves pos in
           (* Check + single reply extension. *)
@@ -706,7 +717,7 @@ module Main = struct
           let depth = depth + Bool.to_int (check || single) in
           (* Checkmate or stalemate. *)
           match moves with
-          | [] -> return @@ if check then mated ply else 0
+          | [] -> leaf (if check then mated ply else 0) ~ply
           | _ -> match mdp ~alpha ~beta ~ply with
             | First alpha -> return alpha
             | Second (alpha, beta) when depth <= 0 ->
@@ -723,7 +734,7 @@ module Main = struct
     let eval = eval pos ~check ~ttentry in
     try_pruning_before_branch pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check ~null ~node >>= function
-    | Some score -> return score
+    | Some score -> leaf score ~ply
     | None -> State.(gets tt) >>= fun tt ->
       Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
       let t = new_search ~alpha ~best () in
@@ -1004,7 +1015,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
-  let State.{limits; tt; root; nodes; _} = st in
+  let State.{limits; tt; root; nodes; seldepth; _} = st in
   (* If the search was stopped, use the previous completed result, if
      available. *)
   if Limits.stopped limits then match prev with
@@ -1012,7 +1023,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
     | None ->
       let pv = [best] in
       let score = convert_score score tt root ~pv ~mate ~mated in
-      Result.Fields.create ~pv ~score ~nodes ~depth ~time
+      Result.Fields.create ~pv ~score ~nodes ~depth ~seldepth ~time
   else begin
     (* Extract the current PV. *)
     let pv = Tt.pv tt depth best ~mate:(mate || mated) in
@@ -1020,7 +1031,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
     (* The result for this iteration. *)
     let result =
       let score = convert_score score tt root ~pv ~mate ~mated in
-      Result.Fields.create ~pv ~score ~nodes ~depth ~time in
+      Result.Fields.create ~pv ~score ~nodes ~depth ~seldepth ~time in
     iter result;
     (* Last iteration may have eaten up at least half the allocated time,
        so the next (deeper) iteration is likely to take longer without

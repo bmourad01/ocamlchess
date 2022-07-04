@@ -97,6 +97,7 @@ let position pos moves =
 
 let info_of_result root tt result =
   let depth = Search.Result.depth result in
+  let seldepth = Search.Result.seldepth result in
   let nodes = Search.Result.nodes result in
   let pv = Search.Result.pv result in
   (* Avoid division by zero here (the search may terminate in under a
@@ -107,6 +108,7 @@ let info_of_result root tt result =
   let pv = List.map pv ~f:Position.Legal.move in
   printf "%s\n%!" @@ Uci.Send.(to_string @@ Info Info.[
       Depth depth;
+      Seldepth seldepth;
       Nodes nodes;
       Score score;
       Nps nps;

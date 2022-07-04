@@ -126,6 +126,9 @@ module Result : sig
   (** The depth that was searched to in order to obtain the result. *)
   val depth : t -> int
 
+  (** The maximum distance (ply) from the root that was reached. *)
+  val seldepth : t -> int
+
   (** The total time (in milliseconds) taken to complete the search.. *)
   val time : t -> int
 end
