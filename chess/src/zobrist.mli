@@ -38,8 +38,7 @@ module Table : sig
 
       [capacity] is the maximum number of slots allowed in the table.
       It is increased to the smallest power of two such that it is greater
-      than or equal to [capacity]. If [capacity <= 0], then [Invalid_argument]
-      is raised.
+      than or equal to [capacity].
 
       [replace] is the replacement strategy for the table.
   *)

@@ -268,12 +268,14 @@ let is_noisy = Fn.non is_quiet
 
 (* Our state for the entirety of the search. *)
 module State = struct
+  module Oa = Option_array
+
   type state = {
     start_time   : Time.t;
     nodes        : int;
     params       : params;
-    killer1      : Position.legal Option_array.t;
-    killer2      : Position.legal Option_array.t;
+    killer1      : Position.legal Oa.t;
+    killer2      : Position.legal Oa.t;
     move_history : int array;
     best_score   : int;
     prev_pv      : Position.legal list;
@@ -309,8 +311,8 @@ module State = struct
     start_time = Time.now ();
     nodes = 0;
     params;
-    killer1 = Option_array.create ~len:killer_size;
-    killer2 = Option_array.create ~len:killer_size;
+    killer1 = Oa.create ~len:killer_size;
+    killer2 = Oa.create ~len:killer_size;
     move_history = Array.create ~len:move_history_size 0;
     best_score = -inf;
     prev_pv = [];
@@ -329,10 +331,10 @@ module State = struct
   let inc_nodes st = {st with nodes = st.nodes + 1}
 
   (* Get the first killer move. *)
-  let killer1 ply st = Option_array.get st.killer1 ply
+  let killer1 ply st = Oa.get st.killer1 ply
 
   (* Get the second killer move. *)
-  let killer2 ply st = Option_array.get st.killer2 ply
+  let killer2 ply st = Oa.get st.killer2 ply
 
   (* Is `m` a killer move? *)
   let is_killer m ply st = match killer1 ply st with
@@ -344,8 +346,8 @@ module State = struct
   (* Update the killer move for a particular ply. *)
   let update_killer ply m st =
     killer1 ply st |> Option.iter
-      ~f:(Option_array.set_some st.killer2 ply);
-    Option_array.set_some st.killer1 ply m
+      ~f:(Oa.set_some st.killer2 ply);
+    Oa.set_some st.killer1 ply m
 
   let history_idx m =
     let c = Piece.Color.to_int @@ Position.active @@ Legal.parent m in
@@ -606,12 +608,11 @@ module Quiescence = struct
   and delta_margin = Piece.Kind.value Queen * Eval.material_weight
 
   (* Search a branch of the current node. *)
-  and branch ~beta ~eval ~ply = fun alpha (m, order) ->
+  and branch ~beta ~eval ~ply = fun alpha (m, _) ->
     let open Continue_or_stop in
-    if order < 0 then return @@ Stop alpha
-    else let pos = Legal.new_position m in
-      go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>| fun score ->
-      if -score >= beta then Stop beta else Continue (max (-score) alpha)
+    let pos = Legal.new_position m in
+    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>| fun score ->
+    if -score >= beta then Stop beta else Continue (max (-score) alpha)
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm

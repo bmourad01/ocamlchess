@@ -121,8 +121,7 @@ module Rook_open_file = struct
       List.init Square.File.count ~f:Bb.file_exn |>
       List.fold ~init:0 ~f:(fun acc f ->
           let b = Bb.(f & rook) in
-          if Bb.(b <> empty && b = (f & occupied))
-          then acc + 1 else acc) in
+          acc + Bool.to_int Bb.(b <> empty && b = (f & occupied))) in
     score * start_weight, score * end_weight
 end
 
