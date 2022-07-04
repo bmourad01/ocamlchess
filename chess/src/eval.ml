@@ -150,6 +150,19 @@ module King_danger = struct
     | Black -> !bk * start_weight, !bk * end_weight
 end
 
+module King_pawn_shield = struct
+  let start_weight = 12
+  let end_weight = 5
+
+  let evaluate = evaluate @@ fun pos c ->
+    let b = Position.board_of_color pos c in
+    let king = Bb.(b & Position.king pos) in
+    let pawn = Bb.(b & Position.pawn pos) in
+    let king_sq = Bb.first_set_exn king in
+    let score = Bb.(count (pawn & Pre.king king_sq)) in
+    score * start_weight, score * end_weight
+end
+
 (* Pawn structure. *)
 module Pawns = struct
   module Passed = struct
@@ -237,20 +250,6 @@ module Pawns = struct
       score * start_weight, score * end_weight
   end
 
-  (* Pawns shielding the king. *)
-  module Shield = struct
-    let start_weight = 12
-    let end_weight = 5
-
-    let go pos c =
-      let b = Position.board_of_color pos c in
-      let king = Bb.(b & Position.king pos) in
-      let pawn = Bb.(b & Position.pawn pos) in
-      let king_sq = Bb.first_set_exn king in
-      let score = Bb.(count (pawn & Pre.king king_sq)) in
-      score * start_weight, score * end_weight
-  end
-
   module Chained = struct
     let start_weight = 5
     let end_weight = 11
@@ -265,15 +264,25 @@ module Pawns = struct
       score * start_weight, score * end_weight
   end
 
+  let table = Zobrist.Table.create
+      ~capacity:0x40000
+      ~replace:(fun ~prev:_ _ _ -> true)
+      ~age:(fun _ -> true)
+
   (* Evaluate the overall pawn structure. *)
   let evaluate = evaluate @@ fun pos c ->
-    Array.fold ~init:(0, 0) ~f:sum2 [|
-      Passed.go pos c;
-      Doubled.go pos c;
-      Isolated.go pos c;
-      Chained.go pos c;
-      Shield.go pos c;
-    |]
+    let h = Position.pawn_hash pos in
+    match Zobrist.Table.get_entry table h with
+    | Some scores -> scores
+    | None ->
+      let scores = List.fold ~init:(0, 0) ~f:sum2 [
+          Passed.go pos c;
+          Doubled.go pos c;
+          Isolated.go pos c;
+          Chained.go pos c;
+        ] in
+      Zobrist.Table.set table h scores;
+      scores
 end
 
 module Placement = struct
@@ -485,16 +494,17 @@ let go pos =
   let material = Material.evaluate pos in
   let king_danger = ref 0, ref 0 in
   let mobility = Mobility.evaluate king_danger pos in
-  let start, end_ = Array.fold ~init:(0, 0) ~f:sum2 [|
+  let start, end_ = List.fold ~init:(0, 0) ~f:sum2 [
       material;
       mobility;
       Rook_open_file.evaluate pos;
       Bishop_pair.evaluate pos;
       King_danger.evaluate king_danger pos;
+      King_pawn_shield.evaluate pos;
       Pawns.evaluate pos;
       Placement.evaluate pos;
       Mop_up.evaluate pos @@ snd material;
-    |] in
+    ] in
   let start, end_ = match Position.active pos with
     | White -> start, end_
     | Black -> -start, -end_ in

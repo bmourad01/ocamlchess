@@ -46,6 +46,7 @@ module T = struct
     mutable halfmove   : int;
     mutable fullmove   : int;
     mutable hash       : Zobrist.key;
+    mutable pawn_hash  : Zobrist.key;
   } [@@deriving compare, equal, fields, sexp]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
@@ -67,6 +68,7 @@ module T = struct
     halfmove   = pos.halfmove;
     fullmove   = pos.fullmove;
     hash       = pos.hash;
+    pawn_hash  = pos.pawn_hash;
   }
 end
 
@@ -226,6 +228,11 @@ module Hash = struct
       match pos.active with
       | White -> M.update Update.active_player
       | Black -> M.return ()
+    end 0L
+
+  let of_pawns pos = Monad.State.exec begin
+      collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
+          M.update @@ Update.piece c Pawn sq)
     end 0L
 end
 
@@ -928,10 +935,11 @@ module Fen = struct
       parse_en_passant en_passant >>= fun en_passant ->
       parse_halfmove halfmove >>= fun halfmove ->
       parse_fullmove fullmove >>= fun fullmove ->
-      let pos = Fields.create ~hash:0L
+      let pos = Fields.create ~hash:0L ~pawn_hash:0L
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove in
       set_hash pos @@ Hash.of_position pos;
+      set_pawn_hash pos @@ Hash.of_pawns pos;
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
 
@@ -985,6 +993,9 @@ module Makemove = struct
 
   let[@inline] update_hash pos ~f = set_hash pos @@ f pos.hash
 
+  let[@inline] update_pawn_hash sq c pos =
+    set_pawn_hash pos @@ Hash.Update.piece c Pawn sq pos.pawn_hash
+
   let[@inline] map_color c pos ~f = match c with
     | Piece.White -> set_white pos @@ f @@ white pos
     | Piece.Black -> set_black pos @@ f @@ black pos
@@ -1003,6 +1014,10 @@ module Makemove = struct
     map_color c pos ~f;
     map_kind k pos ~f;
     update_hash pos ~f:(Hash.Update.piece c k sq);
+    begin match k with
+      | Pawn -> update_pawn_hash sq c pos
+      | _ -> ()
+    end;
     k
 
   let set = Fn.flip Bb.set
