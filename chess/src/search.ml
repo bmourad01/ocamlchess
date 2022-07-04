@@ -762,7 +762,7 @@ module Main = struct
     | Pawn   -> Bb.(count (Pre.pawn_capture dst c & them & (minor + major)))
     | Knight -> Bb.(count (Pre.knight dst & them & major))
     | Bishop -> Bb.(count (bishop () & them & major))
-    | Rook   -> Bb.(count (rook () & them & major))
+    | Rook   -> Bb.(count (rook () & them & queen))
     | Queen  -> 0
     | King   -> 0
 
