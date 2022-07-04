@@ -3,6 +3,7 @@ open Monads.Std
 open Bap_future.Std
 
 module Bb = Bitboard
+module Pre = Precalculated
 module Legal = Position.Legal
 
 module Limits = struct
@@ -271,6 +272,7 @@ module State = struct
     best_score         : int;
     stopped            : bool;
     seldepth           : int;
+    evals              : int array;
   } [@@deriving fields]
 
   type 'a m = {run : 'r. ('a -> state -> 'r) -> state -> 'r}
@@ -296,6 +298,7 @@ module State = struct
 
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
+  let eval_size = Piece.Color.count * max_ply
 
   let create ~limits ~root ~history ~tt =
     (* Make sure that the root position is in our history. *)
@@ -316,6 +319,7 @@ module State = struct
       best_score = -inf;
       stopped = false;
       seldepth = 0;
+      evals = Array.create ~len:eval_size 0;
     }
 
   let elapsed st =
@@ -370,6 +374,21 @@ module State = struct
   let move_history_max pos st = match Position.active pos with
     | White -> st.move_history_max_w
     | Black -> st.move_history_max_b
+
+  let eval_idx pos ply =
+    let c = Piece.Color.to_int @@ Position.active pos in
+    ply * Piece.Color.count + c
+
+  let update_eval pos ply eval st =
+    let i = eval_idx pos ply in
+    Array.unsafe_set st.evals i eval
+
+  let improving pos ply eval st = match eval with
+    | Some eval when ply >= 2 ->
+      let i = eval_idx pos (ply - 2) in
+      eval > Array.unsafe_get st.evals i
+    | Some _ -> true
+    | None -> false
 
   let stop st = {st with stopped = true}
 
@@ -658,9 +677,10 @@ module Quiescence = struct
     let open Continue_or_stop in
     let pos = Legal.new_position m in
     State.(update @@ push_history pos) >>= fun () ->
-    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>= fun score ->
+    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
+    negm >>= fun score ->
     State.(update @@ pop_history pos) >>| fun () ->
-    if -score >= beta then Stop beta else Continue (max (-score) alpha)
+    if score >= beta then Stop beta else Continue (max score alpha)
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -701,6 +721,51 @@ module Main = struct
     let pv = equal_node node Pv in
     Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
+  let threats pos c =
+    let all = Position.all_board pos in
+    let us = Position.board_of_color pos c in
+    let them = Bb.(all - us) in
+    let knight = Position.knight pos in
+    let bishop = Position.bishop pos in
+    let rook = Position.rook pos in
+    let queen = Position.queen pos in
+    let major = Bb.(rook + queen) in
+    let minor = Bb.(knight + bishop) in
+    let pawn_att = Position.Attacks.pawn pos c in
+    let knight_att = Position.Attacks.knight pos c in
+    let bishop_att = Position.Attacks.bishop pos c in
+    let rook_att = Position.Attacks.rook pos c in
+    (* Attacks from minor to major pieces. *)
+    Bb.(count ((knight_att + bishop_att) & them & major)) +
+    (* Attacks from rook to queen. *)
+    Bb.(count (rook_att & them & queen)) +
+    (* Attacks from pawns to minor and major pieces. *)
+    Bb.(count (pawn_att & them & (minor + major)))
+
+  let new_threats m =
+    let pos = Legal.parent m in
+    let c = Position.active pos in
+    let all = Position.all_board pos in
+    let us = Position.board_of_color pos c in
+    let them = Bb.(all - us) in
+    let knight = Position.knight pos in
+    let bishop = Position.bishop pos in
+    let rook = Position.rook pos in
+    let queen = Position.queen pos in
+    let major = Bb.(rook + queen) in
+    let minor = Bb.(knight + bishop) in
+    let src, dst, _ = Move.decomp @@ Legal.move m in
+    let p = Position.piece_at_square_exn pos src in
+    let bishop () = Bb.(Pre.(bishop dst all - bishop src all)) in
+    let rook () = Bb.(Pre.(rook dst all - rook src all)) in
+    match Piece.kind p with
+    | Pawn   -> Bb.(count (Pre.pawn_capture dst c & them & (minor + major)))
+    | Knight -> Bb.(count (Pre.knight dst & them & major))
+    | Bishop -> Bb.(count (bishop () & them & major))
+    | Rook   -> Bb.(count (rook () & them & major))
+    | Queen  -> 0
+    | King   -> 0
+
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
     check_limits >>= function
@@ -731,15 +796,17 @@ module Main = struct
   (* Search the available moves for the given position. *)
   and with_moves ?(ttentry = None) ?(null = false)
       pos moves ~alpha ~beta ~ply ~depth ~check ~node =
-    let eval = eval pos ~check ~ttentry in
+    eval pos ~ply ~check ~ttentry >>= fun eval ->
+    State.(gets @@ improving pos ply eval) >>= fun improving ->
     try_pruning_before_branch pos moves
-      ~eval ~alpha ~beta ~ply ~depth ~check ~null ~node >>= function
+      ~eval ~alpha ~beta ~ply ~depth ~check
+      ~null ~node ~improving >>= function
     | Some score -> leaf score ~ply
     | None -> State.(gets tt) >>= fun tt ->
       Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
-      let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
+      let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
       Order.Iterator.fold_until next ~init:0 ~finish ~f >>| fun score ->
       Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
       score
@@ -751,33 +818,48 @@ module Main = struct
      Note that `eval` should be `None` if the position is in check.
   *)
   and try_pruning_before_branch pos moves
-      ~eval ~alpha ~beta ~ply ~depth ~check ~null ~node = match eval with
+      ~eval ~alpha ~beta ~ply ~depth ~check
+      ~null ~node ~improving =
+    match eval with
     | None -> return None
     | Some _ when equal_node node Pv || null -> return None
-    | Some eval -> match rfp ~depth ~eval ~beta with
+    | Some eval ->
+      let threats =
+        threats pos @@
+        Piece.Color.opposite @@
+        Position.active pos in
+      match rfp ~depth ~eval ~beta ~threats ~improving with
       | Some _ as score -> return score
-      | None -> nmp pos ~eval ~beta ~ply ~depth >>= function
+      | None -> nmp pos ~eval ~beta ~ply ~depth ~threats >>= function
         | Some _ as beta -> return beta
         | None -> razor pos moves ~eval ~alpha ~beta ~ply ~depth
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
      function (or whether to skip altogether). *)
-  and eval pos ~check ~ttentry =
+  and eval pos ~ply ~check ~ttentry =
     if not check then
       let open Tt.Entry in
       let eval = Eval.go pos in
-      match ttentry with
-      | Some {score; node = Cut; _} when score > eval -> Some score
-      | Some {score; node = All; _} when score < eval -> Some score
-      | None | Some _ -> Some eval
-    else None
+      let score = match ttentry with
+        | Some {score; node = Cut; _} when score > eval -> score
+        | Some {score; node = All; _} when score < eval -> score
+        | None | Some _ -> eval in
+      State.(gets @@ update_eval pos ply score) >>| fun () ->
+      Some score
+    else return None
 
   (* Search a branch of the current node. *)
-  and branch t ~eval ~beta ~depth ~ply ~check ~node = fun i (m, order) ->
+  and branch t ~eval ~beta ~depth ~ply
+      ~check ~node ~improving = fun i (m, order) ->
     let open Continue_or_stop in
     let[@inline] next () = return @@ Continue (i + 1) in
-    if not @@ should_skip m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node ~order
-    then search_branch t m ~i ~beta ~ply ~depth ~check ~node >>= fun score ->
+    if not @@ should_skip m
+        ~eval ~alpha:t.alpha ~beta
+        ~depth ~check ~node ~order then
+      (* Explore the child node. *)
+      search_branch t m
+        ~i ~beta ~ply ~depth ~check
+        ~node ~order ~improving >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score;
       if score >= beta then
@@ -787,8 +869,8 @@ module Main = struct
     else next ()
 
   (* Perform the actual recursion into the child node. *)
-  and search_branch t m ~i ~beta ~ply ~depth ~check ~node =
-    lmr t m ~i ~beta ~ply ~depth ~check ~node >>= fun r ->
+  and search_branch t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
+    lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving >>= fun r ->
     Legal.new_position m |> pvs t ~i ~r ~beta ~ply ~depth ~node
 
   (* These pruning heuristics depend on conditions that change as we continue
@@ -851,12 +933,16 @@ module Main = struct
      If our score is within a margin above beta, then it is likely too
      good, and should cause a cutoff.
   *)
-  and rfp ~depth ~eval ~beta =
-    Option.some_if
-      (depth <= rfp_max_depth && eval - rfp_margin depth >= beta)
-      eval
+  and rfp ~depth ~eval ~beta ~threats ~improving =
+    Option.some_if begin
+      depth <= rfp_max_depth &&
+      eval - rfp_margin depth threats improving >= beta
+    end eval
 
-  and rfp_margin depth = Piece.Kind.value Pawn * Eval.material_weight * depth
+  and rfp_margin depth threats improving =
+    let r = Bool.to_int (improving && (threats <= 0)) in
+    Piece.Kind.value Pawn * Eval.material_weight * (depth - r)
+
   and rfp_max_depth = 6
 
   (* Null move pruning.
@@ -865,8 +951,9 @@ module Main = struct
      response still produces a beta cutoff, then we know this position
      is unlikely.
   *)
-  and nmp pos ~eval ~beta ~ply ~depth =
-    if eval >= beta
+  and nmp pos ~eval ~beta ~ply ~depth ~threats =
+    if threats <= 0
+    && eval >= beta
     && depth >= nmp_min_depth
     && not @@ Eval.is_endgame pos then
       let r = if depth <= 6 then 2 else 3 in
@@ -908,18 +995,19 @@ module Main = struct
      in the most critical lines of play, but these lines are few and far
      between, so most of the impact should be on less promising lines.
   *)
-  and lmr t m ~i ~beta ~ply ~depth ~check ~node =
+  and lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
     if not check
     && not (equal_node node Pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && is_quiet m
-    then State.(gets @@ is_killer m ply) >>| function
-      | true -> 0
-      | false -> 1
+    && order < 0
+    then
+      let new_threats = new_threats m in
+      let r = 1 + Bool.to_int (not improving) - new_threats in
+      return @@ max r 0
     else return 0
 
-  and lmr_min_depth = 2
+  and lmr_min_depth = 3
   and lmr_min_index = 1
 
   (* Principal variation search.
@@ -955,11 +1043,12 @@ module Main = struct
   let root moves ~alpha ~beta ~depth =
     State.get () >>= fun {root; tt; _} ->
     let check = Position.in_check root in
-    let eval = eval root ~check ~ttentry:None in
-    Order.score moves ~ply:0 ~pos:root ~tt >>= fun (best, next) ->
+    let ply = 0 and ttentry = None and node = Pv and improving = true in
+    eval root ~ply ~check ~ttentry >>= fun eval ->
+    Order.score moves ~ply ~pos:root ~tt >>= fun (best, next) ->
     let t = new_search ~alpha ~best () in
     let finish _ = return t.alpha in
-    let f = branch t ~eval ~beta ~depth ~ply:0 ~check ~node:Pv in
+    let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
     Order.Iterator.fold_until next ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt root ~depth ~score ~best:t.best ~node:t.node;
     score, t.best
