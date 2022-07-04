@@ -256,18 +256,19 @@ module State = struct
   module Oa = Option_array
 
   type state = {
-    limits           : limits;
-    root             : Position.t;
-    history          : int Int64.Map.t;
-    tt               : tt;
-    start_time       : Time.t;
-    nodes            : int;
-    killer1          : Position.legal Oa.t;
-    killer2          : Position.legal Oa.t;
-    move_history     : int array;
-    move_history_max : int;
-    best_score       : int;
-    stopped          : bool;
+    limits             : limits;
+    root               : Position.t;
+    history            : int Int64.Map.t;
+    tt                 : tt;
+    start_time         : Time.t;
+    nodes              : int;
+    killer1            : Position.legal Oa.t;
+    killer2            : Position.legal Oa.t;
+    move_history       : int array;
+    move_history_max_w : int;
+    move_history_max_b : int;
+    best_score         : int;
+    stopped            : bool;
   } [@@deriving fields]
 
   type 'a m = {run : 'r. ('a -> state -> 'r) -> state -> 'r}
@@ -308,7 +309,8 @@ module State = struct
       killer1 = Oa.create ~len:killer_size;
       killer2 = Oa.create ~len:killer_size;
       move_history = Array.create ~len:move_history_size 0;
-      move_history_max = 1;
+      move_history_max_w = 1;
+      move_history_max_b = 1;
       best_score = -inf;
       stopped = false;
     }
@@ -355,7 +357,13 @@ module State = struct
     let i = history_idx m in
     let d = Array.unsafe_get st.move_history i + (depth * depth) in
     Array.unsafe_set st.move_history i d;
-    {st with move_history_max = max d st.move_history_max}
+    match Position.active @@ Legal.parent m with
+    | White -> {st with move_history_max_w = max d st.move_history_max_w}
+    | Black -> {st with move_history_max_b = max d st.move_history_max_b}
+
+  let move_history_max pos st = match Position.active pos with
+    | White -> st.move_history_max_w
+    | Black -> st.move_history_max_b
 
   let stop st = {st with stopped = true}
 
@@ -560,7 +568,7 @@ module Order = struct
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets move_history) >>= fun move_history ->
-    State.(gets move_history_max) >>| fun move_history_max ->
+    State.(gets @@ move_history_max pos) >>| fun move_history_max ->
     let is_hash = is_hash pos tt in
     let killer m = match killer1, killer2 with
       | Some k, _ when Legal.same m k -> killer1_offset
