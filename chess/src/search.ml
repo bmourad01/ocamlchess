@@ -395,14 +395,14 @@ type 'a state = 'a State.m
 let return = State.return
 let negm = Fn.compose return Int.neg
 
-let leaf score ~ply =
-  begin State.update @@ fun st -> {
-      st with seldepth = max st.seldepth ply;
-    } end >>| fun () -> score
+let leaf score ~ply = begin State.update @@ fun st -> {
+    st with seldepth = max st.seldepth ply;
+  } end >>| fun () -> score
 
 let has_reached_limits =
   State.(gets elapsed) >>= fun elapsed ->
-  State.get () >>| fun {limits; nodes; _} ->
+  State.(gets limits) >>= fun limits ->
+  State.(gets nodes) >>| fun nodes ->
   Limits.stopped limits || begin
     match Limits.nodes limits with
     | Some n when nodes >= n -> true
