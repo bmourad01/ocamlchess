@@ -22,6 +22,7 @@ let print_res res =
   printf "Time taken: %dms\n%!" @@ Search.Result.time res;
   printf "Principal variation: %s\n%!" pv;
   printf "Depth: %d\n%!" @@ Search.Result.depth res;
+  printf "Maximum ply reached: %d\n%!" @@ Search.Result.seldepth res;
   printf "Nodes evaluated: %d\n%!" @@ Search.Result.nodes res;
   printf "Score: %s\n%!" score;
   printf "\n%!"
