@@ -257,13 +257,19 @@ module Pawns = struct
     let go pos c =
       let occupied = Position.all_board pos in
       let us = Position.board_of_color pos c in
-      let score =
-        Bb.(us & Position.pawn pos) |> Bb.fold ~init:0 ~f:(fun acc sq ->
-            let mask = Bb.(Pre.bishop sq occupied & Pre.king sq) in
-            acc + Bb.(count (mask & us))) in
+      let pawn = Bb.(us & Position.pawn pos) in
+      let score = Bb.fold pawn ~init:0 ~f:(fun acc sq ->
+          (* Count the number of pawns that are part of a chain. This
+             is the immediate diagonal squares that are surrounding any
+             particular pawn. *)
+          let mask = Bb.(Pre.bishop sq occupied & Pre.king sq) in
+          acc + Bb.(count (mask & pawn))) in
       score * start_weight, score * end_weight
   end
 
+  (* Pawn structure usually doesn't change during the search, so it's
+     possible to cache the previous evaluation results to get a
+     performance improvement. *)
   let table = Zobrist.Table.create
       ~capacity:0x40000
       ~replace:(fun ~prev:_ _ _ -> true)
