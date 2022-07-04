@@ -413,46 +413,6 @@ let drawn pos =
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Order = struct
-  let good_capture_offset = 100
-  let bad_capture_offset = -100
-  let promote_offset = 96
-  let killer1_offset = 95
-  let killer2_offset = 94
-  let castle_offset = 93
-  let history_offset = -90
-  let history_max = 180
-
-  (* Check if a particular move has been evaluated already. *)
-  let is_hash pos tt =
-    let best =
-      Position.hash pos |> Zobrist.Table.get_entry tt |>
-      Option.bind ~f:(fun entry ->
-          match Tt.Entry.node entry with
-          | Pv | Cut -> Some (Tt.Entry.best entry)
-          | _ -> None) in
-    fun m -> Option.exists best ~f:(Legal.same m)
-
-  (* Prioritize promotions by the value of the piece *)
-  let promote ?(offset = promote_offset) m =
-    Legal.move m |> Move.promote |>
-    Option.value_map ~default:0 ~f:(fun k ->
-        let k = Move.Promote.to_piece_kind k in
-        offset + Piece.Kind.value k * Eval.material_weight)
-
-  (* This is exactly what the OCaml standard library implementation does,
-     except we fuse it with a `map` operation so that we avoid allocating
-     a new list or array. *)
-  let array_of_list_map ~f = function
-    | [] -> [||]
-    | (x :: xs) as l ->
-      let a = Array.create ~len:(List.length l) @@ f x in
-      let rec fill i = function
-        | [] -> a
-        | x :: xs ->
-          Array.unsafe_set a i @@ f x;
-          fill (succ i) xs in
-      fill 1 xs
-
   (* We use an iterator object that incrementally applies insertion sort to
      the list. In the context of alpha-beta pruning, we may not actually
      visit all the moves for a given position, so it makes no sense to waste
@@ -526,6 +486,53 @@ module Order = struct
       fun it ~init -> aux init it
   end
 
+  let good_capture_offset = 100
+  let bad_capture_offset = -100
+  let promote_offset = 96
+  let killer1_offset = 95
+  let killer2_offset = 94
+  let castle_offset = 93
+  let history_offset = -90
+  let history_max = 180
+
+  (* Check if a particular move has been evaluated already. *)
+  let is_hash pos tt =
+    let best =
+      Position.hash pos |> Zobrist.Table.get_entry tt |>
+      Option.bind ~f:(fun entry ->
+          match Tt.Entry.node entry with
+          | Pv | Cut -> Some (Tt.Entry.best entry)
+          | _ -> None) in
+    fun m -> Option.exists best ~f:(Legal.same m)
+
+  let promote_by_value m =
+    Legal.move m |> Move.promote |>
+    Option.value_map ~default:0 ~f:(fun k ->
+        Piece.Kind.value @@ Move.Promote.to_piece_kind k)
+
+  let promote_by_offset m =
+    let open Move.Promote in
+    Legal.move m |> Move.promote |>
+    Option.value_map ~default:0 ~f:(function
+        | Queen -> promote_offset + 3
+        | Rook -> promote_offset + 2
+        | Bishop -> promote_offset + 1
+        | Knight -> promote_offset)
+
+  (* This is exactly what the OCaml standard library implementation does,
+     except we fuse it with a `map` operation so that we avoid allocating
+     a new list or array. *)
+  let array_of_list_map ~f = function
+    | [] -> [||]
+    | (x :: xs) as l ->
+      let a = Array.create ~len:(List.length l) @@ f x in
+      let rec fill i = function
+        | [] -> a
+        | x :: xs ->
+          Array.unsafe_set a i @@ f x;
+          fill (succ i) xs in
+      fill 1 xs
+
   (* Score each move according to `eval`. Note that `moves` is assumed to be
      non-empty. *)
   let score_aux moves ~eval =
@@ -542,19 +549,19 @@ module Order = struct
 
   (* Score the moves for normal search. Priority (from best to worst):
 
-     1. Moves that were part of the previous PV at the current ply.
-     2. Moves that were cached in the TT as PV or CUT nodes.
-     3. Captures that produced a non-negative SEE score.
-     4. Killer moves.
+     1. Moves that were cached in the TT as PV or CUT nodes.
+     2. Captures that produced a non-negative SEE score.
+     3. Killer moves.
+     4. Castling moves.
      5. Move history score (the "distance" heuristic).
      6. Captures that produced a negative SEE score.
   *)
   let score moves ~ply ~pos ~tt =
-    let is_hash = is_hash pos tt in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets move_history) >>= fun move_history ->
     State.(gets move_history_max) >>| fun move_history_max ->
+    let is_hash = is_hash pos tt in
     let killer m = match killer1, killer2 with
       | Some k, _ when Legal.same m k -> killer1_offset
       | _, Some k when Legal.same m k -> killer2_offset
@@ -571,7 +578,7 @@ module Order = struct
           | Some see when see < 0 ->
             bad_capture_offset + see * Eval.material_weight
           | _ ->
-            let promote = promote m in
+            let promote = promote_by_offset m in
             if promote <> 0 then promote
             else
               let killer = killer m in
@@ -585,11 +592,13 @@ module Order = struct
   let qscore = function
     | [] -> Iterator.empty
     | moves -> Iterator.create @@ fst @@ score_aux moves ~eval:(fun m ->
-        let p = promote m ~offset:0 in
-        if p <> 0 then p
-        else match See.go m with
-          | Some value -> value * Eval.material_weight
-          | None -> 0)
+        if Legal.is_en_passant m then 0
+        else
+          let p = promote_by_value m in
+          if p <> 0 then p
+          else match See.go m with
+            | Some value -> value
+            | None -> 0)
 end
 
 (* Quiescence search is used when we reach our maximum depth for the main
