@@ -382,16 +382,11 @@ module State = struct
     let c = Piece.Color.to_int @@ Position.active pos in
     ply * Piece.Color.count + c
 
+  (* Update the evaluation history and return whether our position is
+     improving or not *)
   let update_eval pos ply eval st =
-    let i = eval_idx pos ply in
-    Array.unsafe_set st.evals i eval
-
-  let improving pos ply eval st = match eval with
-    | Some eval when ply >= 2 ->
-      let i = eval_idx pos (ply - 2) in
-      eval > Array.unsafe_get st.evals i
-    | Some _ -> true
-    | None -> false
+    Array.unsafe_set st.evals (eval_idx pos ply) eval;
+    ply < 2 || eval > Array.unsafe_get st.evals (eval_idx pos (ply - 2))
 
   let stop st = {st with stopped = true}
 
@@ -799,8 +794,7 @@ module Main = struct
   (* Search the available moves for the given position. *)
   and with_moves ?(ttentry = None) ?(null = false)
       pos moves ~alpha ~beta ~ply ~depth ~check ~node =
-    eval pos ~ply ~check ~ttentry >>= fun eval ->
-    State.(gets @@ improving pos ply eval) >>= fun improving ->
+    eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
     try_pruning_before_branch pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check
       ~null ~node ~improving >>= function
@@ -847,9 +841,9 @@ module Main = struct
         | Some {score; node = Cut; _} when score > eval -> score
         | Some {score; node = All; _} when score < eval -> score
         | None | Some _ -> eval in
-      State.(gets @@ update_eval pos ply score) >>| fun () ->
-      Some score
-    else return None
+      State.(gets @@ update_eval pos ply score) >>| fun improving ->
+      Some score, improving
+    else return (None, false)
 
   (* Search a branch of the current node. *)
   and branch t ~eval ~beta ~depth ~ply
@@ -1042,8 +1036,8 @@ module Main = struct
   let root moves ~alpha ~beta ~depth =
     State.get () >>= fun {root; tt; _} ->
     let check = Position.in_check root in
-    let ply = 0 and ttentry = None and node = Pv and improving = true in
-    eval root ~ply ~check ~ttentry >>= fun eval ->
+    let ply = 0 and ttentry = None and node = Pv in
+    eval root ~ply ~check ~ttentry >>= fun (eval, improving) ->
     Order.score moves ~ply ~pos:root ~tt >>= fun (best, next) ->
     let t = new_search ~alpha ~best () in
     let finish _ = return t.alpha in
