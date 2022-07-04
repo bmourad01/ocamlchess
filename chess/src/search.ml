@@ -245,21 +245,6 @@ end
 
 type result = Result.t
 
-(* The input parameters to the search. *)
-type params = {
-  limits  : limits;
-  root    : Position.t;
-  history : int Int64.Map.t;
-  tt      : tt;
-} [@@deriving fields]
-
-let create_search ~limits ~root ~history ~tt =
-  let history =
-    (* Make sure that the root position is in our history. *)
-    Position.hash root |> Map.update history ~f:(function
-        | Some n -> n | None -> 1) in
-  Fields_of_params.create ~limits ~root ~history ~tt
-
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
   Option.is_none @@ Move.promote @@ Legal.move m
@@ -271,15 +256,18 @@ module State = struct
   module Oa = Option_array
 
   type state = {
-    start_time   : Time.t;
-    nodes        : int;
-    params       : params;
-    killer1      : Position.legal Oa.t;
-    killer2      : Position.legal Oa.t;
-    move_history : int array;
-    best_score   : int;
-    prev_pv      : Position.legal list;
-    stopped      : bool;
+    limits           : limits;
+    root             : Position.t;
+    history          : int Int64.Map.t;
+    tt               : tt;
+    start_time       : Time.t;
+    nodes            : int;
+    killer1          : Position.legal Oa.t;
+    killer2          : Position.legal Oa.t;
+    move_history     : int array;
+    move_history_max : int;
+    best_score       : int;
+    stopped          : bool;
   } [@@deriving fields]
 
   type 'a m = {run : 'r. ('a -> state -> 'r) -> state -> 'r}
@@ -301,30 +289,36 @@ module State = struct
     let update f = {run = fun g s -> g () (f s)}
     let run x s = x.run (fun x s -> x, s) s
     let update_if cnd f = if cnd then update f else return ()
-    let gets_if cnd f ~default = if cnd then gets f else return default
   end
 
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
 
-  let create params = {
-    start_time = Time.now ();
-    nodes = 0;
-    params;
-    killer1 = Oa.create ~len:killer_size;
-    killer2 = Oa.create ~len:killer_size;
-    move_history = Array.create ~len:move_history_size 0;
-    best_score = -inf;
-    prev_pv = [];
-    stopped = false;
-  }
+  let create ~limits ~root ~history ~tt =
+    (* Make sure that the root position is in our history. *)
+    let history =
+      Position.hash root |> Map.update history ~f:(function
+          | Some n -> n | None -> 1) in {
+      limits;
+      root;
+      history;
+      tt;
+      start_time = Time.now ();
+      nodes = 0;
+      killer1 = Oa.create ~len:killer_size;
+      killer2 = Oa.create ~len:killer_size;
+      move_history = Array.create ~len:move_history_size 0;
+      move_history_max = 1;
+      best_score = -inf;
+      stopped = false;
+    }
 
   let elapsed st =
     int_of_float @@ Time.(Span.to_ms @@ diff (now ()) st.start_time)
 
   (* Start a new search while reusing the transposition table. *)
-  let new_iter best_score prev_pv st = {
-    st with best_score; prev_pv; stopped = false
+  let new_iter best_score st = {
+    st with best_score; stopped = false
   }
 
   (* Increment the number of nodes we've evaluated. *)
@@ -360,19 +354,36 @@ module State = struct
   let update_move_history m depth st =
     let i = history_idx m in
     let d = Array.unsafe_get st.move_history i + (depth * depth) in
-    Array.unsafe_set st.move_history i d
+    Array.unsafe_set st.move_history i d;
+    {st with move_history_max = max d st.move_history_max}
 
   let stop st = {st with stopped = true}
+
+  let push_history pos st =
+    let history =
+      Position.hash pos |> Map.update st.history ~f:(function
+          | Some n -> n + 1
+          | None -> 1) in
+    {st with history}
+
+  let pop_history pos st =
+    let history =
+      Position.hash pos |> Map.change st.history ~f:(function
+          | None | Some 1 -> None
+          | Some n -> Some (n - 1)) in
+    {st with history}
 end
 
 open State.Syntax
+
+type 'a state = 'a State.m
 
 let return = State.return
 let negm = Fn.compose return Int.neg
 
 let has_reached_limits =
   State.(gets elapsed) >>= fun elapsed ->
-  State.get () >>| fun {nodes; params = {limits; _}; _} ->
+  State.get () >>| fun {limits; nodes; _} ->
   Limits.stopped limits || begin
     match Limits.nodes limits with
     | Some n when nodes >= n -> true
@@ -386,14 +397,14 @@ let check_limits =
   State.(update_if result stop) >>| fun () -> result
 
 (* Will playing this position likely lead to a repetition draw? *)
-let check_repetition params pos =
-  Position.hash pos |> Map.find params.history |>
-  Option.value_map ~default:false ~f:(fun n -> n > 0)
+let check_repetition history pos =
+  Position.hash pos |> Map.find history |>
+  Option.value_map ~default:false ~f:(fun n -> n > 2)
 
 (* Will the position lead to a draw? *)
 let drawn pos =
-  State.(gets params) >>| fun params ->
-  check_repetition params pos ||
+  State.(gets history) >>| fun history ->
+  check_repetition history pos ||
   Position.halfmove pos >= 100 ||
   Position.is_insufficient_material pos
 
@@ -402,16 +413,14 @@ let drawn pos =
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Order = struct
-  let good_capture_offset = 4000
-  let promote_offset = 3000
-  let killer1_offset = 2000
-  let killer2_offset = 1000
-  let bad_capture_offset = -1000
-
-  (* Check if the move is in the previous PV at the current ply. *)
-  let is_pv pv ply = match List.nth pv ply with
-    | Some m -> Legal.same m
-    | None -> fun _ -> false
+  let good_capture_offset = 100
+  let bad_capture_offset = -100
+  let promote_offset = 96
+  let killer1_offset = 95
+  let killer2_offset = 94
+  let castle_offset = 93
+  let history_offset = -90
+  let history_max = 180
 
   (* Check if a particular move has been evaluated already. *)
   let is_hash pos tt =
@@ -455,6 +464,13 @@ module Order = struct
     val empty : t
     val create : move array -> t
     val next : t -> move Uopt.t
+
+    val fold_until :
+      t ->
+      init:'a ->
+      f:('a -> move -> ('a, 'b) Continue_or_stop.t state) ->
+      finish:('a -> 'b state) ->
+      'b state
   end = struct
     type move = Position.legal * int
 
@@ -498,6 +514,16 @@ module Order = struct
         it.index <- c + 1;
         Uopt.some result
       else Uopt.none
+
+    let fold_until =
+      let open Continue_or_stop in
+      let[@specialise] rec aux acc it ~f ~finish =
+        let x = next it in
+        if Uopt.is_some x then f acc @@ Uopt.unsafe_value x >>= function
+          | Continue y -> aux y it ~f ~finish
+          | Stop z -> return z
+        else finish acc in
+      fun it ~init -> aux init it
   end
 
   (* Score each move according to `eval`. Note that `moves` is assumed to be
@@ -524,32 +550,35 @@ module Order = struct
      6. Captures that produced a negative SEE score.
   *)
   let score moves ~ply ~pos ~tt =
-    State.(gets prev_pv) >>= fun pv ->
-    let is_pv = is_pv pv ply in
     let is_hash = is_hash pos tt in
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
-    State.(gets move_history) >>| fun move_history ->
+    State.(gets move_history) >>= fun move_history ->
+    State.(gets move_history_max) >>| fun move_history_max ->
     let killer m = match killer1, killer2 with
       | Some k, _ when Legal.same m k -> killer1_offset
       | _, Some k when Legal.same m k -> killer2_offset
       | _ -> 0 in
     let move_history m =
       let i = State.history_idx m in
-      Array.unsafe_get move_history i in
+      let h = Array.unsafe_get move_history i in
+      ((h * history_max) + move_history_max - 1) / move_history_max in
     let moves, best = score_aux moves ~eval:(fun m ->
-        if is_pv m then inf * 2
-        else if is_hash m then inf
+        if is_hash m then inf
         else match See.go m with
           | Some see when see >= 0 ->
             good_capture_offset + see * Eval.material_weight
           | Some see when see < 0 ->
             bad_capture_offset + see * Eval.material_weight
-          | _ -> let promote = promote m in
+          | _ ->
+            let promote = promote m in
             if promote <> 0 then promote
-            else let killer = killer m in
+            else
+              let killer = killer m in
               if killer <> 0 then killer
-              else move_history m) in
+              else match Legal.castle_side m with
+                | Some _ -> castle_offset
+                | None -> move_history m + history_offset) in
     best, Iterator.create moves
 
   (* Score the moves for quiescence search. *)
@@ -561,17 +590,6 @@ module Order = struct
         else match See.go m with
           | Some value -> value * Eval.material_weight
           | None -> 0)
-
-  (* Iterate using the thunk. *)
-  let fold_until =
-    let open Continue_or_stop in
-    let[@specialise] rec aux acc it ~f ~finish =
-      let x = Iterator.next it in
-      if Uopt.is_some x then f acc @@ Uopt.unsafe_value x >>= function
-        | Continue y -> aux y it ~f ~finish
-        | Stop z -> return z
-      else finish acc in
-    fun it ~init -> aux init it
 end
 
 (* Quiescence search is used when we reach our maximum depth for the main
@@ -596,7 +614,7 @@ module Quiescence = struct
     if eval >= beta then return beta
     else if delta pos ~eval ~alpha then return alpha
     else List.filter moves ~f:is_noisy |>
-         Order.qscore |> Order.fold_until
+         Order.qscore |> Order.Iterator.fold_until
            ~init:(max eval alpha)
            ~finish:return
            ~f:(branch ~beta ~eval ~ply)
@@ -611,7 +629,9 @@ module Quiescence = struct
   and branch ~beta ~eval ~ply = fun alpha (m, _) ->
     let open Continue_or_stop in
     let pos = Legal.new_position m in
-    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>| fun score ->
+    State.(update @@ push_history pos) >>= fun () ->
+    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>= fun score ->
+    State.(update @@ pop_history pos) >>| fun () ->
     if -score >= beta then Stop beta else Continue (max (-score) alpha)
 end
 
@@ -628,8 +648,10 @@ module Main = struct
   let new_search ?(alpha = -inf) ~best () = {best; alpha; node = All}
 
   let update_history_and_killer m ~ply ~depth =
-    State.(gets @@ update_killer ply m) >>= fun () ->
-    State.(gets_if (is_quiet m) (update_move_history m depth) ~default:())
+    if is_quiet m then
+      State.(gets @@ update_killer ply m) >>= fun () ->
+      State.(update @@ update_move_history m depth)
+    else return ()
 
   (* Beta cutoff. *)
   let cutoff t m ~ply ~depth =
@@ -647,7 +669,7 @@ module Main = struct
 
   (* Find a cached evaluation of the position. *)
   let lookup pos ~depth ~ply ~alpha ~beta ~node =
-    State.(gets params) >>| fun {tt; _} ->
+    State.(gets tt) >>| fun tt ->
     let pv = equal_node node Pv in
     Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
@@ -685,12 +707,12 @@ module Main = struct
     try_pruning_before_branch pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check ~null ~node >>= function
     | Some score -> return score
-    | None -> State.(gets params) >>= fun {tt; _} ->
+    | None -> State.(gets tt) >>= fun tt ->
       Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node in
-      Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
+      Order.Iterator.fold_until next ~init:0 ~finish ~f >>| fun score ->
       Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
       score
 
@@ -884,8 +906,12 @@ module Main = struct
       | Cut -> All
       | All -> Cut in
     let f ?(r = 0) alpha node =
+      State.(update @@ push_history pos) >>= fun () ->
       go pos ~node ~alpha ~beta:(-t.alpha)
-        ~ply:(ply + 1) ~depth:(depth - r - 1) >>= negm in
+        ~ply:(ply + 1) ~depth:(depth - r - 1) >>=
+      negm >>= fun score ->
+      State.(update @@ pop_history pos) >>| fun () ->
+      score in
     let zw = -t.alpha - 1 in
     let fw = -beta in
     if equal_node node Pv then
@@ -899,15 +925,14 @@ module Main = struct
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    State.(gets params) >>= fun {tt; root; _} ->
+    State.get () >>= fun {root; tt; _} ->
     let check = Position.in_check root in
     let eval = eval root ~check ~ttentry:None in
-    State.(gets params) >>= fun {tt; _} ->
     Order.score moves ~ply:0 ~pos:root ~tt >>= fun (best, next) ->
     let t = new_search ~alpha ~best () in
     let finish _ = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply:0 ~check ~node:Pv in
-    Order.fold_until next ~init:0 ~finish ~f >>| fun score ->
+    Order.Iterator.fold_until next ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt root ~depth ~score ~best:t.best ~node:t.node;
     score, t.best
 
@@ -962,8 +987,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
-  let {limits; tt; root; _} = st.params in
-  let nodes = st.nodes in
+  let State.{limits; tt; root; nodes; _} = st in
   (* If the search was stopped, use the previous completed result, if
      available. *)
   if Limits.stopped limits then match prev with
@@ -1002,7 +1026,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
       Option.value_map ~default:false ~f:(fun n -> List.length pv <= n * 2) in
     (* Continue iterating? *)
     if too_long || max_nodes || max_depth || mate then result
-    else next ~prev:(Some result) @@ State.new_iter score pv st
+    else next ~prev:(Some result) @@ State.new_iter score st
   end
 
 exception No_moves
@@ -1012,5 +1036,4 @@ let go ?(iter = ignore) ~root ~limits ~history ~tt () =
   | [] -> raise No_moves
   | moves ->
     iterdeep ~iter ~moves @@
-    State.create @@
-    create_search ~root ~limits ~history ~tt
+    State.create ~root ~limits ~history ~tt
