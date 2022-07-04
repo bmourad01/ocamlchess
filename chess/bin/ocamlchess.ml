@@ -102,7 +102,8 @@ module Gui = struct
   let depth =
     let doc = "Depth limit for search (only used by the 'caml' player). \
                The value must be positive and non-zero." in
-    Arg.(value & opt int 7 (info ["d"; "depth"] ~docv:"NUMBER" ~doc))
+    Arg.(value & opt int Chess.Search.Limits.default_depth @@
+         info ["d"; "depth"] ~docv:"NUMBER" ~doc)
 
   let nodes =
     let doc = "Node limit for search (only used by the 'caml' player). \

@@ -1001,10 +1001,7 @@ module Main = struct
     && i >= lmr_min_index
     && depth >= lmr_min_depth
     && order < 0
-    then
-      let new_threats = new_threats m in
-      let r = 1 + Bool.to_int (not improving) - new_threats in
-      return @@ max r 0
+    then return @@ max 0 @@ 1 + Bool.to_int (not improving) - new_threats m
     else return 0
 
   and lmr_min_depth = 3
