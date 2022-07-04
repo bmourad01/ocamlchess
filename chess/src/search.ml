@@ -253,6 +253,9 @@ let is_quiet m =
 
 let is_noisy = Fn.non is_quiet
 
+let b2i = Bool.to_int
+let b2in b = Bool.to_int (not b)
+
 (* Our state for the entirety of the search. *)
 module State = struct
   module Oa = Option_array
@@ -779,7 +782,7 @@ module Main = struct
           (* Check + single reply extension. *)
           let check = Position.in_check pos in
           let single = match moves with [_] -> true | _ -> false in
-          let depth = depth + Bool.to_int (check || single) in
+          let depth = depth + b2i (check || single) in
           (* Checkmate or stalemate. *)
           match moves with
           | [] -> leaf (if check then mated ply else 0) ~ply
@@ -870,7 +873,7 @@ module Main = struct
 
   (* Perform the actual recursion into the child node. *)
   and search_branch t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
-    lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving >>= fun r ->
+    let r = lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
     Legal.new_position m |> pvs t ~i ~r ~beta ~ply ~depth ~node
 
   (* These pruning heuristics depend on conditions that change as we continue
@@ -940,7 +943,7 @@ module Main = struct
     end eval
 
   and rfp_margin depth threats improving =
-    let r = Bool.to_int (improving && (threats <= 0)) in
+    let r = b2i (improving && threats <= 0) in
     Piece.Kind.value Pawn * Eval.material_weight * (depth - r)
 
   and rfp_max_depth = 6
@@ -1001,8 +1004,7 @@ module Main = struct
     && i >= lmr_min_index
     && depth >= lmr_min_depth
     && order < 0
-    then return @@ max 0 @@ 1 + Bool.to_int (not improving) - new_threats m
-    else return 0
+    then max 0 (1 + b2in improving - new_threats m) else 0
 
   and lmr_min_depth = 3
   and lmr_min_index = 1
