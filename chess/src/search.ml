@@ -581,7 +581,7 @@ module Order = struct
           best_move := m;
         end;
         m, score) in
-    moves, !best_move
+    Iterator.create moves, !best_move
 
   (* Score the moves for normal search. Priority (from best to worst):
 
@@ -606,7 +606,7 @@ module Order = struct
       let i = State.history_idx m in
       let h = Array.unsafe_get move_history i in
       ((h * history_max) + move_history_max - 1) / move_history_max in
-    let moves, best = score_aux moves ~eval:(fun m ->
+    score_aux moves ~eval:(fun m ->
         if is_hash m then inf
         else match See.go m with
           | Some see when see >= 0 ->
@@ -621,13 +621,12 @@ module Order = struct
               if killer <> 0 then killer
               else match Legal.castle_side m with
                 | Some _ -> castle_offset
-                | None -> move_history m + history_offset) in
-    best, Iterator.create moves
+                | None -> move_history m + history_offset)
 
   (* Score the moves for quiescence search. *)
   let qscore = function
     | [] -> Iterator.empty
-    | moves -> Iterator.create @@ fst @@ score_aux moves ~eval:(fun m ->
+    | moves -> fst @@ score_aux moves ~eval:(fun m ->
         if Legal.is_en_passant m then 0
         else
           let p = promote_by_value m in
@@ -800,11 +799,11 @@ module Main = struct
       ~null ~node ~improving >>= function
     | Some score -> leaf score ~ply
     | None -> State.(gets tt) >>= fun tt ->
-      Order.score moves ~ply ~pos ~tt >>= fun (best, next) ->
+      Order.score moves ~ply ~pos ~tt >>= fun (it, best) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
-      Order.Iterator.fold_until next ~init:0 ~finish ~f >>| fun score ->
+      Order.Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
       Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
       score
 
@@ -997,7 +996,7 @@ module Main = struct
     && not (equal_node node Pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order < 0
+    && order < Order.killer2_offset
     then max 0 (1 + b2in improving - new_threats m) else 0
 
   and lmr_min_depth = 3
@@ -1038,11 +1037,11 @@ module Main = struct
     let check = Position.in_check root in
     let ply = 0 and ttentry = None and node = Pv in
     eval root ~ply ~check ~ttentry >>= fun (eval, improving) ->
-    Order.score moves ~ply ~pos:root ~tt >>= fun (best, next) ->
+    Order.score moves ~ply ~pos:root ~tt >>= fun (it, best) ->
     let t = new_search ~alpha ~best () in
     let finish _ = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
-    Order.Iterator.fold_until next ~init:0 ~finish ~f >>| fun score ->
+    Order.Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt root ~depth ~score ~best:t.best ~node:t.node;
     score, t.best
 
