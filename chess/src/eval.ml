@@ -6,6 +6,7 @@ module Pre = Precalculated
 let material_weight = 100
 
 let sum2 (w, x) (y, z) = w + y, x + z
+let sub2 (w, x) (y, z) = w - y, x - z
 let scale2 (x, y) z = x * z, y * z
 
 module Phase = struct
@@ -275,18 +276,20 @@ module Pawns = struct
       ~replace:(fun ~prev:_ _ _ -> true)
       ~age:(fun _ -> true)
 
+  let scores pos c = List.fold ~init:(0, 0) ~f:sum2 [
+      Passed.go pos c;
+      Doubled.go pos c;
+      Isolated.go pos c;
+      Chained.go pos c;
+    ]
+
   (* Evaluate the overall pawn structure. *)
-  let evaluate = evaluate @@ fun pos c ->
+  let evaluate pos =
     let h = Position.pawn_hash pos in
     match Zobrist.Table.get_entry table h with
     | Some scores -> scores
     | None ->
-      let scores = List.fold ~init:(0, 0) ~f:sum2 [
-          Passed.go pos c;
-          Doubled.go pos c;
-          Isolated.go pos c;
-          Chained.go pos c;
-        ] in
+      let scores = sub2 (scores pos White) (scores pos Black) in
       Zobrist.Table.set table h scores;
       scores
 end
