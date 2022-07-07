@@ -45,7 +45,8 @@ end
 type go = Position.t -> Piece.color -> int * int
 
 (* Calculate both opening and endgame advantage from white's perspective. *)
-let evaluate (go : go) pos = sub2 (go pos White) (go pos Black)
+let[@specialise] evaluate (go : go) pos =
+  sub2 (go pos White) (go pos Black)
 
 module Material = struct
   let weights = Piece.[|
@@ -273,7 +274,7 @@ module Pawns = struct
       ~replace:(fun ~prev:_ _ _ -> true)
       ~age:(fun _ -> true)
 
-  let scores pos c = List.fold ~init:(0, 0) ~f:sum2 [
+  let go pos c = List.fold ~init:(0, 0) ~f:sum2 [
       Passed.go pos c;
       Doubled.go pos c;
       Isolated.go pos c;
@@ -286,7 +287,7 @@ module Pawns = struct
     match Zobrist.Table.get_entry table h with
     | Some scores -> scores
     | None ->
-      let scores = sub2 (scores pos White) (scores pos Black) in
+      let scores = evaluate go pos in
       Zobrist.Table.set table h scores;
       scores
 end
@@ -463,7 +464,7 @@ module Placement = struct
 
     let[@inline] get sq c k =
       let i = Piece.Kind.to_int k in
-      let module M = (val Array.unsafe_get kinds i : S) in
+      let module M = (val Array.unsafe_get kinds i) in
       get sq c M.start, get sq c M.end_
   end
 
