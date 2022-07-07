@@ -654,7 +654,7 @@ module Quiescence = struct
     else List.filter moves ~f:is_noisy |>
          Order.qscore |> Order.Iterator.fold_until
            ~init:(max eval alpha)
-           ~finish:return
+           ~finish:(leaf ~ply)
            ~f:(branch ~beta ~eval ~ply)
 
   (* Delta pruning. *)
@@ -664,14 +664,16 @@ module Quiescence = struct
   and delta_margin = Piece.Kind.value Queen * Eval.material_weight
 
   (* Search a branch of the current node. *)
-  and branch ~beta ~eval ~ply = fun alpha (m, _) ->
+  and branch ~beta ~eval ~ply = fun alpha (m, order) ->
     let open Continue_or_stop in
-    let pos = Legal.new_position m in
-    State.(update @@ push_history pos) >>= fun () ->
-    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
-    negm >>= fun score ->
-    State.(update @@ pop_history pos) >>| fun () ->
-    if score >= beta then Stop beta else Continue (max score alpha)
+    if order >= 0 then
+      let pos = Legal.new_position m in
+      State.(update @@ push_history pos) >>= fun () ->
+      go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
+      negm >>= fun score ->
+      State.(update @@ pop_history pos) >>| fun () ->
+      if score >= beta then Stop beta else Continue (max score alpha)
+    else return @@ Continue alpha
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -813,16 +815,16 @@ module Main = struct
     match eval with
     | None -> return None
     | Some _ when equal_node node Pv || null -> return None
-    | Some eval ->
-      let threats =
-        threats pos @@
-        Piece.Color.opposite @@
-        Position.active pos in
-      match rfp ~depth ~eval ~beta ~threats ~improving with
+    | Some eval -> razor pos moves ~eval ~alpha ~ply ~depth >>= function
       | Some _ as score -> return score
-      | None -> nmp pos ~eval ~beta ~ply ~depth ~threats >>= function
-        | Some _ as beta -> return beta
-        | None -> razor pos moves ~eval ~alpha ~beta ~ply ~depth
+      | None ->
+        let threats =
+          threats pos @@
+          Piece.Color.opposite @@
+          Position.active pos in
+        match rfp ~depth ~eval ~beta ~threats ~improving with
+        | Some _ as score -> return score
+        | None -> nmp pos ~eval ~beta ~ply ~depth ~threats
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
      function (or whether to skip altogether). *)
@@ -960,16 +962,20 @@ module Main = struct
 
   (* Razoring.
 
-     Drop down to quescience search if we're approaching the horizon and we 
-     have little chance to improve alpha.
+     If our evaluation is significantly lower than alpha, then do a zero
+     window quiescence search and see if it will improve.
   *)
-  and razor pos moves ~eval ~alpha ~beta ~ply ~depth =
-    if depth <= razor_max_depth && eval + razor_margin depth <= alpha then
-      Quiescence.with_moves pos moves ~alpha ~beta ~ply >>| Option.return
+  and razor pos moves ~eval ~alpha ~ply ~depth =
+    if depth <= razor_max_depth && eval + razor_margin depth < alpha then
+      Quiescence.with_moves pos moves
+        ~alpha:(alpha - 1) ~beta:alpha ~ply >>| fun score ->
+      Option.some_if (score < alpha) score
     else return None
 
-  and razor_max_depth = 2
-  and razor_margin depth = Piece.Kind.value Knight * Eval.material_weight * depth
+  and razor_max_depth = 5
+
+  and razor_margin depth =
+    Piece.Kind.value Knight * Eval.material_weight * depth
 
   (* Late move reduction.
 
