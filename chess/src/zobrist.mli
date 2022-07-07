@@ -24,9 +24,13 @@ module Table : sig
   (** The replacement strategy, where [prev] is the existing slot. *)
   type 'a replace = prev:'a slot -> 'a -> key -> bool
 
-  (** The aging strategy for entries. If  the result is [true], then
-      the age of tte slot is is incremented. Otherwise, the slot is
-      evicted. *)
+  (** The aging strategy for slots. If  the result is [true], then
+      the age of the slot is is incremented. Otherwise, the slot is
+      evicted.
+
+      The "age" of the slot can be seen as the number of ply since
+      the slot was added to the table.
+  *)
   type 'a age = 'a slot -> bool
 
   (** The hash table. *)

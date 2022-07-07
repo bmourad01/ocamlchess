@@ -155,6 +155,7 @@ type node = Pv | Cut | All [@@deriving equal]
 module Tt = struct
   module Entry = struct
     type t = {
+      ply   : int;
       depth : int;
       score : int;
       best  : Position.legal;
@@ -174,9 +175,9 @@ module Tt = struct
 
      For the same position, prefer the more recent search.
   *)
-  let store tt pos ~depth ~score ~best ~node =
+  let store tt pos ~ply ~depth ~score ~best ~node =
     let key = Position.hash pos in
-    let data = Entry.Fields.create ~depth ~score ~best ~node in
+    let data = Entry.Fields.create ~ply ~depth ~score ~best ~node in
     Zobrist.Table.set tt key data
 
   (* Check for a previous evaluation of the position at a comparable depth.
@@ -532,13 +533,8 @@ module Order = struct
   let history_max = 180
 
   (* Check if a particular move has been evaluated already. *)
-  let is_hash pos tt =
-    let best =
-      Position.hash pos |> Zobrist.Table.get_entry tt |>
-      Option.bind ~f:(fun entry ->
-          match Tt.Entry.node entry with
-          | Pv | Cut -> Some (Tt.Entry.best entry)
-          | _ -> None) in
+  let is_hash pos ~ttentry =
+    let best = Option.map ttentry ~f:Tt.Entry.best in
     fun m -> Option.exists best ~f:(Legal.same m)
 
   let promote_by_value m =
@@ -592,12 +588,12 @@ module Order = struct
      5. Move history score (the "distance" heuristic).
      6. Captures that produced a negative SEE score.
   *)
-  let score moves ~ply ~pos ~tt =
+  let score moves ~ply ~pos ~ttentry =
     State.(gets @@ killer1 ply) >>= fun killer1 ->
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets move_history) >>= fun move_history ->
     State.(gets @@ move_history_max pos) >>| fun move_history_max ->
-    let is_hash = is_hash pos tt in
+    let is_hash = is_hash pos ~ttentry in
     let killer m = match killer1, killer2 with
       | Some k, _ when Legal.same m k -> killer1_offset
       | _, Some k when Legal.same m k -> killer2_offset
@@ -627,13 +623,11 @@ module Order = struct
   let qscore = function
     | [] -> Iterator.empty
     | moves -> fst @@ score_aux moves ~eval:(fun m ->
-        if Legal.is_en_passant m then 0
-        else
-          let p = promote_by_value m in
-          if p <> 0 then p
-          else match See.go m with
-            | Some value -> value
-            | None -> 0)
+        let p = promote_by_value m in
+        if p <> 0 then p
+        else match See.go m with
+          | Some value -> value
+          | None -> 0)
 end
 
 (* Quiescence search is used when we reach our maximum depth for the main
@@ -799,12 +793,12 @@ module Main = struct
       ~null ~node ~improving >>= function
     | Some score -> leaf score ~ply
     | None -> State.(gets tt) >>= fun tt ->
-      Order.score moves ~ply ~pos ~tt >>= fun (it, best) ->
+      Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
       Order.Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
-      Tt.store tt pos ~depth ~score ~best:t.best ~node:t.node;
+      Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node;
       score
 
   (* There are a number of pruning heuristics we can use before we even try
@@ -834,9 +828,8 @@ module Main = struct
      function (or whether to skip altogether). *)
   and eval pos ~ply ~check ~ttentry =
     if not check then
-      let open Tt.Entry in
       let eval = Eval.go pos in
-      let score = match ttentry with
+      let score = match (ttentry : Tt.entry option) with
         | Some {score; node = Cut; _} when score > eval -> score
         | Some {score; node = All; _} when score < eval -> score
         | None | Some _ -> eval in
@@ -996,7 +989,7 @@ module Main = struct
     && not (equal_node node Pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order < Order.killer2_offset
+    && order < 0
     then max 0 (1 + b2in improving - new_threats m) else 0
 
   and lmr_min_depth = 3
@@ -1033,16 +1026,17 @@ module Main = struct
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
-    State.get () >>= fun {root; tt; _} ->
-    let check = Position.in_check root in
-    let ply = 0 and ttentry = None and node = Pv in
-    eval root ~ply ~check ~ttentry >>= fun (eval, improving) ->
-    Order.score moves ~ply ~pos:root ~tt >>= fun (it, best) ->
+    let ply = 0 and node = Pv in
+    State.get () >>= fun {root = pos; tt; _} ->
+    let check = Position.in_check pos in
+    let ttentry = Position.hash pos |> Zobrist.Table.get_entry tt in
+    eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
+    Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
     let t = new_search ~alpha ~best () in
     let finish _ = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
     Order.Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
-    Tt.store tt root ~depth ~score ~best:t.best ~node:t.node;
+    Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node;
     score, t.best
 
   (* Aspiration window.
@@ -1078,7 +1072,7 @@ let convert_score score tt root ~pv ~mate ~mated =
   else match Zobrist.Table.get_entry tt @@ Position.hash root with
     | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
     | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
-    | Some Tt.Entry.{node = all; _} -> Cp (score, Some `upper)
+    | Some Tt.Entry.{node = All; _} -> Cp (score, Some `upper)
 
 (* For debugging, make sure that the PV is a legal sequence of moves. *)
 let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->

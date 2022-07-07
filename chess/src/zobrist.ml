@@ -4,9 +4,9 @@ type key = int64 [@@deriving equal, compare, sexp]
 
 module Table = struct
   type 'a slot = {
-    entry : 'a;
-    key   : key;
-    age   : int;
+    entry       : 'a;
+    key         : key;
+    mutable age : int;
   }
 
   module Slot = struct
@@ -69,9 +69,8 @@ module Table = struct
     for i = 0 to n do
       Oa.unsafe_get t.table i |>
       Option.iter ~f:(fun slot ->
-          if t.age slot then Oa.unsafe_set_some t.table i {
-              slot with age = slot.age + 1
-            } else Oa.unsafe_set_none t.table i)
+          if t.age slot then slot.age <- slot.age + 1
+          else Oa.unsafe_set_none t.table i)
     done
 end
 

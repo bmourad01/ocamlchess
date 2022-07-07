@@ -59,17 +59,22 @@ let choice (history, tt, in_book) moves =
     m, (history, tt, false)
 
 let name = "caml"
-let capacity = 0x400000
+let capacity = 0x40000
 
 module Slot = Zobrist.Table.Slot
 
+(* Replace entries with the same key, otherwise prefer depth. *)
 let replace ~prev entry key =
   let open Search.Tt.Entry in
   let prev_entry = Slot.entry prev in
   Zobrist.equal_key key (Slot.key prev) ||
   depth prev_entry <= depth entry
 
-let age slot = Slot.age slot < 31
+(* Use the entry's depth as an age threshold. *)
+let age slot =
+  let open Search.Tt.Entry in
+  let entry = Slot.entry slot in
+  Slot.age slot < depth entry / 2
 
 let create_tt () =
   Zobrist.Table.create ~capacity ~replace ~age
