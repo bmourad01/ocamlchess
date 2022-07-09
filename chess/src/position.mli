@@ -328,7 +328,16 @@ module Legal : sig
   val parent : legal -> t
 
   (** The resulting position. *)
-  val new_position : legal -> t
+  val child : legal -> t
+
+  (** Returns [true] if the move was a capture. *)
+  val is_capture : legal -> bool
+
+  (** Returns [true] if the move was a castle. *)
+  val is_castle : legal -> bool
+
+  (** Returns [true] if the move was an en passant capture. *)
+  val is_en_passant : legal -> bool
 
   (** The kind of piece that was captured, if any. *)
   val capture : legal -> Piece.kind option
@@ -337,9 +346,6 @@ module Legal : sig
       en passant captures, where the destination square is not the square
       of the captured piece. *)
   val capture_square : legal -> Square.t option
-
-  (** Returns [true] if the move was an en passant capture. *)
-  val is_en_passant : legal -> bool
 
   (** If the move was a castle, then returns the side that the castling was
       performed on. Otherwise, returns [None]. *)

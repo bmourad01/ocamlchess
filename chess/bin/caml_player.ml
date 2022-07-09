@@ -35,7 +35,7 @@ let try_book in_book root history =
       match Book.lookup book root with
       | Ok m ->
         printf "Book move: %s\n\n%!" @@ Position.San.of_legal m;
-        let new_pos = Position.Legal.new_position m in
+        let new_pos = Position.Legal.child m in
         let history = update_history history new_pos in
         Some (m, history)
       | Error (Book.Error.Position_not_found _) -> None
@@ -53,7 +53,7 @@ let choice (history, tt, in_book) moves =
     let res = Search.go ~root ~limits ~history ~tt () in
     let m = Search.Result.best res in
     print_res res;
-    let new_pos = Position.Legal.new_position m in
+    let new_pos = Position.Legal.child m in
     let history = update_history history new_pos in
     Zobrist.Table.age tt;
     m, (history, tt, false)

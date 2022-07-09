@@ -104,7 +104,7 @@ let click mx my = State.update @@ fun ({window; game; legal; sel; _} as st) ->
             let k = promote () in
             List.find_exn moves ~f:(find_promote sq k) in
         let game = Game.add_move game m in
-        let legal = Position.legal_moves @@ Legal.new_position m in
+        let legal = Position.legal_moves @@ Legal.child m in
         {st with game; legal; sel = None; prev = Some m}
 
 let poll = State.(gets window) >>= fun window ->
@@ -146,7 +146,7 @@ let ai_move c player = State.(gets game) >>= fun game ->
         (Move.to_string @@ Legal.move m) () in
   update_player_state c player st >>= fun () ->
   let game = Game.add_move game m in
-  let legal = Position.legal_moves @@ Legal.new_position m in
+  let legal = Position.legal_moves @@ Legal.child m in
   begin State.update @@ fun st ->
     {st with game; legal; sel = None; prev = Some m}
   end >>| fun () -> print_result @@ Game.result game

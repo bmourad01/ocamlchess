@@ -226,9 +226,9 @@ module Tt = struct
       | Some Entry.{best; _} when mate || n > i ->
         let i = i + 1 in
         let acc = best :: acc in
-        aux i acc @@ Legal.new_position best
+        aux i acc @@ Legal.child best
       | _ -> List.rev acc in
-    aux 1 [m] @@ Legal.new_position m
+    aux 1 [m] @@ Legal.child m
 end
 
 type tt = Tt.t
@@ -667,7 +667,7 @@ module Quiescence = struct
   and branch ~beta ~eval ~ply = fun alpha (m, order) ->
     let open Continue_or_stop in
     if order >= 0 then
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       State.(update @@ push_history pos) >>= fun () ->
       go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
       negm >>= fun score ->
@@ -862,7 +862,7 @@ module Main = struct
   (* Perform the actual recursion into the child node. *)
   and search_branch t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
     let r = lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
-    Legal.new_position m |> pvs t ~i ~r ~beta ~ply ~depth ~node
+    Legal.child m |> pvs t ~i ~r ~beta ~ply ~depth ~node
 
   (* These pruning heuristics depend on conditions that change as we continue
      to search all branches of the current node.
@@ -1085,7 +1085,7 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
     if not @@ List.exists moves ~f:(Legal.same m) then
       failwithf "Found an invalid move %s in the PV"
         (Position.San.of_legal m) ();
-    Position.legal_moves @@ Legal.new_position m) |> ignore
+    Position.legal_moves @@ Legal.child m) |> ignore
 
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,

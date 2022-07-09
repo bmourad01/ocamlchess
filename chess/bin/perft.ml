@@ -8,7 +8,7 @@ let rec perft pos depth =
   else
     let depth = depth - 1 in
     Position.legal_moves pos |> List.fold ~init:0L ~f:(fun acc m ->
-        Int64.(acc + perft (Legal.new_position m) depth))
+        Int64.(acc + perft (Legal.child m) depth))
 
 let run depth pos =
   let t = Time.now () in
@@ -16,7 +16,7 @@ let run depth pos =
   let n =
     let depth = depth - 1 in
     List.fold roots ~init:0L ~f:(fun acc m ->
-        let m = Legal.move m and pos = Legal.new_position m in
+        let m = Legal.move m and pos = Legal.child m in
         let n = perft pos depth in
         printf "%s: %Lu\n%!" (Move.to_string m) n;
         Int64.(acc + n)) in

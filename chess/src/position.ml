@@ -1193,7 +1193,7 @@ module Legal = struct
     type t = {
       move          : Move.t;
       parent        : T.t;
-      new_position  : T.t;
+      child         : T.t;
       capture       : Piece.kind Uopt.t;
       is_en_passant : bool;
       castle_side   : Cr.side Uopt.t;
@@ -1206,19 +1206,21 @@ module Legal = struct
 
   let same l1 l2 =
     same_hash l1.parent l2.parent &&
-    same_hash l1.new_position l2.new_position
+    same_hash l1.child l2.child
 
   let is_move legal m = Move.(m = legal.move)
+  let is_capture legal = Uopt.is_some legal.capture
+  let is_castle legal = Uopt.is_some legal.castle_side
   let capture legal = Uopt.to_option legal.capture
   let castle_side legal = Uopt.to_option legal.castle_side
-  let gives_check legal = in_check legal.new_position
+  let gives_check legal = in_check legal.child
 
   let capture_square legal =
     if Uopt.is_none legal.capture then None
     else Option.some @@
       let dst = Move.dst legal.move in
       if not legal.is_en_passant then dst
-      else Fn.flip en_passant_pawn_aux dst @@ inactive legal.new_position
+      else Fn.flip en_passant_pawn_aux dst @@ inactive legal.child
 end
 
 type legal = Legal.t [@@deriving compare, equal, sexp]
@@ -1380,7 +1382,7 @@ module Movegen = struct
   (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn =
     (* The new position, which we are free to mutate. *)
-    let new_position = copy pos in
+    let child = copy pos in
     (* All captures that are not en passant. *)
     let direct_capture = piece_at_square_uopt pos dst in
     (* Are we capturing on the en passant square? *)
@@ -1399,16 +1401,16 @@ module Movegen = struct
     let ctx = Makemove.Fields_of_context.create
         ~en_passant ~en_passant_pawn ~piece ~castle_side ~direct_capture in
     (* Update the position and return the captured piece, if any. *)
-    let capture = Makemove.go src dst promote ctx new_position in
-    new_position, capture, is_en_passant, castle_side
+    let capture = Makemove.go src dst promote ctx child in
+    child, capture, is_en_passant, castle_side
 
   (* Accumulate a list of legal moves. *)
   let[@inline] accum_makemove acc move ~parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
-    let new_position, capture, is_en_passant, castle_side =
+    let child, capture, is_en_passant, castle_side =
       run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
     Legal.Fields.create
-      ~move ~parent ~new_position ~capture ~is_en_passant ~castle_side :: acc
+      ~move ~parent ~child ~capture ~is_en_passant ~castle_side :: acc
 
   (* If we're promoting, then the back rank should be the only
      available squares. *)
@@ -1497,7 +1499,7 @@ module San = struct
     let adds = Buffer.add_string buf in
     let addc = Buffer.add_char buf in
     let src, dst, promote = Move.decomp @@ Legal.move legal in
-    let pos = Legal.new_position legal in
+    let pos = Legal.child legal in
     let num_checkers =
       let king_sq =
         List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in

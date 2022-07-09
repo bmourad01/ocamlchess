@@ -78,7 +78,7 @@ include T
 let moves game = List.rev game.moves
 
 let position game = match game.moves with
-  | prev :: _ -> Legal.new_position prev
+  | prev :: _ -> Legal.child prev
   | [] -> game.start
 
 let is_over game = match game.result with
@@ -126,7 +126,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
          care about the halfmove and fullmove clocks. *)
       if Position.(prev <> parent) then raise Invalid_parent
       else legal :: game.moves in
-    let pos = Legal.new_position legal in
+    let pos = Legal.child legal in
     let hash = Position.hash pos in
     let history =
       Map.update game.history hash ~f:(function

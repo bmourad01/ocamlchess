@@ -10,7 +10,7 @@ let rec perft pos depth =
   else
     Position.legal_moves pos |>
     List.fold ~init:0L ~f:(fun acc m ->
-        let pos = Position.Legal.new_position m in
+        let pos = Position.Legal.child m in
         Int64.(acc + perft pos (Int.pred depth)))
 
 let expect pos depth expected =

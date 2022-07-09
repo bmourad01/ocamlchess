@@ -34,14 +34,14 @@ end
 module Cccp = struct
   (* Try to checkmate the inactive king. *)
   let checkmate = List.filter ~f:(fun mv ->
-      let pos = Legal.new_position mv in
+      let pos = Legal.child mv in
       match Position.legal_moves pos with
       | [] -> Position.in_check pos
       | _ -> false)
 
   (* Try to check the inactive king. *)
   let check = List.filter ~f:(fun m ->
-      Legal.new_position m |> Position.in_check)
+      Legal.child m |> Position.in_check)
 
   (* Try to capture an inactive piece of the highest value. *)
   let capture moves = best moves ~eval:(fun m ->
@@ -51,7 +51,7 @@ module Cccp = struct
      squares. *)
   let push moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       Some (Bb.count @@ Position.Attacks.all pos active))
 
   let choice _ moves =
@@ -178,7 +178,7 @@ end
 
 module Generous = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      Legal.new_position m |>
+      Legal.child m |>
       Position.legal_moves |>
       List.fold ~init:0 ~f:(fun acc m -> match Legal.capture m with
           | Some k -> acc + Piece.Kind.value k
@@ -195,7 +195,7 @@ end
 module Huddle = struct
   let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       let active_board = Position.board_of_color pos active in
       let king = Position.king pos in
       let king_sq = Bb.(first_set_exn (king & active_board)) in
@@ -212,7 +212,7 @@ end
 
 module Max_oppt_moves = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       Some (List.length @@ Position.legal_moves pos)) |>
                        List.random_element_exn, ()
 
@@ -224,7 +224,7 @@ end
 
 module Min_oppt_moves = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       Some (-(List.length @@ Position.legal_moves pos))) |>
                        List.random_element_exn, ()
 
@@ -240,7 +240,7 @@ module Opposite_color = struct
 
   let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       Option.return @@ Bb.count @@
       Bb.filter ~f:(opposite_color active) @@
       Position.board_of_color pos active) |> List.random_element_exn, ()
@@ -255,7 +255,7 @@ module Pacifist = struct
   let inf = Int.max_value
 
   let choice _ moves = best moves ~eval:(fun m ->
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       let in_check = Position.in_check pos in
       (* Give the highest possible penalty for checkmating the opponent.
          Give a similarly high penalty for checking the opponent's king.
@@ -290,8 +290,8 @@ module Same_color = struct
   let same_color active sq = Piece.Color.equal active @@ Square.color sq
 
   let choice _ moves = best moves ~eval:(fun m ->
-      let active = Position.active @@ Legal.new_position m in
-      let pos = Legal.new_position m in
+      let active = Position.active @@ Legal.child m in
+      let pos = Legal.child m in
       Option.return @@ Bb.count @@
       Bb.filter ~f:(same_color active) @@
       Position.board_of_color pos active) |> List.random_element_exn, ()
@@ -305,7 +305,7 @@ end
 module Suicide_king = struct
   let choice _ moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Legal.parent m in
-      let pos = Legal.new_position m in
+      let pos = Legal.child m in
       let king = Position.king pos in
       let active_board = Position.board_of_color pos active in
       let inactive_board = Position.active_board pos in
@@ -328,7 +328,7 @@ module Swarm = struct
     let king = Position.king pos in
     let king_sq = Bb.(first_set_exn (king & inactive_board)) in
     best moves ~eval:(fun m ->
-        let pos = Legal.new_position m in
+        let pos = Legal.child m in
         Position.collect_color pos active |>
         List.fold ~init:0 ~f:(fun acc (sq, _) ->
             acc - Square.chebyshev king_sq sq) |>

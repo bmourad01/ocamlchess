@@ -84,7 +84,7 @@ let position pos moves =
         failwithf "Received illegal move %s for position %s\n%!"
           (Move.to_string m) (Position.Fen.to_string pos) ()
       | legal ->
-        let pos = Position.Legal.new_position legal in
+        let pos = Position.Legal.child legal in
         State.update_position pos >>= fun () ->
         apply rest in
   match Position.Valid.check pos with
