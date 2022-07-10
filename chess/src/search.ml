@@ -972,7 +972,7 @@ module Main = struct
       Option.some_if (score < alpha) score
     else return None
 
-  and razor_max_depth = 5
+  and razor_max_depth = 4
 
   and razor_margin depth =
     Piece.Kind.value Knight * Eval.material_weight * depth
