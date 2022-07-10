@@ -39,9 +39,24 @@ module Table = struct
 
   let clear t = Oa.clear t.table
 
-  let slot t key =
-    let n = Oa.length t.table - 1 in
-    Int64.(to_int_trunc (key land of_int n))
+  (* Get the high 64 bits (truncated to nativeint) of multiplying
+     two 64 bit numbers together.
+
+     Taken from Stockfish.
+  *)
+  let mul_hi64 key n =
+    let open Int64 in
+    let n = of_int n in
+    let al = key land 0xFFFFFFFFL in
+    let ah = key lsr 32 in
+    let bl = n land 0xFFFFFFFFL in
+    let bh = n lsr 32 in
+    let c1 = (al * bl) lsr 32 in
+    let c2 = ah * bl + c1 in
+    let c3 = al * bh + (c2 land 0xFFFFFFFFL) in
+    to_int_trunc (ah * bh + (c2 lsr 32) + (c3 lsr 32))
+
+  let slot t key = mul_hi64 key @@ Oa.length t.table
 
   let get t key =
     slot t key |> Oa.unsafe_get t.table |>
