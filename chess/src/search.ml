@@ -200,7 +200,7 @@ module Tt = struct
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv =
     match Hashtbl.find tt @@ Position.hash pos with
     | None -> Second (alpha, beta, None)
-    | Some entry when Entry.depth entry < depth ->
+    | Some entry when ply <= 0 || Entry.depth entry < depth ->
       Second (alpha, beta, Some entry)
     | Some entry ->
       let score = adjust_mate entry.score ply in
@@ -325,7 +325,7 @@ module State = struct
   let elapsed st =
     int_of_float @@ Time.(Span.to_ms @@ diff (now ()) st.start_time)
 
-  (* Start a new search while reusing the transposition table. *)
+  (* Start a new iteration. *)
   let new_iter st = {st with stopped = false; seldepth = 0}
 
   (* Increment the number of nodes we've evaluated. *)
@@ -1018,20 +1018,25 @@ module Main = struct
     | Cut -> All
     | All -> Cut
 
-  (* Search from the root position. *)
+  (* Search from the root position.
+
+     Note that a TT lookup should never cut the search short in the root
+     node. We always want to continue with a full search.
+  *)
   let root moves ~alpha ~beta ~depth =
     let ply = 0 and node = Pv in
-    State.get () >>= fun {root = pos; tt; _} ->
+    State.(gets root) >>= fun pos ->
     let check = Position.in_check pos in
-    let ttentry = Hashtbl.find tt @@ Position.hash pos in
-    eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
-    Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
-    let t = new_search ~alpha ~best () in
-    let finish _ = return t.alpha in
-    let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
-    Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
-    Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node;
-    score, t.best
+    lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+    | First _ -> assert false
+    | Second (alpha, beta, ttentry) ->
+      eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
+      Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
+      let t = new_search ~alpha ~best () in
+      let finish _ = return t.alpha in
+      let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
+      Iterator.fold_until it ~init:0 ~finish ~f >>= fun score ->
+      store t pos ~depth ~ply ~score >>| fun () -> score, t.best
 
   (* Aspiration window.
 
