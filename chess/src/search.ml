@@ -135,6 +135,7 @@ let is_mated score = score <= (-mate_score) + max_ply
 
 (* When we return a mate score during search, it's from the perspective
    of the player that is being mated. *)
+let mating ply = mate_score - ply
 let mated ply = -mate_score + ply
 
 (* There are three main types of nodes, given a score `s`:
@@ -270,7 +271,6 @@ module State = struct
     move_history       : int array;
     move_history_max_w : int;
     move_history_max_b : int;
-    best_score         : int;
     stopped            : bool;
     seldepth           : int;
     evals              : int array;
@@ -317,7 +317,6 @@ module State = struct
       move_history = Array.create ~len:move_history_size 0;
       move_history_max_w = 1;
       move_history_max_b = 1;
-      best_score = -inf;
       stopped = false;
       seldepth = 0;
       evals = Array.create ~len:eval_size 0;
@@ -327,12 +326,7 @@ module State = struct
     int_of_float @@ Time.(Span.to_ms @@ diff (now ()) st.start_time)
 
   (* Start a new search while reusing the transposition table. *)
-  let new_iter best_score st = {
-    st with
-    best_score;
-    stopped = false;
-    seldepth = 0;
-  }
+  let new_iter st = {st with stopped = false; seldepth = 0}
 
   (* Increment the number of nodes we've evaluated. *)
   let inc_nodes st = {st with nodes = st.nodes + 1}
@@ -442,84 +436,68 @@ let drawn pos =
   Position.halfmove pos >= 100 ||
   Position.is_insufficient_material pos
 
+(* We use an iterator object that incrementally applies insertion sort to
+   the array. In the context of alpha-beta pruning, we may not actually
+   visit all the moves for a given position, so it makes no sense to waste
+   time sorting the entire thing. *)
+module Iterator = struct
+  type t = {
+    mutable i : int;
+    length    : int;
+    moves     : (Position.legal * int) array;
+  }
+
+  let empty = {
+    i = 0;
+    length = 0;
+    moves = [||];
+  }
+
+  let create moves = {
+    i = 0;
+    length = Array.length moves;
+    moves;
+  }
+
+  let next it =
+    let c = it.i in
+    let n = it.length in
+    if c < n then
+      let best_score = ref (-inf) in
+      let best_index = ref c in
+      let moves = it.moves in
+      for i = c to n - 1 do
+        let _, score = Array.unsafe_get moves i in
+        if score > !best_score then begin
+          best_score := score;
+          best_index := i;
+        end
+      done;
+      let i = !best_index in
+      let result = Array.unsafe_get moves i in
+      if i > c then
+        Array.unsafe_get moves c |>
+        Array.unsafe_set moves i;
+      it.i <- c + 1;
+      Uopt.some result
+    else Uopt.none
+
+  let fold_until =
+    let open Continue_or_stop in
+    let[@specialise] rec aux acc it ~f ~finish =
+      let x = next it in
+      if Uopt.is_some x then f acc @@ Uopt.unsafe_value x >>= function
+        | Continue y -> aux y it ~f ~finish
+        | Stop z -> return z
+      else finish acc in
+    fun it ~init -> aux init it
+end
+
 (* Move ordering is critical for optimizing the performance of alpha-beta
    pruning. We use some heuristics to determine which moves are likely
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Order = struct
-  (* We use an iterator object that incrementally applies insertion sort to
-     the list. In the context of alpha-beta pruning, we may not actually
-     visit all the moves for a given position, so it makes no sense to waste
-     time sorting the entire thing. *)
-  module Iterator : sig
-    type move = Position.legal * int
-    type t
-
-    val empty : t
-    val create : move array -> t
-    val next : t -> move Uopt.t
-
-    val fold_until :
-      t ->
-      init:'a ->
-      f:('a -> move -> ('a, 'b) Continue_or_stop.t state) ->
-      finish:('a -> 'b state) ->
-      'b state
-  end = struct
-    type move = Position.legal * int
-
-    type t = {
-      mutable index : int;
-      length        : int;
-      moves         : move array;
-    }
-
-    let empty = {
-      index = 0;
-      length = 0;
-      moves = [||];
-    }
-
-    let create moves = {
-      index = 0;
-      length = Array.length moves;
-      moves;
-    }
-
-    let next it =
-      let c = it.index in
-      let n = it.length in
-      if c < n then
-        let best_score = ref (-inf) in
-        let best_index = ref c in
-        let moves = it.moves in
-        for i = c to n - 1 do
-          let _, score = Array.unsafe_get moves i in
-          if score > !best_score then begin
-            best_score := score;
-            best_index := i;
-          end
-        done;
-        let i = !best_index in
-        let result = Array.unsafe_get moves i in
-        if i > c then
-          Array.unsafe_get moves c |>
-          Array.unsafe_set moves i;
-        it.index <- c + 1;
-        Uopt.some result
-      else Uopt.none
-
-    let fold_until =
-      let open Continue_or_stop in
-      let[@specialise] rec aux acc it ~f ~finish =
-        let x = next it in
-        if Uopt.is_some x then f acc @@ Uopt.unsafe_value x >>= function
-          | Continue y -> aux y it ~f ~finish
-          | Stop z -> return z
-        else finish acc in
-      fun it ~init -> aux init it
-  end
-
   let good_capture_offset = 100
   let bad_capture_offset = -100
   let promote_offset = 96
@@ -647,7 +625,7 @@ module Quiescence = struct
     if eval >= beta then leaf beta ~ply
     else if delta pos ~eval ~alpha then leaf alpha ~ply
     else List.filter moves ~f:is_noisy |>
-         Order.qscore |> Order.Iterator.fold_until
+         Order.qscore |> Iterator.fold_until
            ~init:(max eval alpha)
            ~finish:(leaf ~ply)
            ~f:(branch ~beta ~eval ~ply)
@@ -707,6 +685,11 @@ module Main = struct
     let pv = equal_node node Pv in
     Tt.lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
+  (* Cache an evaluation. *)
+  let store t pos ~depth ~ply ~score =
+    State.(gets tt) >>| fun tt ->
+    Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node
+
   let threats pos c =
     let all = Position.all_board pos in
     let us = Position.board_of_color pos c in
@@ -752,33 +735,37 @@ module Main = struct
     | Queen  -> 0
     | King   -> 0
 
+  (* These are conditions for returning a score of 0. *)
+  let check_limits_or_draw pos =
+    check_limits >>= function
+    | false -> drawn pos
+    | true -> return true
+
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
-    check_limits >>= function
+    check_limits_or_draw pos >>= function
     | true -> leaf 0 ~ply
-    | false -> drawn pos >>= function
-      | true -> leaf 0 ~ply
-      | false ->
-        let moves = Position.legal_moves pos in
-        (* Check + single reply extension. *)
-        let check = Position.in_check pos in
-        let single = match moves with [_] -> true | _ -> false in
-        let depth = depth + b2i (check || single) in
-        (* Checkmate or stalemate. *)
-        match moves with
-        | [] -> leaf ~ply @@ if check then mated ply else 0
-        | _ -> match mdp ~alpha ~beta ~ply with
-          | First alpha -> return alpha
-          | Second (alpha, beta) when depth <= 0 ->
-            (* Depth exhausted, drop down to quiescence search. *)
-            Quiescence.with_moves pos moves ~alpha ~beta ~ply
-          | Second (alpha, beta) ->
-            lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-            | First (score, _) -> leaf score ~ply
-            | Second (alpha, beta, ttentry) ->
-              (* Search the available moves. *)
-              with_moves pos moves
-                ~alpha ~beta ~ply ~depth ~check ~node ~null ~ttentry
+    | false ->
+      let moves = Position.legal_moves pos in
+      (* Check + single reply extension. *)
+      let check = Position.in_check pos in
+      let single = match moves with [_] -> true | _ -> false in
+      let depth = depth + b2i (check || single) in
+      (* Checkmate or stalemate. *)
+      match moves with
+      | [] -> leaf ~ply @@ if check then mated ply else 0
+      | _ -> match mdp ~alpha ~beta ~ply with
+        | First alpha -> return alpha
+        | Second (alpha, beta) when depth <= 0 ->
+          (* Depth exhausted, drop down to quiescence search. *)
+          Quiescence.with_moves pos moves ~alpha ~beta ~ply
+        | Second (alpha, beta) ->
+          lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+          | First (score, _) -> leaf score ~ply
+          | Second (alpha, beta, ttentry) ->
+            (* Search the available moves. *)
+            with_moves pos moves
+              ~alpha ~beta ~ply ~depth ~check ~node ~null ~ttentry
 
   (* Search the available moves for the given position. *)
   and with_moves ?(ttentry = None) ?(null = false)
@@ -788,14 +775,12 @@ module Main = struct
       ~eval ~alpha ~beta ~ply ~depth ~check
       ~null ~node ~improving >>= function
     | Some score -> leaf score ~ply
-    | None -> State.(gets tt) >>= fun tt ->
-      Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
+    | None -> Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
-      Order.Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
-      Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node;
-      score
+      Iterator.fold_until it ~init:0 ~finish ~f >>= fun score ->
+      store t pos ~depth ~ply ~score >>| fun () -> score
 
   (* There are a number of pruning heuristics we can use before we even try
      to search the child nodes of this position. This shouldn't be done if
@@ -838,13 +823,11 @@ module Main = struct
       ~check ~node ~improving = fun i (m, order) ->
     let open Continue_or_stop in
     let[@inline] next () = return @@ Continue (i + 1) in
-    if not @@ should_skip m
-        ~eval ~alpha:t.alpha ~beta
-        ~depth ~check ~node ~order then
+    if not @@ should_skip t m ~eval ~beta ~depth ~check ~node ~order then
       (* Explore the child node. *)
-      search_branch t m
-        ~i ~beta ~ply ~depth ~check
-        ~node ~order ~improving >>= fun score ->
+      let pos = Legal.child m in
+      lmr m ~i ~beta ~ply ~depth ~check ~node ~order ~improving >>= fun r ->
+      pvs t pos ~i ~r ~beta ~ply ~depth ~node >>= fun score ->
       (* Update alpha if needed. *)
       better t m ~score;
       if score >= beta then
@@ -853,11 +836,6 @@ module Main = struct
       else next ()
     else next ()
 
-  (* Perform the actual recursion into the child node. *)
-  and search_branch t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
-    let r = lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
-    Legal.child m |> pvs t ~i ~r ~beta ~ply ~depth ~node
-
   (* These pruning heuristics depend on conditions that change as we continue
      to search all branches of the current node.
 
@@ -865,8 +843,8 @@ module Main = struct
      position at this point, then we should just skip searching the current
      move.
   *)
-  and should_skip m ~eval ~alpha ~beta ~depth ~check ~node ~order =
-    futile m ~eval ~alpha ~beta ~depth ~check ~node ||
+  and should_skip t m ~eval ~beta ~depth ~check ~node ~order =
+    futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node ||
     see m ~order ~depth
 
   (* Futility pruning.
@@ -952,12 +930,13 @@ module Main = struct
       Option.some_if (score >= beta) beta
     else return None
 
-  and nmp_min_depth = 2
+  and nmp_min_depth = 3
 
   (* Razoring.
 
-     If our evaluation is significantly lower than alpha, then do a zero
-     window quiescence search and see if it will improve.
+     When approaching the horizon, if our evaluation is significantly
+     lower than alpha, then do a zero window quiescence search and see
+     if it will improve.
   *)
   and razor pos moves ~eval ~alpha ~ply ~depth =
     if depth <= razor_max_depth && eval + razor_margin depth < alpha then
@@ -973,24 +952,28 @@ module Main = struct
 
   (* Late move reduction.
 
-     For moves that appear towards the end of our ordering, see if we should
-     reduce the depth of the search.
+     For moves that are likely to fail low, reduce the depth of the search.
+     However, to avoid losing precision, we have to exclude the following
+     kinds of moves:
 
-     Moves that produce "noisy" positions, as well as moves that historically
-     failed high, should cancel this reduction, as we would like to explore
-     those more deeply.
-
-     We avoid doing this during a PV search since this will lose us precision
-     in the most critical lines of play, but these lines are few and far
-     between, so most of the impact should be on less promising lines.
+     - Any PV node in a PVS search
+     - Any response to us being in check
+     - Moves with a negative SEE value
+     - Moves that give check
+     - Moves that introduce new threats
+     - Killer moves
   *)
-  and lmr t m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
+  and lmr m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
     if not check
     && not (equal_node node Pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order < Order.killer2_offset
-    then max 0 (1 + b2in improving - new_threats m) else 0
+    && Order.(order > bad_capture_offset)
+    && not (Legal.gives_check m)
+    then State.(gets @@ is_killer m ply) >>| function
+      | false -> max 0 (1 + b2in improving - new_threats m)
+      | true -> 0
+    else return 0
 
   and lmr_min_depth = 3
   and lmr_min_index = 1
@@ -1024,8 +1007,12 @@ module Main = struct
       if score > t.alpha && (r > 0 || score < beta)
       then f fw node else return score
 
-  (* For PVS, we keep PV nodes as PV nodes, otherwise we swap the node
-     type: CUT nodes become ALL nodes, and vice versa. *)
+  (* Determine the child node type for PVS:
+
+     1. PV nodes remain PV nodes.
+     2. CUT nodes become ALL nodes.
+     3. ALL nodes become CUT nodes.
+  *)
   and swap_node = function
     | Pv -> Pv
     | Cut -> All
@@ -1042,7 +1029,7 @@ module Main = struct
     let t = new_search ~alpha ~best () in
     let finish _ = return t.alpha in
     let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
-    Order.Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
+    Iterator.fold_until it ~init:0 ~finish ~f >>| fun score ->
     Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node;
     score, t.best
 
@@ -1053,19 +1040,24 @@ module Main = struct
      initial values of alpha and beta), and hopefully narrow the search
      space.
   *)
-  let rec aspire ?(delta_low = 250) ?(delta_high = 250) moves depth =
-    State.(gets best_score) >>= fun best_score ->
-    let alpha = if depth > 1 then best_score - delta_low  else -inf in
-    let beta  = if depth > 1 then best_score + delta_high else  inf in
+  let rec aspire ?(low = 250) ?(high = 250) moves depth basis =
+    let alpha, beta = window basis depth low high in
     root moves ~alpha ~beta ~depth >>= fun ((score, best) as result) ->
     State.(gets stopped) >>= fun stopped ->
     (* Search was stopped, or we landed inside the window. *)
     if stopped || (score > alpha && score < beta) then return result
     else (* Result was outside the window, so we need to widen a bit. *)
-      let delta_low, delta_high =
-        if score >= beta then delta_low, delta_high * 2
-        else delta_low * 2, delta_high in
-      aspire moves depth ~delta_low ~delta_high
+      let low, high = widen score beta low high in
+      aspire moves depth basis ~low ~high
+
+  (* Set up the initial window to search around. *)
+  and window basis depth low high =
+    if basis <= -inf || depth <= 1 then -inf, inf
+    else basis - low, basis + high
+
+  (* Widen the window based on the result of a search. *)
+  and widen score beta low high =
+    if score >= beta then low, high * 2 else low * 2, high
 end
 
 (* We'll use the UCI datatype, which is either a numerical score in centipawns,
@@ -1088,12 +1080,16 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
         (Position.San.of_legal m) ();
     Position.legal_moves @@ Legal.child m) |> ignore
 
+let run ?(prev = None) moves depth st =
+  let basis = Option.value_map prev ~default:(-inf) ~f:snd in
+  State.run (Main.aspire moves depth basis) st
+
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
 let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   let next = iterdeep ~iter ~depth:(depth + 1) ~moves in
-  let (score, best), st = State.run (Main.aspire moves depth) st in
+  let (score, best), st = run moves depth st ~prev in
   let time = State.elapsed st in
   let mate = is_mate score in
   let mated = is_mated score in
@@ -1101,7 +1097,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
   (* If the search was stopped, use the previous completed result, if
      available. *)
   if Limits.stopped limits then match prev with
-    | Some result -> result
+    | Some (result, _) -> result
     | None ->
       let pv = [best] in
       let score = convert_score score tt root ~pv ~mate ~mated in
@@ -1136,7 +1132,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st ~iter ~moves =
       Option.value_map ~default:false ~f:(fun n -> List.length pv <= n * 2) in
     (* Continue iterating? *)
     if too_long || max_nodes || max_depth || mate then result
-    else next ~prev:(Some result) @@ State.new_iter score st
+    else next ~prev:(Some (result, score)) @@ State.new_iter st
   end
 
 exception No_moves
