@@ -269,10 +269,7 @@ module Pawns = struct
   (* Pawn structure usually doesn't change during the search, so it's
      possible to cache the previous evaluation results to get a
      performance improvement. *)
-  let table = Zobrist.Table.create
-      ~capacity:0x40000
-      ~replace:(fun ~prev:_ _ _ -> true)
-      ~age:(fun _ -> true)
+  let table = Hashtbl.create (module Int64)
 
   let go pos c = List.fold ~init:(0, 0) ~f:sum2 [
       Passed.go pos c;
@@ -283,13 +280,8 @@ module Pawns = struct
 
   (* Evaluate the overall pawn structure. *)
   let evaluate pos =
-    let h = Position.pawn_hash pos in
-    match Zobrist.Table.get_entry table h with
-    | Some scores -> scores
-    | None ->
-      let scores = evaluate go pos in
-      Zobrist.Table.set table h scores;
-      scores
+    Position.pawn_hash pos |> Hashtbl.find_or_add table
+      ~default:(fun () -> evaluate go pos)
 end
 
 module Placement = struct
@@ -456,23 +448,24 @@ module Placement = struct
     let[@inline] flip_white sq =
       Square.(with_rank_exn sq (Rank.eight - rank sq))
 
-    let[@inline] get sq c t =
-      Array.unsafe_get t @@
-      Square.to_int @@ match (c : Piece.color) with
-      | White -> flip_white sq
-      | Black -> sq
+    let[@inline] square sq = function
+      | Piece.White -> flip_white sq
+      | Piece.Black -> sq
 
-    let[@inline] get sq c k =
+    let[@inline] of_table sq c t =
+      Array.unsafe_get t @@ Square.to_int @@ square sq c
+
+    let[@inline] of_kind sq c k =
       let i = Piece.Kind.to_int k in
       let module M = (val Array.unsafe_get kinds i) in
-      get sq c M.start, get sq c M.end_
+      of_table sq c M.start, of_table sq c M.end_
   end
 
   (* Weighted sum of piece placement (using piece-square tables). *)
   let evaluate = evaluate @@ fun pos c ->
     Position.collect_color pos c |>
     List.fold ~init:(0, 0) ~f:(fun acc (sq, k) ->
-        sum2 acc @@ Tables.get sq c k)
+        sum2 acc @@ Tables.of_kind sq c k)
 end
 
 module Mop_up = struct

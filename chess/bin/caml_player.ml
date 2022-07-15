@@ -55,33 +55,30 @@ let choice (history, tt, in_book) moves =
     print_res res;
     let new_pos = Position.Legal.child m in
     let history = update_history history new_pos in
-    Zobrist.Table.age tt;
+    (* Zobrist.Table.age tt; *)
     m, (history, tt, false)
 
 let name = "caml"
-let capacity = 0x40000
+(* let capacity = 0x40000 *)
 
-module Slot = Zobrist.Table.Slot
+(* module Slot = Zobrist.Table.Slot *)
 
-(* Replace entries with the same key, otherwise prefer depth. *)
-let replace ~prev entry key =
-  let open Search.Tt.Entry in
-  let prev_entry = Slot.entry prev in
-  Zobrist.equal_key key (Slot.key prev) ||
-  depth prev_entry <= depth entry
+(* (\* Replace entries with the same key, otherwise prefer depth. *\) *)
+(* let replace ~prev entry key = *)
+(*   let open Search.Tt.Entry in *)
+(*   Zobrist.equal_key key (Slot.key prev) || begin *)
+(*     let prev_entry = Slot.entry prev in *)
+(*     depth prev_entry <= depth entry *)
+(*   end *)
 
-(* Use the entry's depth as an age threshold. *)
-let age slot =
-  let open Search.Tt.Entry in
-  let entry = Slot.entry slot in
-  Slot.age slot < depth entry / 2
+(* let age _ = false *)
 
-let create_tt () =
-  Zobrist.Table.create ~capacity ~replace ~age
+(* let create_tt () = *)
+(*   Zobrist.Table.create ~capacity ~replace ~age *)
 
 let create () =
   let player =
-    let state = Int64.Map.empty, create_tt (), true in
+    let state = Int64.Map.empty, Search.Tt.create (), true in
     Player.create ~choice ~state ~name
       ~desc:"The flagship player, based on traditional game tree search and \
              evaluation." in

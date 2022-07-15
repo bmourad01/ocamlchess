@@ -71,10 +71,12 @@ end
 type limits = Limits.t
 
 (** The types of nodes that are traversed in an alpha-beta search. *)
-type node = Pv | Cut | All
+type node = Pv | Cut | All [@@deriving equal]
 
 (** The transposition table. *)
 module Tt : sig
+  type t
+
   (** An entry in the table. *)
   module Entry : sig
     type t
@@ -98,11 +100,13 @@ module Tt : sig
     val position : t -> Position.t
   end
 
-  (** An entry in the table. *)
   type entry = Entry.t
 
-  (** The transposition table. *)
-  type t = entry Zobrist.table
+  (** Creates a fresh table. *)
+  val create : unit -> t
+
+  (** Clears all entries in the table. *)
+  val clear : t -> unit
 end
 
 type tt = Tt.t

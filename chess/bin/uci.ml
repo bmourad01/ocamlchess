@@ -28,7 +28,7 @@ module State = struct
     let history = Int64.Map.singleton (Position.hash pos) 1 in
     {st with pos; history}
 
-  let clear_tt = gets @@ fun {tt; _} -> Zobrist.Table.clear tt
+  let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear  tt
   let set_stop stop = update @@ fun st -> {st with stop = Some stop}
 end
 
@@ -142,7 +142,6 @@ let search ~root ~limits ~history ~tt ~stop =
       (* Notify the user and abort. *)
       printf "Search encountered an exception: %s\n%!" @@ Exn.to_string exn;
       exit 1 in
-  Zobrist.Table.age tt;
   (* The UCI protocol says that `infinite` and `ponder` searches must wait for
      a corresponding `stop` or `ponderhit` command before sending `bestmove`.
      So, we will busy-wait in this thread until it happens. *)
@@ -175,6 +174,10 @@ let check_thread =
       Thread.join t;
       failwith "Error: tried to start a new search while the previous one is \
                 still running")
+
+let new_thread ~root ~limits ~history ~tt ~stop =
+  Atomic.set search_thread @@ Option.return @@ Thread.create (fun () ->
+      search ~root ~limits ~history ~tt ~stop) ()
 
 let go g =
   check_thread >>= fun () ->
@@ -231,9 +234,7 @@ let go g =
   State.(gets history) >>= fun history ->
   State.(gets tt) >>= fun tt ->
   State.set_stop promise >>= fun () ->
-  Atomic.set search_thread @@
-  Option.return @@
-  Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ();
+  new_thread ~root ~limits ~history ~tt ~stop;
   cont ()
 
 let stop = State.update @@ function
@@ -277,7 +278,7 @@ let run () =
     State.Fields.create
       ~pos:Position.start
       ~history:(Int64.Map.singleton Position.(hash start) 1)
-      ~tt:(Caml_player.create_tt ())
+      ~tt:(Search.Tt.create ())
       ~stop:None in
   (* Stop the search thread. *)
   Atomic.get search_thread |>

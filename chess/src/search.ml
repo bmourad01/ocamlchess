@@ -166,19 +166,23 @@ module Tt = struct
   end
 
   type entry = Entry.t
-  type t = entry Zobrist.table
+  type t = (Zobrist.key, entry) Hashtbl.t
 
-  (* Store the evaluation results for the position. There is consideration to
-     be made for the replacement strategy:
+  let create () = Hashtbl.create (module Int64)
+  let clear = Hashtbl.clear
 
-     https://www.chessprogramming.org/Transposition_Table#Replacement_Strategies
-
-     For the same position, prefer the more recent search.
-  *)
+  (* Store the evaluation results for the position. *)
   let store tt pos ~ply ~depth ~score ~best ~node =
     let key = Position.hash pos in
     let data = Entry.Fields.create ~ply ~depth ~score ~best ~node in
-    Zobrist.Table.set tt key data
+    Hashtbl.set tt ~key ~data
+
+  (* If this was a mate score, then adjust it to be relative to the
+     current distance from root. *)
+  let adjust_mate score ply =
+    if is_mate score then score - ply
+    else if is_mated score then score + ply
+    else score
 
   (* Check for a previous evaluation of the position at a comparable depth.
 
@@ -193,19 +197,12 @@ module Tt = struct
             searched.
   *)
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv =
-    match Zobrist.Table.get_entry tt @@ Position.hash pos with
+    match Hashtbl.find tt @@ Position.hash pos with
     | None -> Second (alpha, beta, None)
     | Some entry when Entry.depth entry < depth ->
       Second (alpha, beta, Some entry)
     | Some entry ->
-      (* If this was a mate score, then adjust it to be relative to the
-         current distance from root. *)
-      let score =
-        if is_mate entry.score then
-          entry.score - ply
-        else if is_mated entry.score then
-          entry.score + ply
-        else entry.score in
+      let score = adjust_mate entry.score ply in
       match entry.node with
       | Pv when not pv -> First (score, entry.best)
       | Pv -> Second (alpha, beta, Some entry)
@@ -221,7 +218,7 @@ module Tt = struct
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
     let rec aux i acc pos =
-      match Zobrist.Table.get_entry tt @@ Position.hash pos with
+      match Hashtbl.find tt @@ Position.hash pos with
       | None -> List.rev acc
       | Some Entry.{best; _} when mate || n > i ->
         let i = i + 1 in
@@ -533,9 +530,9 @@ module Order = struct
   let history_max = 180
 
   (* Check if a particular move has been evaluated already. *)
-  let is_hash pos ~ttentry =
-    let best = Option.map ttentry ~f:Tt.Entry.best in
-    fun m -> Option.exists best ~f:(Legal.same m)
+  let is_hash pos ~ttentry = match ttentry with
+    | Some Tt.Entry.{best; _} -> Legal.same best
+    | None -> fun _ -> false
 
   let promote_by_value m =
     Legal.move m |> Move.promote |>
@@ -605,10 +602,8 @@ module Order = struct
     score_aux moves ~eval:(fun m ->
         if is_hash m then inf
         else match See.go m with
-          | Some see when see >= 0 ->
-            good_capture_offset + see * Eval.material_weight
-          | Some see when see < 0 ->
-            bad_capture_offset + see * Eval.material_weight
+          | Some see when see >= 0 -> good_capture_offset + see
+          | Some see when see < 0 -> bad_capture_offset + see
           | _ ->
             let promote = promote_by_offset m in
             if promote <> 0 then promote
@@ -664,16 +659,14 @@ module Quiescence = struct
   and delta_margin = Piece.Kind.value Queen * Eval.material_weight
 
   (* Search a branch of the current node. *)
-  and branch ~beta ~eval ~ply = fun alpha (m, order) ->
+  and branch ~beta ~eval ~ply = fun alpha (m, _) ->
     let open Continue_or_stop in
-    if order >= 0 then
-      let pos = Legal.child m in
-      State.(update @@ push_history pos) >>= fun () ->
-      go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
-      negm >>= fun score ->
-      State.(update @@ pop_history pos) >>| fun () ->
-      if score >= beta then Stop beta else Continue (max score alpha)
-    else return @@ Continue alpha
+    let pos = Legal.child m in
+    State.(update @@ push_history pos) >>= fun () ->
+    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
+    negm >>= fun score ->
+    State.(update @@ pop_history pos) >>| fun () ->
+    if score >= beta then Stop beta else Continue (max score alpha)
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -765,23 +758,24 @@ module Main = struct
     | true -> leaf 0 ~ply
     | false -> drawn pos >>= function
       | true -> leaf 0 ~ply
-      | false -> lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-        | First (score, _) -> leaf score ~ply
-        | Second (alpha, beta, ttentry) ->
-          let moves = Position.legal_moves pos in
-          (* Check + single reply extension. *)
-          let check = Position.in_check pos in
-          let single = match moves with [_] -> true | _ -> false in
-          let depth = depth + b2i (check || single) in
-          (* Checkmate or stalemate. *)
-          match moves with
-          | [] -> leaf (if check then mated ply else 0) ~ply
-          | _ -> match mdp ~alpha ~beta ~ply with
-            | First alpha -> return alpha
-            | Second (alpha, beta) when depth <= 0 ->
-              (* Depth exhausted, drop down to quiescence search. *)
-              Quiescence.with_moves pos moves ~alpha ~beta ~ply
-            | Second (alpha, beta) ->
+      | false ->
+        let moves = Position.legal_moves pos in
+        (* Check + single reply extension. *)
+        let check = Position.in_check pos in
+        let single = match moves with [_] -> true | _ -> false in
+        let depth = depth + b2i (check || single) in
+        (* Checkmate or stalemate. *)
+        match moves with
+        | [] -> leaf ~ply @@ if check then mated ply else 0
+        | _ -> match mdp ~alpha ~beta ~ply with
+          | First alpha -> return alpha
+          | Second (alpha, beta) when depth <= 0 ->
+            (* Depth exhausted, drop down to quiescence search. *)
+            Quiescence.with_moves pos moves ~alpha ~beta ~ply
+          | Second (alpha, beta) ->
+            lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+            | First (score, _) -> leaf score ~ply
+            | Second (alpha, beta, ttentry) ->
               (* Search the available moves. *)
               with_moves pos moves
                 ~alpha ~beta ~ply ~depth ~check ~node ~null ~ttentry
@@ -907,7 +901,7 @@ module Main = struct
     order <= Order.bad_capture_offset &&
     order - Order.bad_capture_offset < depth * see_margin
 
-  and see_margin = -(Piece.Kind.value Pawn * 2 * Eval.material_weight)
+  and see_margin = -(Piece.Kind.value Pawn * 2)
 
   (* Mate distance pruning.
 
@@ -972,7 +966,7 @@ module Main = struct
       Option.some_if (score < alpha) score
     else return None
 
-  and razor_max_depth = 4
+  and razor_max_depth = 2
 
   and razor_margin depth =
     Piece.Kind.value Knight * Eval.material_weight * depth
@@ -995,7 +989,7 @@ module Main = struct
     && not (equal_node node Pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order < 0
+    && order < Order.killer2_offset
     then max 0 (1 + b2in improving - new_threats m) else 0
 
   and lmr_min_depth = 3
@@ -1008,10 +1002,6 @@ module Main = struct
      that are unlikely to be part of the PV.
   *)
   and pvs ?(node = Pv) t pos ~i ~r ~beta ~ply ~depth =
-    let node = match node with
-      | Pv -> Pv
-      | Cut -> All
-      | All -> Cut in
     let f ?(r = 0) alpha node =
       State.(update @@ push_history pos) >>= fun () ->
       go pos ~node ~alpha ~beta:(-t.alpha)
@@ -1019,23 +1009,34 @@ module Main = struct
       negm >>= fun score ->
       State.(update @@ pop_history pos) >>| fun () ->
       score in
-    let zw = -t.alpha - 1 in
-    let fw = -beta in
+    (* Zero and full window for alpha. *)
+    let zw = -t.alpha - 1 and fw = -beta in
+    let node = swap_node node in
     if equal_node node Pv then
+      (* First move in a PV node should always search the full window. *)
       if i = 0 then f fw node
       else f zw All ~r >>= fun score ->
+        (* Ignore beta if this is the root node. *)
         if score > t.alpha && (ply = 0 || score < beta)
         then f fw node else return score
     else f zw All ~r >>= fun score ->
+      (* Ignore beta if we're reducing the depth. *)
       if score > t.alpha && (r > 0 || score < beta)
       then f fw node else return score
+
+  (* For PVS, we keep PV nodes as PV nodes, otherwise we swap the node
+     type: CUT nodes become ALL nodes, and vice versa. *)
+  and swap_node = function
+    | Pv -> Pv
+    | Cut -> All
+    | All -> Cut
 
   (* Search from the root position. *)
   let root moves ~alpha ~beta ~depth =
     let ply = 0 and node = Pv in
     State.get () >>= fun {root = pos; tt; _} ->
     let check = Position.in_check pos in
-    let ttentry = Position.hash pos |> Zobrist.Table.get_entry tt in
+    let ttentry = Hashtbl.find tt @@ Position.hash pos in
     eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
     Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
     let t = new_search ~alpha ~best () in
@@ -1075,7 +1076,7 @@ let convert_score score tt root ~pv ~mate ~mated =
   let full = (len + (len land 1)) / 2 in
   if mate then Mate full
   else if mated then Mate (-full)
-  else match Zobrist.Table.get_entry tt @@ Position.hash root with
+  else match Hashtbl.find tt @@ Position.hash root with
     | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
     | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
     | Some Tt.Entry.{node = All; _} -> Cp (score, Some `upper)
