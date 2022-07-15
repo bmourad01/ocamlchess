@@ -55,26 +55,9 @@ let choice (history, tt, in_book) moves =
     print_res res;
     let new_pos = Position.Legal.child m in
     let history = update_history history new_pos in
-    (* Zobrist.Table.age tt; *)
     m, (history, tt, false)
 
 let name = "caml"
-(* let capacity = 0x40000 *)
-
-(* module Slot = Zobrist.Table.Slot *)
-
-(* (\* Replace entries with the same key, otherwise prefer depth. *\) *)
-(* let replace ~prev entry key = *)
-(*   let open Search.Tt.Entry in *)
-(*   Zobrist.equal_key key (Slot.key prev) || begin *)
-(*     let prev_entry = Slot.entry prev in *)
-(*     depth prev_entry <= depth entry *)
-(*   end *)
-
-(* let age _ = false *)
-
-(* let create_tt () = *)
-(*   Zobrist.Table.create ~capacity ~replace ~age *)
 
 let create () =
   let player =
