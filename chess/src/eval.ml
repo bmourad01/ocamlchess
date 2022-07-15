@@ -250,8 +250,8 @@ module Pawns = struct
   end
 
   module Chained = struct
-    let start_weight = 5
-    let end_weight = 11
+    let start_weight = 2
+    let end_weight = 5
 
     let go pos c =
       let occupied = Position.all_board pos in
