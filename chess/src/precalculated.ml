@@ -101,22 +101,6 @@ module Simple = struct
       List.filter_map ~f:(fun (rank, file) -> create ~rank ~file) |>
       List.fold ~init:Bb.empty ~f:Bb.set)
 
-  let white_pawn_advance = make @@ fun rank file -> [rank + 1, file]
-  let black_pawn_advance = make @@ fun rank file -> [rank - 1, file]
-
-  let white_pawn_capture = make @@ fun rank file -> [
-      rank + 1, file + 1;
-      rank + 1, file - 1;
-    ]
-
-  let black_pawn_capture = make @@ fun rank file -> [
-      rank - 1, file + 1;
-      rank - 1, file - 1;
-    ]
-
-  let pawn_advance = Array.append white_pawn_advance black_pawn_advance
-  let pawn_capture = Array.append white_pawn_capture black_pawn_capture
-
   let knight = make @@ fun rank file -> [
       rank + 2, file + 1;
       rank - 2, file + 1;
@@ -143,10 +127,12 @@ end
 (* Masks for various movement directions. *)
 
 module Mask = struct
+
   (* Direction to move in when starting from a particular square. *)
-  let dir r f =
-    Simple.make @@ fun rank file -> List.init ((Square.count lsr 3) - 1)
-      ~f:(fun i -> r rank (i + 1), f file (i + 1))
+  let dir =
+    let n = (Square.count lsr 3) - 1 in
+    fun r f -> Simple.make @@ fun rank file ->
+      List.init n ~f:(fun i -> r rank (i + 1), f file (i + 1))
 
   module Tbl = struct
     (* All 8 directions. *)
@@ -240,12 +226,19 @@ end
 (* The actual API for accessing precalculated move patterns. *)
 
 let[@inline] pawn_advance sq c =
-  let i = Square.to_int sq + Piece.Color.to_int c * Square.count in
-  Array.unsafe_get Simple.pawn_advance i
+  let open Bb.Syntax in
+  let b = !!sq in
+  match c with
+  | Piece.White -> b << 8
+  | Piece.Black -> b >> 8
 
 let[@inline] pawn_capture sq c =
-  let i = Square.to_int sq + Piece.Color.to_int c * Square.count in
-  Array.unsafe_get Simple.pawn_capture i
+  let open Bb in
+  let b = !!sq in
+  let l, r = match c with
+    | Piece.White -> b << 9, b << 7
+    | Piece.Black -> b >> 7, b >> 9 in
+  (l - file_a) + (r - file_h)
 
 let[@inline] knight sq = Array.unsafe_get Simple.knight @@ Square.to_int sq
 
