@@ -278,6 +278,38 @@ module Attacks : sig
   val non_sliding : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
 end
 
+(** Information about threatened pieces. *)
+type threats [@@deriving compare, equal, sexp]
+
+(** This submodule provides a way to calculate information about threatened
+    pieces. *)
+module Threats : sig
+  (** [get pos c] calculates the threats of position [pos] coming from the
+      player of color [c]. *)
+  val get : t -> Piece.color -> threats
+
+  (** [count t] returns the total number of threats from [t]. *)
+  val count : threats -> int
+
+  (** [color t] returns the color of the pieces that are making the threats. *)
+  val color : threats -> Piece.color
+
+  (** [pawn t] returns the bitboard of minor and major pieces threatened
+      by pawns. *)
+  val pawn : threats -> Bitboard.t
+
+  (** [minor t] returns the bitboard of major pieces threatened by minor
+      pieces. *)
+  val minor : threats -> Bitboard.t
+
+  (** [rook t] returns the bitboard of queens that are threatened by rooks. *)
+  val rook : threats -> Bitboard.t
+
+  type t = threats [@@deriving compare, equal, sexp]
+
+  include Base.Comparable.S with type t := t
+end
+
 (** [in_check pos] returns [true] if the active player for position [pos] is
     currently in check. *)
 val in_check : t -> bool
@@ -333,6 +365,10 @@ module Legal : sig
 
   (** Returns [true] id the move gives check to the opponent, *)
   val gives_check : legal -> bool
+
+  (** Returns the bitboard of enemy pieces (relative to the parent position)
+      that are under threat as a result of the move. *)
+  val new_threats : legal -> Bitboard.t
 
   (** A legal move. *)
   type t = legal [@@deriving compare, equal, sexp]

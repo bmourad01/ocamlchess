@@ -5,6 +5,7 @@ open Bap_future.Std
 module Bb = Bitboard
 module Pre = Precalculated
 module Legal = Position.Legal
+module Threats = Position.Threats
 
 module Limits = struct
   type kind =
@@ -708,51 +709,6 @@ module Main = struct
     State.(gets tt) >>| fun tt ->
     Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node
 
-  let threats pos c =
-    let all = Position.all_board pos in
-    let us = Position.board_of_color pos c in
-    let them = Bb.(all - us) in
-    let knight = Position.knight pos in
-    let bishop = Position.bishop pos in
-    let rook = Position.rook pos in
-    let queen = Position.queen pos in
-    let major = Bb.(rook + queen) in
-    let minor = Bb.(knight + bishop) in
-    let pawn_att = Position.Attacks.pawn pos c in
-    let knight_att = Position.Attacks.knight pos c in
-    let bishop_att = Position.Attacks.bishop pos c in
-    let rook_att = Position.Attacks.rook pos c in
-    (* Attacks from minor to major pieces. *)
-    Bb.(count ((knight_att + bishop_att) & them & major)) +
-    (* Attacks from rook to queen. *)
-    Bb.(count (rook_att & them & queen)) +
-    (* Attacks from pawns to minor and major pieces. *)
-    Bb.(count (pawn_att & them & (minor + major)))
-
-  let new_threats m =
-    let pos = Legal.parent m in
-    let c = Position.active pos in
-    let all = Position.all_board pos in
-    let us = Position.board_of_color pos c in
-    let them = Bb.(all - us) in
-    let knight = Position.knight pos in
-    let bishop = Position.bishop pos in
-    let rook = Position.rook pos in
-    let queen = Position.queen pos in
-    let major = Bb.(rook + queen) in
-    let minor = Bb.(knight + bishop) in
-    let src, dst, _ = Move.decomp @@ Legal.move m in
-    let p = Position.piece_at_square_exn pos src in
-    let bishop () = Bb.(Pre.(bishop dst all - bishop src all)) in
-    let rook () = Bb.(Pre.(rook dst all - rook src all)) in
-    match Piece.kind p with
-    | Pawn   -> Bb.(count (Pre.pawn_capture dst c & them & (minor + major)))
-    | Knight -> Bb.(count (Pre.knight dst & them & major))
-    | Bishop -> Bb.(count (bishop () & them & major))
-    | Rook   -> Bb.(count (rook () & them & queen))
-    | Queen  -> 0
-    | King   -> 0
-
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
     check_limits_or_draw pos >>= function
@@ -810,7 +766,8 @@ module Main = struct
       | Some _ as score -> return score
       | None ->
         let threats =
-          threats pos @@
+          Threats.count @@
+          Threats.get pos @@
           Piece.Color.opposite @@
           Position.active pos in
         match rfp ~depth ~eval ~beta ~threats ~improving with
@@ -983,7 +940,9 @@ module Main = struct
     && Order.(order > bad_capture_offset)
     && not (Legal.gives_check m)
     then State.(gets @@ is_killer m ply) >>| function
-      | false -> max 0 (1 + b2in improving - new_threats m)
+      | false ->
+        let t = Bb.count @@ Legal.new_threats m in
+        max 0 (1 + b2in improving - t)
       | true -> 0
     else return 0
 

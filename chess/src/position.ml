@@ -312,6 +312,44 @@ module Attacks = struct
         | _ -> true)
 end
 
+module Threats = struct
+  module T = struct
+    type t = {
+      color : Piece.color;
+      pawn  : Bb.t;
+      minor : Bb.t;
+      rook  : Bb.t;
+    } [@@deriving compare, equal, sexp, fields]
+  end
+
+  include T
+  include Comparable.Make(T)
+
+  let get pos c =
+    let all = all_board pos in
+    let us = board_of_color pos c in
+    let them = Bb.(all - us) in
+    let knight = pos.knight in
+    let bishop = pos.bishop in
+    let rook = pos.rook in
+    let queen = pos.queen in
+    let major = Bb.(rook + queen) in
+    let minor = Bb.(knight + bishop) in
+    let pawn_att = Attacks.pawn pos c in
+    let knight_att = Attacks.knight pos c in
+    let bishop_att = Attacks.bishop pos c in
+    let rook_att = Attacks.rook pos c in
+    Fields.create
+      ~color:c
+      ~pawn:Bb.(pawn_att & them & (minor + major))
+      ~minor:Bb.((knight_att + bishop_att) & them & major)
+      ~rook:Bb.(rook_att & them & queen)
+
+  let count t = Bb.count t.pawn + Bb.count t.minor + Bb.count t.rook
+end
+
+type threats = Threats.t [@@deriving compare, equal, sexp]
+
 (* Miscellaneous rules *)
 
 let in_check pos =
@@ -1221,6 +1259,31 @@ module Legal = struct
       let dst = Move.dst legal.move in
       if not legal.is_en_passant then dst
       else Fn.flip en_passant_pawn_aux dst @@ inactive legal.child
+
+  let new_threats legal =
+    let pos = legal.parent in
+    let c = active pos in
+    let all = all_board pos in
+    let us = board_of_color pos c in
+    let them = Bb.(all - us) in
+    let knight = pos.knight in
+    let bishop = pos.bishop in
+    let rook = pos.rook in
+    let queen = pos.queen in
+    let major = Bb.(rook + queen) in
+    let minor = Bb.(knight + bishop) in
+    let src = Move.src legal.move in
+    let dst = Move.dst legal.move in
+    let p = piece_at_square_exn pos src in
+    let bishop () = Bb.(Pre.(bishop dst all - bishop src all)) in
+    let rook () = Bb.(Pre.(rook dst all - rook src all)) in
+    match Piece.kind p with
+    | Pawn   -> Bb.(Pre.pawn_capture dst c & them & (minor + major))
+    | Knight -> Bb.(Pre.knight dst & them & major)
+    | Bishop -> Bb.(bishop () & them & major)
+    | Rook   -> Bb.(rook () & them & queen)
+    | Queen  -> Bb.empty
+    | King   -> Bb.empty
 end
 
 type legal = Legal.t [@@deriving compare, equal, sexp]
