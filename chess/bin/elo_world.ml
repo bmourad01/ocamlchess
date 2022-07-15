@@ -340,21 +340,32 @@ module Swarm = struct
              pieces and the inactive king."
 end
 
+module type S = sig
+  val name : string
+  val create : unit -> Player.e
+end
+
+let players : (module S) list = [
+  (module Alphabetical);
+  (module Cccp);
+  (module Equalizer);
+  (module Generous);
+  (module Huddle);
+  (module Max_oppt_moves);
+  (module Min_oppt_moves);
+  (module Opposite_color);
+  (module Pacifist);
+  (module Random);
+  (module Same_color);
+  (module Suicide_king);
+  (module Swarm);
+]
+
+let register (module P : S) = Players.register P.name P.create
+
 let init =
   let once = ref false in
-  fun () -> if !once then () else begin
-      Players.register Alphabetical.name Alphabetical.create;
-      Players.register Cccp.name Cccp.create;
-      Players.register Equalizer.name Equalizer.create;
-      Players.register Generous.name Generous.create;
-      Players.register Huddle.name Huddle.create;
-      Players.register Max_oppt_moves.name Max_oppt_moves.create;
-      Players.register Min_oppt_moves.name Min_oppt_moves.create;
-      Players.register Opposite_color.name Opposite_color.create;
-      Players.register Pacifist.name Pacifist.create;
-      Players.register Random.name Random.create;
-      Players.register Same_color.name Same_color.create;
-      Players.register Suicide_king.name Suicide_king.create;
-      Players.register Swarm.name Swarm.create;
-      once := true;
+  fun () -> if not !once then begin
+      List.iter players ~f:register;
+      once := true
     end
