@@ -5,10 +5,10 @@ module Pre = Precalculated
 
 let material_weight = 100
 
-let add2 (w, x) (y, z) = w + y, x + z
-let sub2 (w, x) (y, z) = w - y, x - z
-let neg2 (x, y) = -x, -y
-let scale2 (x, y) z = x * z, y * z
+let[@inline] add2 (w, x) (y, z) = w + y, x + z
+let[@inline] sub2 (w, x) (y, z) = w - y, x - z
+let[@inline] scale2 (x, y) z = x * z, y * z
+let[@inline] neg2 x = scale2 x (-1)
 
 module Phase = struct
   let knight_phase = 1
@@ -47,7 +47,7 @@ type go = Position.t -> Piece.color -> int * int
 let[@specialise] evaluate (go : go) pos =
   sub2 (go pos White) (go pos Black)
 
-let perspective c neg x = match c with
+let[@specialise] perspective c neg x = match c with
   | Piece.White -> x
   | Piece.Black -> neg x
 
