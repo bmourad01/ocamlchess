@@ -326,15 +326,9 @@ module Threats = struct
   include Comparable.Make(T)
 
   let get pos c =
-    let all = all_board pos in
-    let us = board_of_color pos c in
-    let them = Bb.(all - us) in
-    let knight = pos.knight in
-    let bishop = pos.bishop in
-    let rook = pos.rook in
-    let queen = pos.queen in
-    let major = Bb.(rook + queen) in
-    let minor = Bb.(knight + bishop) in
+    let them = board_of_color pos @@ Piece.Color.opposite c in
+    let major = Bb.(pos.rook + pos.queen) in
+    let minor = Bb.(pos.knight + pos.bishop) in
     let pawn_att = Attacks.pawn pos c in
     let knight_att = Attacks.knight pos c in
     let bishop_att = Attacks.bishop pos c in
@@ -343,7 +337,7 @@ module Threats = struct
       ~color:c
       ~pawn:Bb.(pawn_att & them & (minor + major))
       ~minor:Bb.((knight_att + bishop_att) & them & major)
-      ~rook:Bb.(rook_att & them & queen)
+      ~rook:Bb.(rook_att & them & pos.queen)
 
   let count t = Bb.count t.pawn + Bb.count t.minor + Bb.count t.rook
 end
@@ -1260,28 +1254,19 @@ module Legal = struct
       if not legal.is_en_passant then dst
       else Fn.flip en_passant_pawn_aux dst @@ inactive legal.child
 
-  let new_threats legal =
-    let pos = legal.parent in
+  let new_threats {move; parent = pos; _} =
     let c = active pos in
     let all = all_board pos in
-    let us = board_of_color pos c in
-    let them = Bb.(all - us) in
-    let knight = pos.knight in
-    let bishop = pos.bishop in
-    let rook = pos.rook in
-    let queen = pos.queen in
-    let major = Bb.(rook + queen) in
-    let minor = Bb.(knight + bishop) in
-    let src = Move.src legal.move in
-    let dst = Move.dst legal.move in
-    let p = piece_at_square_exn pos src in
-    let bishop () = Bb.(Pre.(bishop dst all - bishop src all)) in
-    let rook () = Bb.(Pre.(rook dst all - rook src all)) in
-    match Piece.kind p with
+    let them = Bb.(all - board_of_color pos c) in
+    let major = Bb.(pos.rook + pos.queen) in
+    let minor = Bb.(pos.knight + pos.bishop) in
+    let src = Move.src move in
+    let dst = Move.dst move in
+    match Piece.kind @@ piece_at_square_exn pos src with
     | Pawn   -> Bb.(Pre.pawn_capture dst c & them & (minor + major))
     | Knight -> Bb.(Pre.knight dst & them & major)
-    | Bishop -> Bb.(bishop () & them & major)
-    | Rook   -> Bb.(rook () & them & queen)
+    | Bishop -> Bb.(Pre.(bishop dst all - bishop src all) & them & major)
+    | Rook   -> Bb.(Pre.(rook dst all - rook src all) & them & pos.queen)
     | Queen  -> Bb.empty
     | King   -> Bb.empty
 end
