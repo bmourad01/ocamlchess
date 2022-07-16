@@ -1230,15 +1230,14 @@ module Legal = struct
       is_en_passant : bool;
       castle_side   : Cr.side Uopt.t;
     } [@@deriving compare, equal, sexp, fields]
-
   end
 
   include T
   include Comparable.Make(T)
 
-  let same l1 l2 =
-    same_hash l1.parent l2.parent &&
-    same_hash l1.child l2.child
+  let same x y =
+    same_hash x.parent y.parent &&
+    same_hash x.child  y.child
 
   let is_move legal m = Move.(m = legal.move)
   let is_capture legal = Uopt.is_some legal.capture

@@ -324,9 +324,9 @@ val is_insufficient_material : t -> bool
 type legal [@@deriving compare, equal, sexp]
 
 module Legal : sig
-  (** [same l1 l2] returns [true] if [l1] and [l2] refer to the same move.
+  (** [same x y] returns [true] if [x] and [y] refer to the same move.
       This is determined by comparing the hashes of both the [parent] and 
-      [new_position] for [l1] and [l2], respectively. *)
+      [new_position] for [x] and [y], respectively. *)
   val same : legal -> legal -> bool
 
   (** The actual move that was made. *)
