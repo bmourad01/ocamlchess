@@ -172,6 +172,7 @@ module Tt = struct
 
   let create () = Hashtbl.create (module Int64)
   let clear = Hashtbl.clear
+  let find tt pos = Hashtbl.find tt @@ Position.hash pos
 
   (* Store the evaluation results for the position.
 
@@ -180,8 +181,7 @@ module Tt = struct
      the old entry.
   *)
   let store tt pos ~ply ~depth ~score ~best ~node =
-    let key = Position.hash pos in
-    Hashtbl.update tt key ~f:(function
+    Position.hash pos |> Hashtbl.update tt ~f:(function
         | Some entry when Entry.depth entry > depth -> entry
         | None | Some _ ->
           Entry.Fields.create ~ply ~depth ~score ~best ~node)
@@ -205,8 +205,7 @@ module Tt = struct
             we can use that score to prune the rest of the branch being
             searched.
   *)
-  let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv =
-    match Hashtbl.find tt @@ Position.hash pos with
+  let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
     | None -> Second (alpha, beta, None)
     | Some entry when ply <= 0 || Entry.depth entry < depth ->
       Second (alpha, beta, Some entry)
@@ -226,8 +225,7 @@ module Tt = struct
 
   (* Extract the principal variation from the table. *)
   let pv ?(mate = false) tt n m =
-    let rec aux i acc pos =
-      match Hashtbl.find tt @@ Position.hash pos with
+    let rec aux i acc pos = match find tt pos with
       | None -> List.rev acc
       | Some Entry.{best; _} when mate || n > i ->
         let i = i + 1 in
@@ -1098,7 +1096,7 @@ let convert_score score tt root ~pv ~mate ~mated =
   let full = (len + (len land 1)) / 2 in
   if mate then Mate full
   else if mated then Mate (-full)
-  else match Hashtbl.find tt @@ Position.hash root with
+  else match Tt.find tt root with
     | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
     | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
     | Some Tt.Entry.{node = All; _} -> Cp (score, Some `upper)

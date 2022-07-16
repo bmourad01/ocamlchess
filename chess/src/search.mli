@@ -107,6 +107,10 @@ module Tt : sig
 
   (** Clears all entries in the table. *)
   val clear : t -> unit
+
+  (** Finds the entry associated with a given position. Returns [None] if
+      the entry does not exist in the table. *)
+  val find : t -> Position.t -> entry option
 end
 
 type tt = Tt.t
