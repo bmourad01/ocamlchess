@@ -1261,17 +1261,22 @@ module Legal = struct
     let minor = Bb.(pos.knight + pos.bishop) in
     let src, dst, promote = Move.decomp move in
     match promote with
-    | Some Knight -> Bb.(Pre.knight dst & them & major)
-    | Some Bishop -> Bb.(Pre.bishop dst all & them & major)
-    | Some Rook   -> Bb.(Pre.rook dst all & them & pos.queen)
-    | Some Queen  -> Bb.empty
-    | None -> match Piece.kind @@ piece_at_square_exn pos src with
-      | Pawn   -> Bb.(Pre.pawn_capture dst c & them & (minor + major))
-      | Knight -> Bb.(Pre.knight dst & them & major)
-      | Bishop -> Bb.(Pre.(bishop dst all - bishop src all) & them & major)
-      | Rook   -> Bb.(Pre.(rook dst all - rook src all) & them & pos.queen)
+    | None -> begin
+        match Piece.kind @@ piece_at_square_exn pos src with
+        | Pawn   -> Bb.(Pre.pawn_capture dst c & them & (minor + major))
+        | Knight -> Bb.(Pre.knight dst & them & major)
+        | Bishop -> Bb.(Pre.(bishop dst all - bishop src all) & them & major)
+        | Rook   -> Bb.(Pre.(rook dst all - rook src all) & them & pos.queen)
+        | Queen  -> Bb.empty
+        | King   -> Bb.empty
+      end
+    | Some k ->
+      let p = Pre.pawn_capture src c in
+      match k with
+      | Knight -> Bb.((Pre.knight dst - p) & them & major)
+      | Bishop -> Bb.((Pre.bishop dst all - p) & them & major)
+      | Rook   -> Bb.((Pre.rook dst all - p) & them & pos.queen)
       | Queen  -> Bb.empty
-      | King   -> Bb.empty
 end
 
 type legal = Legal.t [@@deriving compare, equal, sexp]
