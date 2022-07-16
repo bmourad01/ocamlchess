@@ -733,12 +733,12 @@ module Main = struct
           | First (score, _) -> leaf score ~ply
           | Second (alpha, beta, ttentry) ->
             (* Search the available moves. *)
-            with_moves pos moves
-              ~alpha ~beta ~ply ~depth ~check ~node ~null ~ttentry
+            with_moves pos moves ~alpha ~beta ~ply
+              ~depth ~check ~node ~null ~ttentry
 
   (* Search the available moves for the given position. *)
-  and with_moves ?(ttentry = None) ?(null = false)
-      pos moves ~alpha ~beta ~ply ~depth ~check ~node =
+  and with_moves ?(null = false) pos moves
+      ~alpha ~beta ~ply ~depth ~check ~ttentry ~node =
     eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
     try_pruning_before_child pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check
