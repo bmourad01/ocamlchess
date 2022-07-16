@@ -899,7 +899,7 @@ module Main = struct
       Option.some_if (score >= beta) beta
     else return None
 
-  and nmp_min_depth = 3
+  and nmp_min_depth = 2
 
   (* Razoring.
 
