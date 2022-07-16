@@ -574,7 +574,8 @@ module Order = struct
                 | None -> move_history m + history_offset)
 
   (* Score the moves for quiescence search. *)
-  let qscore = function
+  let qscore moves =
+    List.filter moves ~f:is_noisy |> function
     | [] -> Iterator.empty
     | moves -> fst @@ score_aux moves ~eval:(fun m ->
         let p = promote_by_value m in
@@ -643,8 +644,7 @@ module Quiescence = struct
     let eval = Eval.go pos in
     if eval >= beta then leaf beta ~ply
     else if delta pos ~eval ~alpha then leaf alpha ~ply
-    else List.filter moves ~f:is_noisy |>
-         Order.qscore |> Iterator.fold_until
+    else Order.qscore moves |> Iterator.fold_until
            ~init:(max eval alpha)
            ~finish:(leaf ~ply)
            ~f:(child ~beta ~eval ~ply)
@@ -925,14 +925,13 @@ module Main = struct
      a margin above beta, then we can safely prune this branch.
   *)
   and probcut pos moves ~depth ~ply ~beta ~ttentry ~improving =
-    let beta_cut = beta + probcut_beta_margin improving in
+    let beta_cut = beta + probcut_margin improving in
     if depth >= probcut_min_depth
     && probcut_tt ~depth ~beta_cut ~ttentry
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = return None in
       let f = probcut_child pos ~depth ~ply ~beta_cut in
-      List.filter moves ~f:is_noisy |> Order.qscore |>
-      Iterator.fold_until ~init:() ~finish ~f
+      Order.qscore moves |> Iterator.fold_until ~init:() ~finish ~f
     else return None
 
   and probcut_child pos ~depth ~ply ~beta_cut = fun () (m, _) ->
@@ -959,13 +958,15 @@ module Main = struct
       Stop (Some score)
     else return @@ Continue ()
 
+  (* If the evaluation was cached then make sure that it doesn't refute
+     our hypothesis. *)
   and probcut_tt ~depth ~beta_cut ~ttentry = match ttentry with
     | Some (entry : Tt.entry) ->
-      entry.depth < depth - probcut_min_depth + 2 &&
+      entry.depth < depth - probcut_min_depth + 2 ||
       entry.score >= beta_cut
     | None -> true
 
-  and probcut_beta_margin improving =
+  and probcut_margin improving =
     let n = Piece.Kind.value Knight * Eval.material_weight in
     let p = Piece.Kind.value Pawn * Eval.material_weight in
     (n / 2) - ((p / 2) * b2i improving)
