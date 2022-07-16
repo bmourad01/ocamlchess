@@ -5,13 +5,11 @@ module Pre = Precalculated
 
 let material_weight = 100
 
-let sum2 (w, x) (y, z) = w + y, x + z
+let add2 (w, x) (y, z) = w + y, x + z
 let sub2 (w, x) (y, z) = w - y, x - z
 let scale2 (x, y) z = x * z, y * z
 
 module Phase = struct
-  type t = Opening | Endgame
-
   let knight_phase = 1
   let bishop_phase = 1
   let rook_phase   = 2
@@ -61,7 +59,7 @@ module Material = struct
   let evaluate = evaluate @@ fun pos c ->
     let us = Position.board_of_color pos c in
     Array.fold weights ~init:(0, 0) ~f:(fun acc (k, w)  ->
-        sum2 acc @@ scale2 w Bb.(count (us & Position.board_of_kind pos k)))
+        add2 acc @@ scale2 w Bb.(count (us & Position.board_of_kind pos k)))
 end
 
 module Mobility = struct
@@ -267,7 +265,7 @@ module Pawns = struct
      performance improvement. *)
   let table = Hashtbl.create (module Int64)
 
-  let go pos c = List.fold ~init:(0, 0) ~f:sum2 [
+  let go pos c = List.fold ~init:(0, 0) ~f:add2 [
       Passed.go pos c;
       Doubled.go pos c;
       Isolated.go pos c;
@@ -461,7 +459,7 @@ module Placement = struct
   let evaluate = evaluate @@ fun pos c ->
     Position.collect_color pos c |>
     List.fold ~init:(0, 0) ~f:(fun acc (sq, k) ->
-        sum2 acc @@ Tables.of_kind sq c k)
+        add2 acc @@ Tables.of_kind sq c k)
 end
 
 module Mop_up = struct
@@ -514,7 +512,7 @@ let go pos =
   let material = Material.evaluate pos in
   let king_danger = ref 0, ref 0 in
   let mobility = Mobility.evaluate king_danger pos in
-  let start, end_ = List.fold ~init:(0, 0) ~f:sum2 [
+  let start, end_ = List.fold ~init:(0, 0) ~f:add2 [
       material;
       mobility;
       Rook_open_file.evaluate pos;
