@@ -647,7 +647,7 @@ module Quiescence = struct
          Order.qscore |> Iterator.fold_until
            ~init:(max eval alpha)
            ~finish:(leaf ~ply)
-           ~f:(branch ~beta ~eval ~ply)
+           ~f:(child ~beta ~eval ~ply)
 
   (* Delta pruning. *)
   and delta pos ~eval ~alpha =
@@ -656,7 +656,7 @@ module Quiescence = struct
   and delta_margin = Piece.Kind.value Queen * Eval.material_weight
 
   (* Search a branch of the current node. *)
-  and branch ~beta ~eval ~ply = fun alpha (m, _) ->
+  and child ~beta ~eval ~ply = fun alpha (m, _) ->
     let open Continue_or_stop in
     let pos = Legal.child m in
     State.(update @@ push_history pos) >>= fun () ->
@@ -728,6 +728,7 @@ module Main = struct
           (* Depth exhausted, drop down to quiescence search. *)
           Quiescence.with_moves pos moves ~alpha ~beta ~ply
         | Second (alpha, beta) ->
+          (* Find a cached evaluation of the position. *)
           lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
           | First (score, _) -> leaf score ~ply
           | Second (alpha, beta, ttentry) ->
@@ -739,14 +740,14 @@ module Main = struct
   and with_moves ?(ttentry = None) ?(null = false)
       pos moves ~alpha ~beta ~ply ~depth ~check ~node =
     eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
-    try_pruning_before_branch pos moves
+    try_pruning_before_child pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check
       ~null ~node ~improving ~ttentry >>= function
     | Some score -> leaf score ~ply
     | None -> Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
-      let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
+      let f = child t ~eval ~beta ~depth ~ply ~check ~node ~improving in
       Iterator.fold_until it ~init:0 ~finish ~f >>= fun score ->
       store t pos ~depth ~ply ~score >>| fun () -> score
 
@@ -756,7 +757,7 @@ module Main = struct
 
      Note that `eval` should be `None` if the position is in check.
   *)
-  and try_pruning_before_branch pos moves
+  and try_pruning_before_child pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check
       ~null ~node ~improving ~ttentry =
     match eval with
@@ -765,16 +766,13 @@ module Main = struct
     | Some eval -> razor pos moves ~eval ~alpha ~ply ~depth >>= function
       | Some _ as score -> return score
       | None ->
-        let threats =
-          Threats.count @@
-          Threats.get pos @@
-          Piece.Color.opposite @@
-          Position.active pos in
-        match rfp ~depth ~eval ~beta ~threats ~improving with
+        let their_threats =
+          Threats.(count @@ get pos @@ Position.inactive pos) in
+        match rfp ~depth ~eval ~beta ~their_threats ~improving with
         | Some _ as score -> return score
-        | None -> nmp pos ~eval ~beta ~ply ~depth ~threats >>= function
+        | None -> nmp pos ~eval ~beta ~ply ~depth ~their_threats >>= function
           | Some _ as score -> return score
-          | None -> probcut pos moves ~depth ~ply ~beta ~ttentry
+          | None -> probcut pos moves ~depth ~ply ~beta ~ttentry ~improving
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
      function (or whether to skip altogether). *)
@@ -789,8 +787,8 @@ module Main = struct
       Some score, improving
     else return (None, false)
 
-  (* Search a branch of the current node. *)
-  and branch t ~eval ~beta ~depth ~ply
+  (* Search a child of the current node. *)
+  and child t ~eval ~beta ~depth ~ply
       ~check ~node ~improving = fun i (m, order) ->
     let open Continue_or_stop in
     let[@inline] next () = return @@ Continue (i + 1) in
@@ -808,7 +806,7 @@ module Main = struct
     else next ()
 
   (* These pruning heuristics depend on conditions that change as we continue
-     to search all branches of the current node.
+     to search all children of the current node.
 
      The main idea is that if it looks like we're unlikely to improve the
      position at this point, then we should just skip searching the current
@@ -867,14 +865,14 @@ module Main = struct
      If our score is within a margin above beta, then it is likely too
      good, and should cause a cutoff.
   *)
-  and rfp ~depth ~eval ~beta ~threats ~improving =
+  and rfp ~depth ~eval ~beta ~their_threats ~improving =
     Option.some_if begin
       depth <= rfp_max_depth &&
-      eval - rfp_margin depth threats improving >= beta
+      eval - rfp_margin depth their_threats improving >= beta
     end eval
 
-  and rfp_margin depth threats improving =
-    let r = b2i (improving && threats <= 0) in
+  and rfp_margin depth their_threats improving =
+    let r = b2i (improving && their_threats <= 0) in
     Piece.Kind.value Pawn * Eval.material_weight * (depth - r)
 
   and rfp_max_depth = 6
@@ -885,8 +883,8 @@ module Main = struct
      response still produces a beta cutoff, then we know this position
      is unlikely.
   *)
-  and nmp pos ~eval ~beta ~ply ~depth ~threats =
-    if threats <= 0
+  and nmp pos ~eval ~beta ~ply ~depth ~their_threats =
+    if their_threats <= 0
     && eval >= beta
     && depth >= nmp_min_depth
     && not @@ Eval.is_endgame pos then
@@ -926,48 +924,53 @@ module Main = struct
      If we have any threats and a reduced search gives us a score within
      a margin above beta, then we can safely prune this branch.
   *)
-  and probcut pos moves ~depth ~ply ~beta ~ttentry =
-    let beta_cut = beta + probcut_beta_margin in
+  and probcut pos moves ~depth ~ply ~beta ~ttentry ~improving =
+    let beta_cut = beta + probcut_beta_margin improving in
     if depth >= probcut_min_depth
     && probcut_tt ~depth ~beta_cut ~ttentry
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = return None in
-      let alpha = -beta_cut and beta = -beta_cut + 1 in
+      let f = probcut_child pos ~depth ~ply ~beta_cut in
       List.filter moves ~f:is_noisy |> Order.qscore |>
-      Iterator.fold_until ~init:() ~finish ~f:(fun () (m, _) ->
-          let open Continue_or_stop in
-          let child = Legal.child m in
-          (* Confirm with quiescence search first. *)
-          Quiescence.go child ~alpha ~beta ~ply:(ply + 1) >>=
-          negm >>= fun score -> begin
-            if score >= beta_cut then
-              (* Do the full search. *)
-              let depth = depth - probcut_min_depth + 1 in
-              go child ~alpha ~beta ~depth
-                ~ply:(ply + 1) ~node:Cut >>= negm
-            else return score
-          end >>= fun score ->
-          if score >= beta_cut then
-            (* Save this cutoff in the TT. *)
-            State.(gets tt) >>| fun tt ->
-            let depth = depth - probcut_depth_margin in
-            Tt.store tt pos ~ply ~depth ~score ~best:m ~node:Cut;
-            Stop (Some score)
-          else return @@ Continue ())
+      Iterator.fold_until ~init:() ~finish ~f
     else return None
+
+  and probcut_child pos ~depth ~ply ~beta_cut = fun () (m, _) ->
+    let open Continue_or_stop in
+    let child = Legal.child m in
+    let alpha = -beta_cut and beta = -beta_cut + 1 in
+    State.(update @@ push_history child) >>= fun () ->
+    (* Confirm with quiescence search first. *)
+    Quiescence.go child ~alpha ~beta ~ply:(ply + 1) >>=
+    negm >>= fun score -> begin
+      if score >= beta_cut then
+        (* Do the full search. *)
+        let depth = depth - probcut_min_depth + 1 in
+        go child ~alpha ~beta ~depth
+          ~ply:(ply + 1) ~node:Cut >>= negm
+      else return score
+    end >>= fun score ->
+    State.(update @@ pop_history child) >>= fun () ->
+    if score >= beta_cut then
+      (* Save this cutoff in the TT. *)
+      State.(gets tt) >>| fun tt ->
+      let depth = depth - probcut_min_depth + 2 in
+      Tt.store tt pos ~ply ~depth ~score ~best:m ~node:Cut;
+      Stop (Some score)
+    else return @@ Continue ()
 
   and probcut_tt ~depth ~beta_cut ~ttentry = match ttentry with
     | Some (entry : Tt.entry) ->
-      entry.depth < depth - probcut_depth_margin &&
+      entry.depth < depth - probcut_min_depth + 2 &&
       entry.score >= beta_cut
     | None -> true
 
-  and probcut_min_depth = 5
-  and probcut_depth_margin = 3
+  and probcut_beta_margin improving =
+    let n = Piece.Kind.value Knight * Eval.material_weight in
+    let p = Piece.Kind.value Pawn * Eval.material_weight in
+    (n / 2) - ((p / 2) * b2i improving)
 
-  and probcut_beta_margin =
-    let m = Piece.Kind.value Pawn * Eval.material_weight in
-    m + (m / 2)
+  and probcut_min_depth = 5
 
   (* Late move reduction.
 
@@ -1055,7 +1058,7 @@ module Main = struct
       Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
       let t = new_search ~alpha ~best () in
       let finish _ = return t.alpha in
-      let f = branch t ~eval ~beta ~depth ~ply ~check ~node ~improving in
+      let f = child t ~eval ~beta ~depth ~ply ~check ~node ~improving in
       Iterator.fold_until it ~init:0 ~finish ~f >>= fun score ->
       store t pos ~depth ~ply ~score >>| fun () -> score, t.best
 
