@@ -487,17 +487,19 @@ module Mop_up = struct
     let md = Square.manhattan our_king their_king  in
     (mc * mc_weight) + (14 - md) * md_weight
 
+  (* Material evaluation was calculated from white's perspective. *)
+  let perspective material = function
+    | Piece.White -> material
+    | Piece.Black -> -material
+
   (* 1. This only matters in endgame positions.
 
      2. We don't want to bother evaluating this feature without a clear
         material advantage.
   *)
-  let evaluate pos material =
-    let score =
-      if material > margin
-      then go pos White - go pos Black
-      else 0 in
-    0, score
+  let evaluate material = evaluate @@ fun pos c ->
+    let material = perspective material c in
+    0, if material >= margin then go pos c else 0
 end
 
 let is_endgame pos = Phase.weight pos > 150
@@ -521,7 +523,7 @@ let go pos =
       King_pawn_shield.evaluate pos;
       Pawns.evaluate pos;
       Placement.evaluate pos;
-      Mop_up.evaluate pos @@ snd material;
+      Mop_up.evaluate (snd material) pos;
     ] in
   let start, end_ = match Position.active pos with
     | White -> start, end_
