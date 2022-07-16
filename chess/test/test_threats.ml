@@ -21,7 +21,7 @@ let test_new_threats mstr fen expected =
   assert_equal threats expected ~cmp:(=)
     ~msg:(sprintf "New threats (%s): got %d, expected %d"
             mstr threats expected)
-  
+
 let test_1 () =
   test_threats "r7/1Pp5/2P3p1/8/6pb/4p1kB/4P1p1/6K1 w - - 0 1" 1
 

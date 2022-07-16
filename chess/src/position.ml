@@ -1001,21 +1001,24 @@ let start = Fen.(of_string_exn start)
 *)
 
 module Makemove = struct
-  (* `en_passant` is the en passant aquare. This field is only valid if the
-     square is threatened with capture.
+  (* Collection of precomputed info that is useful for generating the new
+     position. We have the following fields:
 
-     `en_passant_pawn` is the pawn that is "in front" of the en passant
-     square. This field is only valid if the move we are making is in fact an
-     en passant capture.
+     - en_passant: the en passant aquare. This field is only valid if
+       the square is threatened with capture.
 
-     `castle` is the side on which castling occurred, if any.
+     - en_passant_pawn: the pawn that is "in front" of the en passant
+       square. This field is only valid if the move we are making is in
+       fact an en passant capture.
 
-     `piece` is the piece being moved (which belongs to the active color).
+     - castle: the side on which castling occurred, if any.
 
-     `direct_capture` is the inactive piece, if any, that will be captured
-     by the "direct" move (e.g. it is not an en passant capture).
+     - piece: the piece being moved (which belongs to the active color).
+
+     - direct_capture: the inactive piece, if any, that will be captured
+       by the "direct" move (e.g. it is not an en passant capture).
   *)
-  type context = {
+  type info = {
     en_passant      : Square.t Uopt.t;
     en_passant_pawn : Square.t Uopt.t;
     castle_side     : Cr.side Uopt.t;
@@ -1046,10 +1049,7 @@ module Makemove = struct
     map_color c pos ~f;
     map_kind k pos ~f;
     update_hash pos ~f:(Hash.Update.piece c k sq);
-    begin match k with
-      | Pawn -> update_pawn_hash sq c pos
-      | _ -> ()
-    end;
+    if Piece.Kind.(k = Pawn) then update_pawn_hash sq c pos;
     k
 
   let set = Fn.flip Bb.set
@@ -1067,10 +1067,10 @@ module Makemove = struct
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
-  let[@inline] update_halfmove ctx pos = set_halfmove pos @@
-    if Uopt.is_some ctx.en_passant_pawn
-    || Uopt.is_some ctx.direct_capture
-    || Piece.is_pawn ctx.piece
+  let[@inline] update_halfmove info pos = set_halfmove pos @@
+    if Uopt.is_some info.en_passant_pawn
+    || Uopt.is_some info.direct_capture
+    || Piece.is_pawn info.piece
     then 0 else succ pos.halfmove
 
   (* Castling rights change monotonically, so the only time we update the hash
@@ -1147,20 +1147,20 @@ module Makemove = struct
       if Piece.is_rook p then rook_moved_or_captured dst (Piece.color p) pos
 
   (* Handle castling-related details. *)
-  let[@inline] update_castle ctx src dst pos =
-    begin match Piece.kind ctx.piece with
+  let[@inline] update_castle info src dst pos =
+    begin match Piece.kind info.piece with
       | Rook -> rook_moved src pos
-      | King -> king_moved_or_castled ctx.castle_side pos
+      | King -> king_moved_or_castled info.castle_side pos
       | _ -> ()
     end;
-    rook_captured dst ctx.direct_capture pos
+    rook_captured dst info.direct_capture pos
 
   (* Reset the en passant hash and return the new en passant square if a pawn
      double push occurred. *) 
-  let[@inline] update_en_passant ctx src dst pos =
-    Uopt.iter ctx.en_passant ~f:(fun ep ->
+  let[@inline] update_en_passant info src dst pos =
+    Uopt.iter info.en_passant ~f:(fun ep ->
         update_hash pos ~f:(Hash.Update.en_passant_sq ep));
-    let ep = if Piece.is_pawn ctx.piece then
+    let ep = if Piece.is_pawn info.piece then
         let src_rank = Square.rank src in
         let dst_rank = Square.rank dst in
         match pos.active with
@@ -1197,20 +1197,20 @@ module Makemove = struct
       Uopt.some Piece.Pawn
     else Uopt.none
 
-  let[@inline] go src dst promote ctx pos =
+  let[@inline] go src dst promote info pos =
     (* Do the stuff that relies on the initial state. *)
-    update_en_passant ctx src dst pos;
-    update_halfmove ctx pos;
-    update_castle ctx src dst pos;
+    update_en_passant info src dst pos;
+    update_halfmove info pos;
+    update_castle info src dst pos;
     (* Clear the old placement. *)
-    clear_square ctx.piece src pos;
-    let capture = clear_square_capture dst ctx.direct_capture pos in
+    clear_square info.piece src pos;
+    let capture = clear_square_capture dst info.direct_capture pos in
     (* Set the new placement. *)
-    let p = do_promote ctx.piece promote pos in
+    let p = do_promote info.piece promote pos in
     set_square p dst pos;
     let capture =
       if Uopt.is_some capture then capture
-      else en_passant_capture ctx.en_passant_pawn pos in
+      else en_passant_capture info.en_passant_pawn pos in
     (* Prepare for the next move. *)
     update_fullmove pos;
     flip_active pos;
@@ -1303,14 +1303,13 @@ module Movegen = struct
            that the en passant square is occupied. This covers the case where
            we can capture the pawn, but it may leave our pawn pinned. *)
         let occupied = a.occupied -- sq -- pw ++ ep in
-        let init = diag ++ ep and finish = ident in
         (* Check if an appropriate diagonal attack from the king would reach
            that corresponding piece. *)
         let bishop = Pre.bishop a.king_sq occupied in
         let rook   = Pre.rook   a.king_sq occupied in
         let queen  = Pre.queen  a.king_sq occupied in
-        (List.fold_until [@specialised]) a.inactive_sliders ~init ~finish
-          ~f:(fun acc -> function
+        (List.fold_until [@specialised]) a.inactive_sliders
+          ~init:(diag ++ ep) ~finish:ident ~f:(fun acc -> function
               | sq, Piece.Bishop when sq @ bishop -> Stop diag
               | sq, Piece.Rook   when sq @ rook   -> Stop diag
               | sq, Piece.Queen  when sq @ queen  -> Stop diag
@@ -1449,10 +1448,10 @@ module Movegen = struct
     (* The side we're castling on, if any. *)
     let castle_side = castle_side piece src dst in
     (* Shared info for makemove. *)
-    let ctx = Makemove.Fields_of_context.create
+    let info = Makemove.Fields_of_info.create
         ~en_passant ~en_passant_pawn ~piece ~castle_side ~direct_capture in
     (* Update the position and return the captured piece, if any. *)
-    let capture = Makemove.go src dst promote ctx child in
+    let capture = Makemove.go src dst promote info child in
     child, capture, is_en_passant, castle_side
 
   (* Accumulate a list of legal moves. *)
