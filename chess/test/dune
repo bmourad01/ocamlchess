@@ -7,7 +7,8 @@
    test_perft
    test_zobrist
    test_uci
-   test_see)
+   test_see
+   test_threats)
  (libraries ounit2 chess)
  (flags -w -58)
  (ocamlopt_flags -O3))
