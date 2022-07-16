@@ -899,7 +899,7 @@ module Main = struct
       Option.some_if (score >= beta) beta
     else return None
 
-  and nmp_min_depth = 2
+  and nmp_min_depth = 3
 
   (* Razoring.
 
@@ -914,7 +914,7 @@ module Main = struct
       Option.some_if (score < alpha) score
     else return None
 
-  and razor_max_depth = 2
+  and razor_max_depth = 3
 
   and razor_margin depth =
     Piece.Kind.value Knight * Eval.material_weight * depth
