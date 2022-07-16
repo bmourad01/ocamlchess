@@ -59,9 +59,9 @@ module Material = struct
 
   (* Count the material on the board. *)
   let evaluate = evaluate @@ fun pos c ->
-    let b = Position.board_of_color pos c in
+    let us = Position.board_of_color pos c in
     Array.fold weights ~init:(0, 0) ~f:(fun acc (k, w)  ->
-        sum2 acc @@ scale2 w Bb.(count (b & Position.board_of_kind pos k)))
+        sum2 acc @@ scale2 w Bb.(count (us & Position.board_of_kind pos k)))
 end
 
 module Mobility = struct
@@ -83,19 +83,13 @@ module Mobility = struct
     let king_sq = Bb.(first_set_exn (them & Position.king pos)) in
     let box = Pre.king king_sq in
     let king_danger = match c with White -> bk | Black -> wk in
-    let bishop = Bb.(Position.bishop pos & us) in
-    let rook = Bb.(Position.rook pos & us) in
-    let queen = Bb.(Position.queen pos & us) in
-    let bq = Bb.(bishop + queen) in
-    let rq = Bb.(rook + queen) in
-    let brq = Bb.(bishop + rook + queen) in
     let score = Array.fold kinds ~init:0 ~f:(fun init k ->
         let f = match k with
           | Pawn   -> assert false
           | Knight -> Pre.knight
-          | Bishop -> fun sq -> Pre.bishop sq Bb.(occupied - bq)
-          | Rook   -> fun sq -> Pre.rook   sq Bb.(occupied - rq)
-          | Queen  -> fun sq -> Pre.queen  sq Bb.(occupied - brq)
+          | Bishop -> fun sq -> Pre.bishop sq occupied
+          | Rook   -> fun sq -> Pre.rook   sq occupied
+          | Queen  -> fun sq -> Pre.queen  sq occupied
           | King   -> assert false in
         Bb.(Position.board_of_kind pos k & us) |>
         Bb.fold ~init ~f:(fun score sq ->
@@ -113,14 +107,14 @@ module Rook_open_file = struct
   (* Count the rooks on open files. This can also be measured by the
      mobility score, but we also give a bonus here. *)
   let evaluate = evaluate @@ fun pos c ->
-    let occupied = Position.all_board pos in
-    let b = Position.board_of_color pos c in
-    let rook = Bb.(b & Position.rook pos) in
+    let all = Position.all_board pos in
+    let us = Position.board_of_color pos c in
+    let rook = Bb.(us & Position.rook pos) in
     let score =
       List.init Square.File.count ~f:Bb.file_exn |>
       List.fold ~init:0 ~f:(fun acc f ->
           let b = Bb.(f & rook) in
-          acc + Bool.to_int Bb.(b <> empty && b = (f & occupied))) in
+          acc + Bool.to_int Bb.(b <> empty && b = (f & all))) in
     score * start_weight, score * end_weight
 end
 
@@ -130,8 +124,8 @@ module Bishop_pair = struct
 
   (* Give a bonus if the player has a bishop pair. *)
   let evaluate = evaluate @@ fun pos c ->
-    let b = Position.board_of_color pos c in
-    let bishop = Bb.(b & Position.bishop pos) in
+    let us = Position.board_of_color pos c in
+    let bishop = Bb.(us & Position.bishop pos) in
     let has_pair =
       Bb.((bishop & black) <> empty) &&
       Bb.((bishop & white) <> empty) in
@@ -166,7 +160,7 @@ end
 module Pawns = struct
   module Passed = struct
     let start_weight = 2
-    let end_weight = 54
+    let end_weight = 5
 
     let idx c sq = c + sq * Piece.Color.count
 
@@ -190,10 +184,12 @@ module Pawns = struct
       tbl
 
     let go pos c =
+      let all = Position.all_board pos in
       let us = Position.board_of_color pos c in
-      let them = Position.board_of_color pos @@ Piece.Color.opposite c in
-      let our_pawn = Bb.(us & Position.pawn pos) in
-      let their_pawn = Bb.(them & Position.pawn pos) in
+      let them = Bb.(all - us) in
+      let pawn = Position.pawn pos in
+      let our_pawn = Bb.(us & pawn) in
+      let their_pawn = Bb.(them & pawn) in
       let score = Bb.fold our_pawn ~init:0 ~f:(fun acc sq ->
           let i = idx (Piece.Color.to_int c) (Square.to_int sq) in
           (* If there's no enemy pawns that can intersect with this mask,
@@ -208,8 +204,8 @@ module Pawns = struct
     let end_weight = -10
 
     let go pos c =
-      let b = Position.board_of_color pos c in
-      let pawn = Bb.(b & Position.pawn pos) in
+      let us = Position.board_of_color pos c in
+      let pawn = Bb.(us & Position.pawn pos) in
       let score =
         List.init Square.File.count ~f:Bb.file_exn |>
         List.fold ~init:0 ~f:(fun acc f ->
@@ -254,14 +250,14 @@ module Pawns = struct
     let end_weight = 5
 
     let go pos c =
-      let occupied = Position.all_board pos in
+      let all = Position.all_board pos in
       let us = Position.board_of_color pos c in
       let pawn = Bb.(us & Position.pawn pos) in
       let score = Bb.fold pawn ~init:0 ~f:(fun acc sq ->
           (* Count the number of pawns that are part of a chain. This
              is the immediate diagonal squares that are surrounding any
              particular pawn. *)
-          let mask = Bb.(Pre.bishop sq occupied & Pre.king sq) in
+          let mask = Bb.(Pre.bishop sq all & Pre.king sq) in
           acc + Bb.(count (mask & pawn))) in
       score * start_weight, score * end_weight
   end
