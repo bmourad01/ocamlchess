@@ -716,7 +716,7 @@ module Quiescence = struct
     | Some eval, _ -> Second (max eval alpha)
     | None,      _ -> Second alpha
 
-  (* TT entries for quiescence search have either a depth of 0 or -1,
+  (* TT entries for quiescence search have a depth of either 0 or -1,
      depending on whether this is the first ply or we're in check. *)
   let tt_depth check init = b2i (check || init) - 1
 
