@@ -252,14 +252,18 @@ end
 
 type result = Result.t
 
+(* A move produces a "quiet" position iff:
+
+   1. The move is not a capture.
+   2. The move is not a promotion.
+   3. The move does not give a check.
+*)
 let is_quiet m =
   Option.is_none @@ Legal.capture m &&
-  Option.is_none @@ Move.promote @@ Legal.move m
+  Option.is_none @@ Move.promote @@ Legal.move m &&
+  not (Legal.gives_check m)
 
 let is_noisy = Fn.non is_quiet
-
-let b2i = Bool.to_int
-let b2in b = Bool.to_int (not b)
 
 (* Our state for the entirety of the search. *)
 module State = struct
@@ -371,12 +375,14 @@ module State = struct
 
   (* Update the move history heuristic. *)
   let update_move_history m depth st =
-    let i = history_idx m in
-    let d = Array.unsafe_get st.move_history i + (depth * depth) in
-    Array.unsafe_set st.move_history i d;
-    match Position.active @@ Legal.parent m with
-    | White -> {st with move_history_max_w = max d st.move_history_max_w}
-    | Black -> {st with move_history_max_b = max d st.move_history_max_b}
+    if depth > 0 then
+      let i = history_idx m in
+      let d = Array.unsafe_get st.move_history i + (depth * depth) in
+      Array.unsafe_set st.move_history i d;
+      match Position.active @@ Legal.parent m with
+      | White -> {st with move_history_max_w = max d st.move_history_max_w}
+      | Black -> {st with move_history_max_b = max d st.move_history_max_b}
+    else st
 
   let move_history_max pos st = match Position.active pos with
     | White -> st.move_history_max_w
@@ -574,8 +580,8 @@ module Order = struct
   (* Score the moves for quiescence search. *)
   let qscore moves =
     List.filter moves ~f:is_noisy |> function
-    | [] -> Iterator.empty
-    | moves -> fst @@ score_aux moves ~eval:(fun m ->
+    | [] -> Either.first ()
+    | moves -> Either.second @@ score_aux moves ~eval:(fun m ->
         let p = promote_by_value m in
         if p <> 0 then p
         else match See.go m with
@@ -583,90 +589,8 @@ module Order = struct
           | None -> 0)
 end
 
-let negm = Fn.compose return Int.neg
-
-let leaf score ~ply = begin State.update @@ fun st -> {
-    st with seldepth = max st.seldepth ply;
-  } end >>| fun () -> score
-
-let has_reached_limits =
-  State.(gets elapsed) >>= fun elapsed ->
-  State.(gets limits) >>= fun limits ->
-  State.(gets nodes) >>| fun nodes ->
-  Limits.stopped limits || begin
-    match Limits.nodes limits with
-    | Some n when nodes >= n -> true
-    | _ -> match Limits.time limits with
-      | Some t -> elapsed >= t
-      | None -> false
-  end
-
-let check_limits =
-  has_reached_limits >>= fun result ->
-  State.(update_if result stop) >>| fun () -> result
-
-(* Will playing this position likely lead to a repetition draw? *)
-let check_repetition history pos =
-  Position.hash pos |> Map.find history |>
-  Option.value_map ~default:false ~f:(fun n -> n > 2)
-
-(* Will the position lead to a draw? *)
-let drawn pos =
-  State.(gets history) >>| fun history ->
-  check_repetition history pos ||
-  Position.halfmove pos >= 100 ||
-  Position.is_insufficient_material pos
-
-(* These are conditions for returning a score of 0. *)
-let check_limits_or_draw pos =
-  check_limits >>= function
-  | false -> drawn pos
-  | true -> return true
-
-(* Quiescence search is used when we reach our maximum depth for the main
-   search. The goal is then to keep searching only "noisy" positions, until
-   we reach one that is "quiet", and then return our evaluation. *)
-module Quiescence = struct
-  (* Search a position until it becomes "quiet". *)
-  let rec go pos ~alpha ~beta ~ply =
-    check_limits_or_draw pos >>= function
-    | true -> leaf 0 ~ply
-    | false -> Position.legal_moves pos |> function
-      | [] -> leaf (if Position.in_check pos then mated ply else 0) ~ply
-      | moves -> with_moves pos moves ~alpha ~beta ~ply
-
-  (* Search the available moves for a given position, but only if they are
-     "noisy". *)
-  and with_moves pos moves ~alpha ~beta ~ply =
-    State.(update inc_nodes) >>= fun () ->
-    let eval = Eval.go pos in
-    if eval >= beta then leaf beta ~ply
-    else if delta pos ~eval ~alpha then leaf alpha ~ply
-    else Order.qscore moves |> Iterator.fold_until
-           ~init:(max eval alpha)
-           ~finish:(leaf ~ply)
-           ~f:(child ~beta ~eval ~ply)
-
-  (* Delta pruning. *)
-  and delta pos ~eval ~alpha =
-    eval + delta_margin <= alpha && not (Eval.is_endgame pos)
-
-  and delta_margin = Piece.Kind.value Queen * Eval.material_weight
-
-  (* Search a branch of the current node. *)
-  and child ~beta ~eval ~ply = fun alpha (m, _) ->
-    let open Continue_or_stop in
-    let pos = Legal.child m in
-    State.(update @@ push_history pos) >>= fun () ->
-    go pos ~alpha:(-beta) ~beta:(-alpha) ~ply:(ply + 1) >>=
-    negm >>= fun score ->
-    State.(update @@ pop_history pos) >>| fun () ->
-    if score >= beta then Stop beta else Continue (max score alpha)
-end
-
-(* The main search of the game tree. The core of it is the negamax algorithm
-   with alpha-beta pruning (and other enhancements). *)
-module Main = struct
+(* Helpers for the search. *)
+module Search = struct
   (* The results for a single ply. *)
   type t = {
     mutable best  : Position.legal;
@@ -674,7 +598,7 @@ module Main = struct
     mutable node  : node;
   }
 
-  let new_search ?(alpha = -inf) ~best () = {best; alpha; node = All}
+  let create ?(alpha = -inf) ~best () = {best; alpha; node = All}
 
   let update_history_and_killer m ~ply ~depth =
     if is_quiet m then
@@ -707,10 +631,140 @@ module Main = struct
     State.(gets tt) >>| fun tt ->
     Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node
 
+  (* Decide whether to use the TT evaluation or the result of the evaluation
+     function (or whether to skip altogether). *)
+  let eval pos ~ply ~check ~ttentry =
+    if not check then
+      let eval = Eval.go pos in
+      let score = match (ttentry : Tt.entry option) with
+        | Some {score; node = Cut; _} when score > eval -> score
+        | Some {score; node = All; _} when score < eval -> score
+        | None | Some _ -> eval in
+      State.(gets @@ update_eval pos ply score) >>| fun improving ->
+      Some score, improving
+    else return (None, false)
+
+  let leaf score ~ply = begin State.update @@ fun st -> {
+      st with seldepth = max st.seldepth ply;
+    } end >>| fun () -> score
+
+  let has_reached_limits =
+    State.(gets elapsed) >>= fun elapsed ->
+    State.(gets limits) >>= fun limits ->
+    State.(gets nodes) >>| fun nodes ->
+    Limits.stopped limits || begin
+      match Limits.nodes limits with
+      | Some n when nodes >= n -> true
+      | _ -> match Limits.time limits with
+        | Some t -> elapsed >= t
+        | None -> false
+    end
+
+  let check_limits =
+    has_reached_limits >>= fun result ->
+    State.(update_if result stop) >>| fun () -> result
+
+  (* Will playing this position likely lead to a repetition draw? *)
+  let check_repetition history pos =
+    Position.hash pos |> Map.find history |>
+    Option.value_map ~default:false ~f:(fun n -> n > 2)
+
+  (* Will the position lead to a draw? *)
+  let drawn pos =
+    State.(gets history) >>| fun history ->
+    check_repetition history pos ||
+    Position.halfmove pos >= 100 ||
+    Position.is_insufficient_material pos
+
+  (* These are conditions for returning a score of 0. *)
+  let check_limits_or_draw pos =
+    check_limits >>= function
+    | false -> drawn pos
+    | true -> return true
+end
+
+let negm = Fn.compose return Int.neg
+let b2i = Bool.to_int
+let b2in = Fn.compose b2i not
+
+(* Quiescence search is used when we reach our maximum depth for the main
+   search. The goal is then to keep searching only "noisy" positions, until
+   we reach one that is "quiet", and then return our evaluation. *)
+module Quiescence = struct
+  (* Delta pruning. *)
+  let delta =
+    let margin = Piece.Kind.value Queen * Eval.material_weight in
+    fun pos ~eval ~alpha ->
+      eval + margin <= alpha && not (Eval.is_endgame pos)
+
+  (* Decide whether to fail low or high before searching. Otherwise, return
+     the new value of alpha. *)
+  let eval pos ~ply ~check ~alpha ~beta ~ttentry =
+    Search.eval pos ~ply ~check ~ttentry >>| function
+    | Some eval, _ when eval >= beta -> First beta
+    | Some eval, _ when delta pos ~eval ~alpha -> First alpha
+    | Some eval, _ -> Second (max eval alpha)
+    | None,      _ -> Second alpha
+
+  (* TT entries for quiescence search have either a depth of 0 or -1,
+     depending on whether this is the first ply or we're in check. *)
+  let tt_depth check init = b2i (check || init) - 1
+
+  (* Search a position until it becomes "quiet". *)
+  let rec go ?(init = true) pos ~alpha ~beta ~ply ~node =
+    Search.check_limits_or_draw pos >>= function
+    | true -> Search.leaf 0 ~ply
+    | false ->
+      let check = Position.in_check pos in
+      Position.legal_moves pos |> function
+      | [] -> Search.leaf ~ply @@ if check then mated ply else 0
+      | moves ->
+        let depth = tt_depth check init in
+        Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+        | First (score, _) -> Search.leaf score ~ply
+        | Second (alpha, beta, ttentry) ->
+          with_moves pos moves ~alpha ~beta
+            ~ply ~check ~node ~ttentry ~init
+
+  (* Search the available moves for a given position, but only if they are
+     "noisy". *)
+  and with_moves ?(ttentry = None) ?(init = true)
+      pos moves ~alpha ~beta ~ply ~check ~node =
+    State.(update inc_nodes) >>= fun () ->
+    eval pos ~ply ~check ~alpha ~beta ~ttentry >>= function
+    | First score -> Search.leaf score ~ply
+    | Second alpha -> match Order.qscore moves with
+      | First () -> Search.leaf alpha ~ply
+      | Second (it, best) ->
+        let t = Search.create ~alpha ~best () in
+        let finish () = Search.leaf t.alpha ~ply in
+        let f = child t ~beta ~eval ~ply ~node in
+        Iterator.fold_until it ~init:() ~finish ~f >>= fun score ->
+        let depth = tt_depth check init in
+        Search.store t pos ~depth ~ply ~score >>| fun () -> score
+
+  (* Search a child of the current node. *)
+  and child t ~beta ~eval ~ply ~node = fun () (m, _) ->
+    let open Continue_or_stop in
+    let pos = Legal.child m in
+    State.(update @@ push_history pos) >>= fun () ->
+    go pos ~node ~init:false ~ply:(ply + 1)
+      ~alpha:(-beta) ~beta:(-t.alpha) >>= negm >>= fun score ->
+    State.(update @@ pop_history pos) >>= fun () ->
+    Search.better t m ~score;
+    if score >= beta then
+      Search.cutoff t m ~ply ~depth:0 >>= fun () ->
+      Search.leaf beta ~ply >>| fun beta -> Stop beta
+    else return @@ Continue ()
+end
+
+(* The main search of the game tree. The core of it is the negamax algorithm
+   with alpha-beta pruning (and other enhancements). *)
+module Main = struct
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
-    check_limits_or_draw pos >>= function
-    | true -> leaf 0 ~ply
+    Search.check_limits_or_draw pos >>= function
+    | true -> Search.leaf 0 ~ply
     | false ->
       let moves = Position.legal_moves pos in
       (* Check + single reply extension. *)
@@ -719,16 +773,16 @@ module Main = struct
       let depth = depth + b2i (check || single) in
       (* Checkmate or stalemate. *)
       match moves with
-      | [] -> leaf ~ply @@ if check then mated ply else 0
+      | [] -> Search.leaf ~ply @@ if check then mated ply else 0
       | _ -> match mdp ~alpha ~beta ~ply with
         | First alpha -> return alpha
         | Second (alpha, beta) when depth <= 0 ->
           (* Depth exhausted, drop down to quiescence search. *)
-          Quiescence.with_moves pos moves ~alpha ~beta ~ply
+          Quiescence.with_moves pos moves ~alpha ~beta ~ply ~check ~node
         | Second (alpha, beta) ->
           (* Find a cached evaluation of the position. *)
-          lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-          | First (score, _) -> leaf score ~ply
+          Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+          | First (score, _) -> Search.leaf score ~ply
           | Second (alpha, beta, ttentry) ->
             (* Search the available moves. *)
             with_moves pos moves ~alpha ~beta ~ply
@@ -737,17 +791,17 @@ module Main = struct
   (* Search the available moves for the given position. *)
   and with_moves ?(null = false) pos moves
       ~alpha ~beta ~ply ~depth ~check ~ttentry ~node =
-    eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
+    Search.eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
     try_pruning_before_child pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check
       ~null ~node ~improving ~ttentry >>= function
-    | Some score -> leaf score ~ply
+    | Some score -> Search.leaf score ~ply
     | None -> Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
-      let t = new_search ~alpha ~best () in
+      let t = Search.create ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = child t ~eval ~beta ~depth ~ply ~check ~node ~improving in
       Iterator.fold_until it ~init:0 ~finish ~f >>= fun score ->
-      store t pos ~depth ~ply ~score >>| fun () -> score
+      Search.store t pos ~depth ~ply ~score >>| fun () -> score
 
   (* There are a number of pruning heuristics we can use before we even try
      to search the child nodes of this position. This shouldn't be done if
@@ -772,19 +826,6 @@ module Main = struct
           | Some _ as score -> return score
           | None -> probcut pos moves ~depth ~ply ~beta ~ttentry ~improving
 
-  (* Decide whether to use the TT evaluation or the result of the evaluation
-     function (or whether to skip altogether). *)
-  and eval pos ~ply ~check ~ttentry =
-    if not check then
-      let eval = Eval.go pos in
-      let score = match (ttentry : Tt.entry option) with
-        | Some {score; node = Cut; _} when score > eval -> score
-        | Some {score; node = All; _} when score < eval -> score
-        | None | Some _ -> eval in
-      State.(gets @@ update_eval pos ply score) >>| fun improving ->
-      Some score, improving
-    else return (None, false)
-
   (* Search a child of the current node. *)
   and child t ~eval ~beta ~depth ~ply
       ~check ~node ~improving = fun i (m, order) ->
@@ -796,10 +837,10 @@ module Main = struct
       lmr m ~i ~beta ~ply ~depth ~check ~node ~order ~improving >>= fun r ->
       pvs t pos ~i ~r ~beta ~ply ~depth ~node >>= fun score ->
       (* Update alpha if needed. *)
-      better t m ~score;
+      Search.better t m ~score;
       if score >= beta then
         (* Move was too good. *)
-        cutoff t m ~ply ~depth >>| fun () -> Stop beta
+        Search.cutoff t m ~ply ~depth >>| fun () -> Stop beta
       else next ()
     else next ()
 
@@ -824,7 +865,6 @@ module Main = struct
   and futile m ~eval ~alpha ~beta ~depth ~check ~node =
     not (equal_node node Pv) &&
     is_quiet m &&
-    not (Legal.gives_check m) &&
     depth <= futile_max_depth &&
     Option.value_map eval ~default:false
       ~f:(fun eval -> eval + futile_margin depth <= alpha)
@@ -907,8 +947,8 @@ module Main = struct
   *)
   and razor pos moves ~eval ~alpha ~ply ~depth =
     if depth <= razor_max_depth && eval + razor_margin depth < alpha then
-      Quiescence.with_moves pos moves
-        ~alpha:(alpha - 1) ~beta:alpha ~ply >>| fun score ->
+      Quiescence.with_moves pos moves ~alpha:(alpha - 1) ~beta:alpha
+        ~ply ~check:false ~node:All >>| fun score ->
       Option.some_if (score < alpha) score
     else return None
 
@@ -929,7 +969,9 @@ module Main = struct
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = return None in
       let f = probcut_child pos ~depth ~ply ~beta_cut in
-      Order.qscore moves |> Iterator.fold_until ~init:() ~finish ~f
+      match Order.qscore moves with
+      | First () -> return None
+      | Second (it, _) -> Iterator.fold_until it ~init:() ~finish ~f
     else return None
 
   and probcut_child pos ~depth ~ply ~beta_cut = fun () (m, _) ->
@@ -938,7 +980,7 @@ module Main = struct
     let alpha = -beta_cut and beta = -beta_cut + 1 in
     State.(update @@ push_history child) >>= fun () ->
     (* Confirm with quiescence search first. *)
-    Quiescence.go child ~alpha ~beta ~ply:(ply + 1) >>=
+    Quiescence.go child ~alpha ~beta ~ply:(ply + 1) ~node:Cut >>=
     negm >>= fun score -> begin
       if score >= beta_cut then
         (* Do the full search. *)
@@ -1050,16 +1092,16 @@ module Main = struct
     let ply = 0 and node = Pv in
     State.(gets root) >>= fun pos ->
     let check = Position.in_check pos in
-    lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+    Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
     | First _ -> assert false
     | Second (alpha, beta, ttentry) ->
-      eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
+      Search.eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
       Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
-      let t = new_search ~alpha ~best () in
+      let t = Search.create ~alpha ~best () in
       let finish _ = return t.alpha in
       let f = child t ~eval ~beta ~depth ~ply ~check ~node ~improving in
       Iterator.fold_until it ~init:0 ~finish ~f >>= fun score ->
-      store t pos ~depth ~ply ~score >>| fun () -> score, t.best
+      Search.store t pos ~depth ~ply ~score >>| fun () -> score, t.best
 
   (* Aspiration window.
 
@@ -1158,13 +1200,16 @@ and next moves ~depth ~score ~best ~mate ~mated ~time =
   let max_nodes =
     Limits.nodes limits |>
     Option.value_map ~default:false ~f:(fun n -> nodes >= n) in
-  (* Stop searching once we've found a mate in X (if applicable). *)
+  (* Stop searching once we've found a mate in X (if applicable).
+     Alternatively, we can stop once we've found a mate within the
+     current depth limit. *)
   let mate =
     mate &&
-    Limits.mate limits |>
-    Option.value_map ~default:false ~f:(fun n -> List.length pv <= n * 2) in
+    let len = List.length pv in
+    Limits.mate limits |> Option.value_map
+      ~default:(len <= depth) ~f:(fun n -> len <= n * 2) in
   (* Continue iterating? *)
-  if not (too_long || max_nodes || max_depth || mate) then
+  if not (too_long || max_nodes || max_depth || mate || mated) then
     State.(update new_iter) >>= fun () ->
     let prev = Some (result, score) in
     iterdeep moves ~depth:(depth + 1) ~prev
