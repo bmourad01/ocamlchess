@@ -681,6 +681,16 @@ module Search = struct
     check_limits >>= function
     | false -> drawn pos
     | true -> return true
+
+  (* Mate distance pruning.
+
+     If we've already found a shorter path to checkmate than our current
+     distance from the root, then just cut off the search here.
+  *)
+  let mdp ~alpha ~beta ~ply =
+    let alpha = max alpha (-mate_score + ply) in
+    let beta = min beta (mate_score - ply) in
+    if alpha >= beta then First alpha else Second (alpha, beta)
 end
 
 let negm = Fn.compose return Int.neg
@@ -718,13 +728,15 @@ module Quiescence = struct
       let check = Position.in_check pos in
       Position.legal_moves pos |> function
       | [] -> Search.leaf ~ply @@ if check then mated ply else 0
-      | moves ->
-        let depth = tt_depth check init in
-        Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-        | First (score, _) -> Search.leaf score ~ply
-        | Second (alpha, beta, ttentry) ->
-          with_moves pos moves ~alpha ~beta
-            ~ply ~check ~node ~ttentry ~init
+      | moves -> match Search.mdp ~alpha ~beta ~ply with
+        | First alpha -> Search.leaf alpha ~ply
+        | Second (alpha, beta) ->
+          let depth = tt_depth check init in
+          Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
+          | First (score, _) -> Search.leaf score ~ply
+          | Second (alpha, beta, ttentry) ->
+            with_moves pos moves ~alpha ~beta
+              ~ply ~check ~node ~ttentry ~init
 
   (* Search the available moves for a given position, but only if they are
      "noisy". *)
@@ -737,11 +749,12 @@ module Quiescence = struct
       | First () -> Search.leaf alpha ~ply
       | Second (it, best) ->
         let t = Search.create ~alpha ~best () in
-        let finish () = Search.leaf t.alpha ~ply in
+        let finish () = return t.alpha in
         let f = child t ~beta ~eval ~ply ~node in
         Iterator.fold_until it ~init:() ~finish ~f >>= fun score ->
         let depth = tt_depth check init in
-        Search.store t pos ~depth ~ply ~score >>| fun () -> score
+        Search.store t pos ~depth ~ply ~score >>= fun () ->
+        Search.leaf score ~ply
 
   (* Search a child of the current node. *)
   and child t ~beta ~eval ~ply ~node = fun () (m, _) ->
@@ -753,8 +766,7 @@ module Quiescence = struct
     State.(update @@ pop_history pos) >>= fun () ->
     Search.better t m ~score;
     if score >= beta then
-      Search.cutoff t m ~ply ~depth:0 >>= fun () ->
-      Search.leaf beta ~ply >>| fun beta -> Stop beta
+      Search.cutoff t m ~ply ~depth:0 >>| fun () -> Stop beta
     else return @@ Continue ()
 end
 
@@ -774,7 +786,7 @@ module Main = struct
       (* Checkmate or stalemate. *)
       match moves with
       | [] -> Search.leaf ~ply @@ if check then mated ply else 0
-      | _ -> match mdp ~alpha ~beta ~ply with
+      | _ -> match Search.mdp ~alpha ~beta ~ply with
         | First alpha -> return alpha
         | Second (alpha, beta) when depth <= 0 ->
           (* Depth exhausted, drop down to quiescence search. *)
@@ -887,16 +899,6 @@ module Main = struct
     order - Order.bad_capture_offset < depth * see_margin
 
   and see_margin = -(Piece.Kind.value Pawn * 2)
-
-  (* Mate distance pruning.
-
-     If we've already found a shorter path to checkmate than our current
-     distance from the root, then just cut off the search here.
-  *)
-  and mdp ~alpha ~beta ~ply =
-    let alpha = max alpha (-mate_score + ply) in
-    let beta = min beta (mate_score - ply) in
-    if alpha >= beta then First alpha else Second (alpha, beta)
 
   (* Reverse futility pruning.
 
