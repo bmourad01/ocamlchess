@@ -130,13 +130,12 @@ let kill stop =
   Mutex.unlock cvm
 
 let wait_for_stop stop ponder =
-  let pondering () = match ponder with
-    | Some p -> Future.is_decided p
-    | None -> false in
+  let open Future in
+  let cond = match ponder with
+    | Some ponder -> fun () -> is_decided ponder || is_decided stop
+    | None        -> fun () -> is_decided stop in
   Mutex.lock cvm;
-  while not (pondering () || Future.is_decided stop) do
-    Condition.wait cv cvm;
-  done;
+  while not @@ cond () do Condition.wait cv cvm done;
   Mutex.unlock cvm
 
 let bestmove result =
