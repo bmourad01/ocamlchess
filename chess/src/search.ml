@@ -495,7 +495,7 @@ module Order = struct
   let history_scale = 180
 
   (* Check if a particular move has been evaluated already. *)
-  let is_hash pos ~ttentry = match ttentry with
+  let is_hash ttentry = match ttentry with
     | Some Tt.Entry.{best; _} -> Legal.same best
     | None -> fun _ -> false
 
@@ -555,7 +555,7 @@ module Order = struct
     State.(gets @@ killer2 ply) >>= fun killer2 ->
     State.(gets move_history) >>= fun move_history ->
     State.(gets @@ move_history_max pos) >>| fun move_history_max ->
-    let is_hash = is_hash pos ~ttentry in
+    let is_hash = is_hash ttentry in
     let killer m = match killer1, killer2 with
       | Some k, _ when Legal.same m k -> killer1_offset
       | _, Some k when Legal.same m k -> killer2_offset
@@ -580,14 +580,17 @@ module Order = struct
                 | None -> move_history m + history_offset)
 
   (* Score the moves for quiescence search. *)
-  let qscore moves =
-    List.filter moves ~f:is_noisy |> function
+  let qscore moves ~ttentry =
+    let is_hash = is_hash ttentry in
+    List.filter moves ~f:(fun m -> is_noisy m || is_hash m) |> function
     | [] -> First ()
     | moves -> Second (score_aux moves ~eval:(fun m ->
-        let p = promote_by_value m in
-        if p <> 0 then p else match See.go m with
-          | Some value -> value
-          | None -> 0))
+        if is_hash m then inf
+        else
+          let p = promote_by_value m in
+          if p <> 0 then p else match See.go m with
+            | Some value -> value
+            | None -> 0))
 end
 
 (* Helpers for the search. *)
@@ -749,7 +752,7 @@ module Quiescence = struct
     State.(update inc_nodes) >>= fun () ->
     match eval pos ~alpha ~beta ~ply ~ttentry with
     | First score -> Search.leaf score ~ply
-    | Second alpha -> match Order.qscore moves with
+    | Second alpha -> match Order.qscore moves ~ttentry with
       | First () -> Search.leaf alpha ~ply
       | Second (it, best) ->
         let t = Search.create ~alpha ~best () in
@@ -846,7 +849,8 @@ module Main = struct
     match eval with
     | None -> return None
     | Some _ when equal_node node Pv || null -> return None
-    | Some eval -> razor pos moves ~eval ~alpha ~ply ~depth >>= function
+    | Some eval ->
+      razor pos moves ~eval ~alpha ~ply ~depth ~ttentry >>= function
       | Some _ as score -> return score
       | None ->
         let their_threats =
@@ -966,10 +970,10 @@ module Main = struct
      lower than alpha, then do a zero window quiescence search and see
      if it will improve.
   *)
-  and razor pos moves ~eval ~alpha ~ply ~depth =
+  and razor pos moves ~eval ~alpha ~ply ~depth ~ttentry =
     if depth <= razor_max_depth && eval + razor_margin depth < alpha then
       Quiescence.with_moves pos moves ~alpha:(alpha - 1) ~beta:alpha
-        ~ply ~check:false ~node:All >>| fun score ->
+        ~ply ~check:false ~node:All ~ttentry >>| fun score ->
       Option.some_if (score < alpha) score
     else return None
 
@@ -990,7 +994,7 @@ module Main = struct
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = return None in
       let f = probcut_child pos ~depth ~ply ~beta_cut in
-      match Order.qscore moves with
+      match Order.qscore moves ~ttentry with
       | First () -> return None
       | Second (it, _) -> Iterator.fold_until it ~init:() ~finish ~f
     else return None
