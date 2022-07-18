@@ -351,7 +351,8 @@ let in_check pos =
   let attacks = Attacks.all pos (inactive pos) ~ignore_same:true in
   Bb.((active_board & pos.king & attacks) <> empty)
 
-let is_insufficient_material pos = let open Bb in
+let is_insufficient_material pos =
+  let open Bb in
   (* If there are any pawns, rooks, or queens on the board then there is
      enough material to deliver mate. *)
   pos.pawn = empty && pos.rook = empty && pos.queen = empty && begin
@@ -361,14 +362,11 @@ let is_insufficient_material pos = let open Bb in
     pos.king = active + inactive || begin
       let kb = pos.king + pos.bishop in
       let kn = pos.king + pos.knight in
-      (* Lone king on either side. Check if the other player has two knights.
-         This rule is actually a bit fuzzy, because there is no forced mate
-         from two knights. Yet, a statemate is possible. The FIDE rules say
-         that this is not a draw by insufficient material, so we will play
-         by their rules. *)
-      if (pos.king & active) = active then
+      (* Lone king on either side. Check if the other player has no bishops
+         AND at most two knights. *)
+      if ((pos.king & active) + (pos.bishop & inactive)) = active then
         Int.(count (kn & inactive) < 3)
-      else if (pos.king & inactive) = inactive then
+      else if ((pos.king & inactive) + (pos.bishop & active)) = inactive then
         Int.(count (kn & active) < 3)
       else
         (* Both sides have king+bishop or king+knight. *)
@@ -478,10 +476,10 @@ module Analysis = struct
     (* We're considering attacked squares only for king moves. These squares
        should include inactive pieces which may block an inactive attack, since
        it would be illegal for the king to attack those squares. *)
-    let inactive_attacks = let open Bb in 
-      let occupied = occupied -- king_sq in
-      List.fold inactive_pieces ~init:empty ~f:(fun acc (sq, k) ->
-          acc + Attacks.pre_of_kind sq occupied inactive k) in
+    let inactive_attacks =
+      let occupied = Bb.(occupied -- king_sq) in
+      List.fold inactive_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
+          Bb.(acc + Attacks.pre_of_kind sq occupied inactive k)) in
     (* Sliding pieces will be used to calculate pins. *)
     let inactive_sliders =
       List.filter inactive_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
