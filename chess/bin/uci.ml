@@ -117,9 +117,6 @@ let info_of_result root tt result =
       Pv pv;
     ])
 
-(* Don't output the result of the search. *)
-let cancel = ref false
-
 (* Current search thread. *)
 let search_thread = Atomic.make None
 
@@ -129,7 +126,6 @@ let cv, cvm = Condition.create (), Mutex.create ()
 let kill stop =
   Mutex.lock cvm;
   Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
-  cancel := true;
   Condition.signal cv;
   Mutex.unlock cvm
 
@@ -138,7 +134,7 @@ let wait_for_stop stop ponder =
     | Some p -> Future.is_decided p
     | None -> false in
   Mutex.lock cvm;
-  while not (pondering () || Future.is_decided stop || !cancel) do
+  while not (pondering () || Future.is_decided stop) do
     Condition.wait cv cvm;
   done;
   Mutex.unlock cvm
@@ -167,10 +163,8 @@ let search ~root ~limits ~history ~tt ~stop ~ponder =
      sending `bestmove`. *)
   if Search.Limits.infinite limits then
     wait_for_stop stop ponder;
-  (* If we canceled the thread then don't output the result. *)
-  Mutex.lock cvm;
-  if not !cancel then bestmove result else cancel := false;
-  Mutex.unlock cvm;
+  (* Output the result. *)
+  bestmove result;
   (* Thread completed. *)
   Atomic.set search_thread None
 
