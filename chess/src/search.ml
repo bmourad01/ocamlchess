@@ -216,15 +216,15 @@ module Tt = struct
     | Some entry ->
       let score = to_score entry.score ply in
       match entry.node with
-      | Pv when not pv -> First (score, entry.best)
+      | Pv when not pv -> First score
       | Pv -> Second (alpha, beta, Some entry)
       | Cut ->
         let alpha = max alpha score in
-        if alpha >= beta then First (score, entry.best)
+        if alpha >= beta then First score
         else Second (alpha, beta, Some entry)
       | All ->
         let beta = min beta score in
-        if alpha >= beta then First (score, entry.best)
+        if alpha >= beta then First score
         else Second (alpha, beta, Some entry)
 
   (* Extract the principal variation from the table. *)
@@ -725,7 +725,7 @@ module Quiescence = struct
 
   (* TT entries for quiescence search have a depth of either 0 or -1,
      depending on whether this is the first ply or we're in check. *)
-  let tt_depth check init = b2i (check || init) - 1
+  let tt_depth ~check ~init = b2i (check || init) - 1
 
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) pos ~alpha ~beta ~ply ~node =
@@ -738,30 +738,27 @@ module Quiescence = struct
       | moves -> match Search.mdp ~alpha ~beta ~ply with
         | First alpha -> Search.leaf alpha ~ply
         | Second (alpha, beta) ->
-          let depth = tt_depth check init in
-          Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-          | First (score, _) -> Search.leaf score ~ply
-          | Second (alpha, beta, ttentry) ->
-            with_moves pos moves ~alpha ~beta
-              ~ply ~check ~node ~ttentry ~init
+          with_moves pos moves ~alpha ~beta ~ply ~check ~node ~init
 
   (* Search the available moves for a given position, but only if they are
      "noisy". *)
-  and with_moves ?(ttentry = None) ?(init = true)
-      pos moves ~alpha ~beta ~ply ~check ~node =
-    State.(update inc_nodes) >>= fun () ->
-    match eval pos ~alpha ~beta ~ply ~ttentry with
+  and with_moves ?(init = true) pos moves ~alpha ~beta ~ply ~check ~node =
+    let depth = tt_depth ~check ~init in
+    Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
     | First score -> Search.leaf score ~ply
-    | Second alpha -> match Order.qscore moves ~ttentry with
-      | First () -> Search.leaf alpha ~ply
-      | Second (it, best) ->
-        let t = Search.create ~alpha ~best () in
-        let finish () = return t.alpha in
-        let f = child t ~beta ~eval ~ply ~node in
-        Iterator.fold_until it ~init:() ~finish ~f >>= fun score ->
-        let depth = tt_depth check init in
-        Search.store t pos ~depth ~ply ~score >>= fun () ->
-        Search.leaf score ~ply
+    | Second (alpha, beta, ttentry) ->
+      State.(update inc_nodes) >>= fun () ->
+      match eval pos ~alpha ~beta ~ply ~ttentry with
+      | First score -> Search.leaf score ~ply
+      | Second alpha -> match Order.qscore moves ~ttentry with
+        | First () -> Search.leaf alpha ~ply
+        | Second (it, best) ->
+          let t = Search.create ~alpha ~best () in
+          let finish () = return t.alpha in
+          let f = child t ~beta ~eval ~ply ~node in
+          Iterator.fold_until it ~init:() ~finish ~f >>= fun score ->
+          Search.store t pos ~depth ~ply ~score >>= fun () ->
+          Search.leaf score ~ply
 
   (* Search a child of the current node. *)
   and child t ~beta ~eval ~ply ~node = fun () (m, _) ->
@@ -800,15 +797,15 @@ module Main = struct
     Search.check_limits_or_draw pos >>= function
     | true -> Search.leaf 0 ~ply
     | false ->
-      let moves = Position.legal_moves pos in
-      (* Check + single reply extension. *)
       let check = Position.in_check pos in
-      let single = match moves with [_] -> true | _ -> false in
-      let depth = depth + b2i (check || single) in
-      (* Checkmate or stalemate. *)
-      match moves with
-      | [] -> Search.leaf ~ply @@ if check then mated ply else 0
-      | _ -> match Search.mdp ~alpha ~beta ~ply with
+      match Position.legal_moves pos with
+      | [] -> (* Checkmate or stalemate. *)
+        Search.leaf ~ply @@ if check then mated ply else 0
+      | moves ->
+        (* Check + single reply extension. *)
+        let single = match moves with [_] -> true | _ -> false in
+        let depth = depth + b2i (check || single) in
+        match Search.mdp ~alpha ~beta ~ply with
         | First alpha -> return alpha
         | Second (alpha, beta) when depth <= 0 ->
           (* Depth exhausted, drop down to quiescence search. *)
@@ -816,7 +813,7 @@ module Main = struct
         | Second (alpha, beta) ->
           (* Find a cached evaluation of the position. *)
           Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
-          | First (score, _) -> Search.leaf score ~ply
+          | First score -> Search.leaf score ~ply
           | Second (alpha, beta, ttentry) ->
             (* Search the available moves. *)
             with_moves pos moves ~alpha ~beta ~ply
@@ -849,8 +846,7 @@ module Main = struct
     match eval with
     | None -> return None
     | Some _ when equal_node node Pv || null -> return None
-    | Some eval ->
-      razor pos moves ~eval ~alpha ~ply ~depth ~ttentry >>= function
+    | Some eval -> razor pos moves ~eval ~alpha ~ply ~depth >>= function
       | Some _ as score -> return score
       | None ->
         let their_threats =
@@ -970,10 +966,10 @@ module Main = struct
      lower than alpha, then do a zero window quiescence search and see
      if it will improve.
   *)
-  and razor pos moves ~eval ~alpha ~ply ~depth ~ttentry =
+  and razor pos moves ~eval ~alpha ~ply ~depth =
     if depth <= razor_max_depth && eval + razor_margin depth < alpha then
-      Quiescence.with_moves pos moves ~alpha:(alpha - 1) ~beta:alpha
-        ~ply ~check:false ~node:All ~ttentry >>| fun score ->
+      Quiescence.with_moves pos moves ~ply ~check:false ~node:All
+        ~alpha:(alpha - 1) ~beta:alpha >>| fun score ->
       Option.some_if (score < alpha) score
     else return None
 
