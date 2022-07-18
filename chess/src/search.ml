@@ -278,7 +278,6 @@ module State = struct
     history                    : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
-    mutable nodes              : int;
     killer1                    : Position.legal Oa.t;
     killer2                    : Position.legal Oa.t;
     move_history               : int array;
@@ -286,15 +285,17 @@ module State = struct
     mutable move_history_max_b : int;
     mutable stopped            : bool;
     mutable seldepth           : int;
+    mutable nodes              : int;
     evals                      : int array;
-    iter_                      : Result.t -> unit;
+    iter                       : Result.t -> unit;
+    ponder                     : unit future option;
   }
 
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
   let eval_size = Piece.Color.count * max_ply
 
-  let create ~limits ~root ~history ~tt ~iter =
+  let create ~limits ~root ~history ~tt ~iter ~ponder =
     (* Make sure that the root position is in our history. *)
     let history = Hashtbl.copy history in
     Position.hash root |> Hashtbl.update history ~f:(function
@@ -304,7 +305,6 @@ module State = struct
       history;
       tt;
       start_time = Time.now ();
-      nodes = 0;
       killer1 = Oa.create ~len:killer_size;
       killer2 = Oa.create ~len:killer_size;
       move_history = Array.create ~len:move_history_size 0;
@@ -312,8 +312,10 @@ module State = struct
       move_history_max_b = 1;
       stopped = false;
       seldepth = 0;
+      nodes = 0;
       evals = Array.create ~len:eval_size 0;
-      iter_ = iter;
+      iter;
+      ponder;
     }
 
   let elapsed st =
@@ -392,6 +394,10 @@ module State = struct
     Hashtbl.change st.history ~f:(function
         | None | Some 1 -> None
         | Some n -> Some (n - 1))
+
+  let pondering st = match st.ponder with
+    | Some p -> not @@ Future.is_decided p
+    | None -> false
 end
 
 type state = State.state
@@ -613,12 +619,14 @@ module Search = struct
 
   let has_reached_limits st =
     let elapsed = State.elapsed st in
-    Limits.stopped st.limits || begin
-      match Limits.nodes st.limits with
-      | Some n when st.nodes >= n -> true
-      | _ -> match Limits.time st.limits with
-        | Some t -> elapsed >= t
-        | None -> false
+    not (State.pondering st) && begin
+      Limits.stopped st.limits || begin
+        match Limits.nodes st.limits with
+        | Some n when st.nodes >= n -> true
+        | _ -> match Limits.time st.limits with
+          | Some t -> elapsed >= t
+          | None -> false
+      end
     end
 
   let check_limits st =
@@ -1148,10 +1156,10 @@ let extract_pv (st : state) moves ~depth ~best ~mate ~mated =
   pv
 
 let result st ~depth ~score ~time ~pv ~mate ~mated =
-  let State.{tt; root; nodes; seldepth; iter_; _} = st in
+  let State.{tt; root; nodes; seldepth; iter; _} = st in
   let score = convert_score score tt root ~pv ~mate ~mated in
   let r = Result.Fields.create ~pv ~score ~nodes ~depth ~seldepth ~time in
-  iter_ r;
+  iter r;
   r
 
 (* Use iterative deepening to optimize the search. This works by using TT
@@ -1179,6 +1187,7 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
      so the next (deeper) iteration is likely to take longer without
      having completed. Thus, we should abort the search. *)
   let too_long =
+    not (State.pondering st) &&
     Limits.time st.limits |>
     Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
   (* Stop searching once we've reached the depth limit. *)
@@ -1219,9 +1228,9 @@ let no_moves root iter =
   iter r;
   r
 
-let go ?(iter = ignore) ~root ~limits ~history ~tt () =
+let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~history ~tt () =
   match Position.legal_moves root with
   | [] -> no_moves root iter
   | moves ->
-    let st = State.create ~root ~limits ~history ~tt ~iter in
+    let st = State.create ~root ~limits ~history ~tt ~iter ~ponder in
     iterdeep st moves

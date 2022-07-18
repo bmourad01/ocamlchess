@@ -10,6 +10,8 @@ module State = struct
       history : (Zobrist.key, int) Hashtbl.t;
       tt      : Search.tt;
       stop    : unit promise option;
+      ponder  : unit promise option;
+      debug   : bool;
     } [@@deriving fields]
   end
 
@@ -29,7 +31,9 @@ module State = struct
     {st with pos}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear  tt
-  let set_stop stop = update @@ fun st -> {st with stop = Some stop}
+  let set_stop stop = update @@ fun st -> {st with stop}
+  let set_ponder ponder = update @@ fun st -> {st with ponder}
+  let set_debug debug = update @@ fun st -> {st with debug}
 end
 
 open State.Syntax
@@ -74,23 +78,18 @@ let setoption opt =
 
 let ucinewgame = State.set_position Position.start
 
-let position pos moves =
-  let rec apply = function
-    | [] -> cont ()
-    | m :: rest ->
-      State.(gets pos) >>= fun pos ->
-      match Position.make_move pos m with
-      | exception _ ->
-        failwithf "Received illegal move %s for position %s\n%!"
-          (Move.to_string m) (Position.Fen.to_string pos) ()
-      | legal ->
-        let pos = Position.Legal.child legal in
-        State.update_position pos >>= fun () ->
-        apply rest in
-  match Position.Valid.check pos with
+let play_move m =
+  State.(gets pos) >>= fun pos ->
+  match Position.make_move pos m with
+  | exception _ ->
+    failwithf "Received illegal move %s for position %s\n%!"
+      (Move.to_string m) (Position.Fen.to_string pos) ()
+  | m -> State.update_position @@ Position.Legal.child m
+
+let position pos moves = match Position.Valid.check pos with
   | Ok () ->
     State.set_position pos >>= fun () ->
-    apply moves
+    State.List.iter moves ~f:play_move >>= cont
   | Error err ->
     failwithf "Received invalid position %s: %s\n%!"
       (Position.Fen.to_string pos) (Position.Valid.Error.to_string err) ()
@@ -134,37 +133,43 @@ let kill stop =
   Condition.signal cv;
   Mutex.unlock cvm
 
-let wait_for_stop stop =
+let wait_for_stop stop ponder =
+  let pondering () = match ponder with
+    | Some p -> Future.is_decided p
+    | None -> false in
   Mutex.lock cvm;
-  while not (Future.is_decided stop || !cancel) do
+  while not (pondering () || Future.is_decided stop || !cancel) do
     Condition.wait cv cvm;
   done;
   Mutex.unlock cvm
 
+let bestmove result =
+  let make ?p m =
+    let move = Position.Legal.move m in
+    let ponder = Option.map p ~f:Position.Legal.move in
+    Uci.Send.Bestmove.{move; ponder} in
+  let bestmove = match Search.Result.pv result with
+    | [] -> None
+    | [m] -> Some (make m)
+    | m :: p :: _ -> Some (make m ~p) in
+  printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
+
 (* The main search routine, should be run in a separate thread. *)
-let search ~root ~limits ~history ~tt ~stop =
-  let result =
-    try Search.go () ~root ~limits ~history ~tt ~iter:(info_of_result root tt)
+let search ~root ~limits ~history ~tt ~stop ~ponder =
+  let result = try
+      Search.go () ~root ~limits ~history ~tt ~ponder
+        ~iter:(info_of_result root tt)
     with exn ->
       Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
       Err.exit () in
   (* The UCI protocol says that `infinite` and `ponder` searches must
      wait for a corresponding `stop` or `ponderhit` command before
      sending `bestmove`. *)
-  if Search.Limits.infinite limits then wait_for_stop stop;
+  if Search.Limits.infinite limits then
+    wait_for_stop stop ponder;
   (* If we canceled the thread then don't output the result. *)
   Mutex.lock cvm;
-  if not !cancel then
-    let make ?p m =
-      let move = Position.Legal.move m in
-      let ponder = Option.map p ~f:Position.Legal.move in
-      Uci.Send.Bestmove.{move; ponder} in
-    let bestmove = match Search.Result.pv result with
-      | [] -> None
-      | [m] -> Some (make m)
-      | m :: p :: _ -> Some (make m ~p) in
-    printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
-  else cancel := false;
+  if not !cancel then bestmove result else cancel := false;
   Mutex.unlock cvm;
   (* Thread completed. *)
   Atomic.set search_thread None
@@ -179,9 +184,9 @@ let check_thread =
         "Error: tried to start a new search while the previous one is \
          still running")
 
-let new_thread ~root ~limits ~history ~tt ~stop =
+let new_thread ~root ~limits ~history ~tt ~stop ~ponder =
   Atomic.set search_thread @@ Option.return @@
-  Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ()
+  Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop ~ponder) ()
 
 let go g =
   check_thread >>= fun () ->
@@ -196,9 +201,14 @@ let go g =
   let winc = ref None in
   let binc = ref None in
   let movestogo = ref None in
+  let ponder = ref false in
   let opt r v s = match !r with
     | Some _ -> failwithf "Error in go command: option '%s' already exists" s ()
     | None -> r := Some v in
+  (* As a hack, ponder mode will initially be set up as an infinite search.
+     Then, when the ponderhit command is sent, the search can continue with
+     the normal limits. *)
+  let pondering () = ponder := true; infinite := true in
   (* If no parameters were given, then assume an infinite search. This is how
      Stockfish behaves. To be fair, the UCI protocol is very underspecified
      and underdocumented. It begs the question as to why it's still so widely
@@ -217,12 +227,17 @@ let go g =
       | Winc n        -> opt winc n "winc"
       | Binc n        -> opt binc n "binc"
       | Movestogo n   -> opt movestogo n "movestogo"
-      | Ponder        -> failwith "Unsupported command: ponder"
+      | Ponder        -> pondering ()
       | Searchmoves _ -> failwith "Unsupported command: searchmoves");
   (* Construct the search limits. *)
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
-  let stop, promise = Future.create () in
+  let stop, stop_promise = Future.create () in
+  let ponder, ponder_promise =
+    if !ponder then
+      let f, p = Future.create () in
+      Some f, Some p
+    else None, None in
   let limits = Search.Limits.create
       ~nodes:!nodes
       ~mate:!mate
@@ -240,8 +255,9 @@ let go g =
   (* Start the search. *)
   State.(gets history) >>= fun history ->
   State.(gets tt) >>= fun tt ->
-  State.set_stop promise >>= fun () ->
-  new_thread ~root ~limits ~history ~tt ~stop;
+  State.set_stop (Some stop_promise) >>= fun () ->
+  State.set_ponder ponder_promise >>= fun () ->
+  new_thread ~root ~limits ~history ~tt ~stop ~ponder;
   cont ()
 
 let stop = State.update @@ function
@@ -252,6 +268,18 @@ let stop = State.update @@ function
     Mutex.unlock cvm;
     {st with stop = None}
   | st -> st
+
+let ponderhit = State.update @@ function
+  | {ponder = Some ponder; _} as st ->
+    Mutex.lock cvm;
+    Promise.fulfill ponder ();
+    Condition.signal cv;
+    Mutex.unlock cvm;
+    {st with ponder = None}
+  | st -> st
+
+(* This is free software, so no need to register! *)
+let register _ = cont ()
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
 let recv cmd =
@@ -266,9 +294,10 @@ let recv cmd =
   | Go g -> go g
   | Stop -> stop >>= cont
   | Quit -> finish ()
-  | Ponderhit -> failwith "Unsupported command: ponderhit"
-  | Debug _ -> failwith "Unsupported command: debug"
-  | Register _ -> failwith "Unsupported command: register"
+  | Ponderhit -> ponderhit >>= cont
+  | Debug `off -> State.set_debug false >>= cont
+  | Debug `on -> State.set_debug true >>= cont
+  | Register r -> register r
 
 (* Main loop. *)
 let rec loop () = match In_channel.(input_line stdin) with
@@ -293,6 +322,8 @@ let exec () =
     ~history
     ~tt:(Search.Tt.create ())
     ~stop:None
+    ~ponder:None
+    ~debug:false
 
 (* Entry point. *)
 let run () =

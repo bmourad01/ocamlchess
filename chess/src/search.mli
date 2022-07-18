@@ -163,9 +163,14 @@ type result = Result.t
 
     An optional callback [iter] can be provided, which is invoked for each
     iteration of the search. By default, it will do nothing.
+
+    An optional future [ponder] can be provided. If it is [None] (default),
+    then the search will run normally. Otherwise, it will run in ponder mode
+    until this future is decided.
 *)
 val go :
   ?iter:(result -> unit) ->
+  ?ponder:unit Bap_future.Std.future option ->
   root:Position.t ->
   limits:limits ->
   history:(Zobrist.key, int) Base.Hashtbl.t ->
