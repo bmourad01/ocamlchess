@@ -280,22 +280,26 @@ let rec loop () = match In_channel.(input_line stdin) with
       | false -> return ()
       | true -> loop ()
 
+(* Default history has the starting position. *)
+let history = Hashtbl.of_alist_exn (module Int64) [
+    Position.(hash start), 1;
+  ]
+
+let exec () =
+  State.stop @@
+  Monad.State.exec (loop ()) @@
+  State.Fields.create
+    ~pos:Position.start
+    ~history
+    ~tt:(Search.Tt.create ())
+    ~stop:None
+
 (* Entry point. *)
 let run () =
   (* Run the main interpreter loop. *)
-  let history = Hashtbl.of_alist_exn (module Int64) [
-      Position.(hash start), 1;
-    ] in
-  let State.{stop; _} = try
-      Monad.State.exec (loop ()) @@
-      State.Fields.create
-        ~pos:Position.start
-        ~history
-        ~tt:(Search.Tt.create ())
-        ~stop:None
-    with Failure msg ->
-      eprintf "%s\n%!" msg;
-      Err.exit () in
+  let stop = try exec () with Failure msg ->
+    eprintf "%s\n%!" msg;
+    Err.exit () in
   (* Stop the search thread. *)
   Atomic.get search_thread |>
   Option.iter ~f:(fun t -> kill stop; Thread.join t);
