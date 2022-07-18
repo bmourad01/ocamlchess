@@ -17,6 +17,7 @@ module State = struct
 
   include T
   include Monad.State.Make(T)(Monad.Ident)
+  include Monad.State.T1(T)(Monad.Ident)
 
   (* Update the position and history after a move has been made. *)
   let update_position pos = update @@ fun st ->
@@ -30,7 +31,7 @@ module State = struct
     Hashtbl.set st.history ~key:(Position.hash pos) ~data:1;
     {st with pos}
 
-  let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear  tt
+  let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
   let set_stop stop = update @@ fun st -> {st with stop}
   let set_ponder ponder = update @@ fun st -> {st with ponder}
   let set_debug debug = update @@ fun st -> {st with debug}
@@ -38,13 +39,80 @@ end
 
 open State.Syntax
 
+type 'a state = 'a State.t
+
 let return = State.return
 let cont () = return true
 let finish () = return false
 
-let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
-    "Clear Hash", Button;
-  ]
+module Options = struct
+  module T = Uci.Send.Option.Type
+
+  type _ t =
+    | Spin : {spin : T.spin; mutable value : int} -> int t
+    | Check : {default : bool; mutable value : bool} -> bool t
+    | Combo : {combo : T.combo; mutable value : string} -> string t
+    | String : {default : string; mutable value : string} -> string t
+    | Button : unit t
+
+  let spin s = Spin {spin = s; value = s.default}
+  let check c = Check {default = c; value = c}
+  let combo c = Combo {combo = c; value = c.default}
+  let string s = String {default = s; value = s}
+  let button = Button
+
+  let to_uci : type a. a t -> T.t = function
+    | Spin {spin; _} -> T.Spin spin
+    | Check {default; _} -> T.Check default
+    | Combo {combo; _} -> T.Combo combo
+    | String {default; _} -> T.String default
+    | Button -> T.Button
+
+  type 'a callback = 'a t -> 'a -> unit state
+
+  module Callbacks = struct
+    let clear_hash : unit t -> unit -> unit state = fun Button () ->
+      State.clear_tt
+
+    let ponder : bool t -> bool -> unit state = fun (Check c) b ->
+      return (c.value <- b)
+
+    let multi_pv : int t -> int -> unit state = fun (Spin c) n ->
+      let T.{min; max; _} = c.spin in
+      return (c.value <- Int.clamp_exn n ~min ~max)
+  end
+
+  let parse ~name ~value ~f = match value with
+    | None -> failwithf "Expected value for option %s" name ()
+    | Some value -> try f value with _ ->
+      failwithf "Failed to parse value %s for option %s" value name ()
+
+  let call :
+    type a.
+    a t ->
+    a callback ->
+    name:string ->
+    value:string option ->
+    unit state = fun t callback ~name ~value -> match t with
+    | Spin _   -> callback t @@ parse ~name ~value ~f:Int.of_string
+    | Check _  -> callback t @@ parse ~name ~value ~f:Bool.of_string
+    | Combo _  -> callback t @@ parse ~name ~value ~f:Fn.id
+    | String _ -> callback t @@ parse ~name ~value ~f:Fn.id
+    | Button   -> callback t ()
+
+  type entry = T : 'a t * 'a callback -> entry
+
+  module Defaults = struct
+    let ponder = false
+    let multi_pv = T.{default = 1; min = 1; max = 1}
+  end
+
+  let tbl = Hashtbl.of_alist_exn (module String) [
+      "Clear Hash", T (button, Callbacks.clear_hash);
+      "Ponder",     T (check Defaults.ponder, Callbacks.ponder);
+      "MultiPV",    T (spin Defaults.multi_pv, Callbacks.multi_pv);
+    ]
+end
 
 let uci =
   let open Uci.Send in
@@ -53,28 +121,21 @@ let uci =
     Id (`author "Benjamin Mourad");
   ] in
   fun () ->
-    List.iter id ~f:(fun cmd ->
-        printf "%s\n%!" @@ to_string cmd);
-    Hashtbl.iteri options ~f:(fun ~key:name ~data:typ ->
+    List.iter id ~f:(fun cmd -> printf "%s\n%!" @@ to_string cmd);
+    printf "\n%!";
+    Hashtbl.iteri Options.tbl ~f:(fun ~key:name ~data:Options.(T (t, _)) ->
+        let typ = Options.to_uci t in
         printf "%s\n%!" @@ to_string (Option Option.{name; typ}));
     printf "%s\n%!" @@ to_string Uciok
 
 let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
 
-let setoption opt =
+let setoption ({name; value} : Uci.Recv.Setoption.t) =
   let open Uci.Recv.Setoption in
-  match Hashtbl.find options opt.name with
-  | None ->
-    printf "No such option: %s\n%!" opt.name;
-    cont ()
-  | Some Button -> begin
-      match opt.name with
-      | "Clear Hash" ->
-        State.clear_tt >>= fun () ->
-        cont ()
-      | _ -> cont ()
-    end
-  | Some _ -> cont ()
+  match Hashtbl.find Options.tbl name with
+  | None -> cont @@ printf "No such option: %s\n%!" name
+  | Some Options.(T (t, callback)) ->
+    Options.call t callback ~name ~value >>= cont
 
 let ucinewgame = State.set_position Position.start
 
