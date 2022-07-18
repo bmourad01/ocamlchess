@@ -98,24 +98,26 @@ let position pos moves = match Position.Valid.check pos with
    search. *)
 let info_of_result root tt result =
   let depth = Search.Result.depth result in
-  let seldepth = Search.Result.seldepth result in
-  let nodes = Search.Result.nodes result in
-  let pv = Search.Result.pv result in
-  (* Avoid division by zero here (the search may terminate in under a
-     millisecond). *)
-  let time = max 1 @@ Search.Result.time result in
-  let nps = (nodes * 1000) / time in
   let score = Search.Result.score result in
-  let pv = List.map pv ~f:Position.Legal.move in
-  printf "%s\n%!" @@ Uci.Send.(to_string @@ Info Info.[
-      Depth depth;
-      Seldepth seldepth;
-      Nodes nodes;
-      Score score;
-      Nps nps;
-      Time time;
-      Pv pv;
-    ])
+  let info = match Search.Result.pv result with
+    | [] -> Uci.Send.Info.[Depth depth; Score score]
+    | pv ->
+      let seldepth = Search.Result.seldepth result in
+      let nodes = Search.Result.nodes result in
+      (* Avoid division by zero here (the search may terminate in under a
+         millisecond). *)
+      let time = max 1 @@ Search.Result.time result in
+      let nps = (nodes * 1000) / time in
+      Uci.Send.Info.[
+        Depth depth;
+        Seldepth seldepth;
+        Score score;
+        Nodes nodes;
+        Nps nps;
+        Time time;
+        Pv (List.map pv ~f:Position.Legal.move);
+      ] in
+  printf "%s\n%!" @@ Uci.Send.to_string @@ Info info
 
 (* Current search thread. *)
 let search_thread = Atomic.make None
