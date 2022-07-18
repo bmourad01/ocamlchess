@@ -274,7 +274,7 @@ module State = struct
   type state = {
     limits                     : limits;
     root                       : Position.t;
-    mutable history            : int Int64.Map.t;
+    history                    : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
     mutable nodes              : int;
@@ -295,9 +295,9 @@ module State = struct
 
   let create ~limits ~root ~history ~tt ~iter =
     (* Make sure that the root position is in our history. *)
-    let history =
-      Position.hash root |> Map.update history ~f:(function
-          | Some n -> n | None -> 1) in {
+    let history = Hashtbl.copy history in
+    Position.hash root |> Hashtbl.update history ~f:(function
+        | Some n -> n | None -> 1); {
       limits;
       root;
       history;
@@ -382,18 +382,15 @@ module State = struct
   let stop st = st.stopped <- true
 
   let push_history pos st =
-    let history =
-      Position.hash pos |> Map.update st.history ~f:(function
-          | Some n -> n + 1
-          | None -> 1) in
-    st.history <- history
+    Position.hash pos |>
+    Hashtbl.update st.history ~f:(function
+          | Some n -> n + 1 | None -> 1)
 
   let pop_history pos st =
-    let history =
-      Position.hash pos |> Map.change st.history ~f:(function
-          | None | Some 1 -> None
-          | Some n -> Some (n - 1)) in
-    st.history <- history
+    Position.hash pos |>
+    Hashtbl.change st.history ~f:(function
+        | None | Some 1 -> None
+        | Some n -> Some (n - 1))
 end
 
 type state = State.state
@@ -630,7 +627,7 @@ module Search = struct
 
   (* Will playing this position likely lead to a repetition draw? *)
   let check_repetition history pos =
-    Position.hash pos |> Map.find history |>
+    Position.hash pos |> Hashtbl.find history |>
     Option.value_map ~default:false ~f:(fun n -> n > 2)
 
   (* Will the position lead to a draw? *)

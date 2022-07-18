@@ -167,7 +167,7 @@ val go :
   ?iter:(result -> unit) ->
   root:Position.t ->
   limits:limits ->
-  history:int Core_kernel.Int64.Map.t ->
+  history:(Zobrist.key, int) Base.Hashtbl.t ->
   tt:tt ->
   unit ->
   result

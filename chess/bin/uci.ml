@@ -7,7 +7,7 @@ module State = struct
   module T = struct
     type t = {
       pos     : Position.t;
-      history : int Int64.Map.t;
+      history : (Zobrist.key, int) Hashtbl.t;
       tt      : Search.tt;
       stop    : unit promise option;
     } [@@deriving fields]
@@ -18,15 +18,15 @@ module State = struct
 
   (* Update the position and history after a move has been made. *)
   let update_position pos = update @@ fun st ->
-    let history =
-      Position.hash pos |> Map.update st.history ~f:(function
-          | None -> 1 | Some n -> n + 1) in
-    {st with pos; history}
+    Position.hash pos |> Hashtbl.update st.history ~f:(function
+        | None -> 1 | Some n -> n + 1);
+    {st with pos}
 
   (* Set the new starting position and history. *)
   let set_position pos = update @@ fun st ->
-    let history = Int64.Map.singleton (Position.hash pos) 1 in
-    {st with pos; history}
+    Hashtbl.clear st.history;
+    Hashtbl.set st.history ~key:(Position.hash pos) ~data:1;
+    {st with pos}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear  tt
   let set_stop stop = update @@ fun st -> {st with stop = Some stop}
@@ -273,11 +273,14 @@ let rec loop () = match In_channel.(input_line stdin) with
 (* Entry point. *)
 let run () =
   (* Run the main interpreter loop. *)
+  let history = Hashtbl.of_alist_exn (module Int64) [
+      Position.(hash start), 1;
+    ] in
   let State.{stop; _} =
     Monad.State.exec (loop ()) @@
     State.Fields.create
       ~pos:Position.start
-      ~history:(Int64.Map.singleton Position.(hash start) 1)
+      ~history
       ~tt:(Search.Tt.create ())
       ~stop:None in
   (* Stop the search thread. *)

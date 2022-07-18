@@ -4,9 +4,8 @@ open Chess
 let limits = ref None
 
 let update_history m pos =
-  Position.hash pos |> Map.update m ~f:(function
-      | Some n -> n + 1
-      | None -> 1)
+  Position.hash pos |> Hashtbl.update m ~f:(function
+      | Some n -> n + 1 | None -> 1)
 
 let print_res res =
   let pv =
@@ -36,8 +35,8 @@ let try_book in_book root history =
       | Ok m ->
         printf "Book move: %s\n\n%!" @@ Position.San.of_legal m;
         let new_pos = Position.Legal.child m in
-        let history = update_history history new_pos in
-        Some (m, history)
+        update_history history new_pos;
+        Some m
       | Error (Book.Error.Position_not_found _) -> None
       | Error (Book.Error.No_moves _) -> None
       | Error err ->
@@ -45,22 +44,22 @@ let try_book in_book root history =
 
 let choice (history, tt, in_book) moves =
   let root = Position.Legal.parent @@ List.hd_exn moves in
-  let history = update_history history root in
+  update_history history root;
   match try_book in_book root history with
-  | Some (m, history) -> m, (history, tt, true)
+  | Some m -> m, (history, tt, true)
   | None ->
     let limits = Option.value_exn !limits in
     let res = Search.go ~root ~limits ~history ~tt ~iter:print_res () in
     let m = Search.Result.best res in
     let new_pos = Position.Legal.child m in
-    let history = update_history history new_pos in
+    update_history history new_pos;
     m, (history, tt, false)
 
 let name = "caml"
 
 let create () =
   let player =
-    let state = Int64.Map.empty, Search.Tt.create (), true in
+    let state = Hashtbl.create (module Int64), Search.Tt.create (), true in
     Player.create ~choice ~state ~name
       ~desc:"The flagship player, based on traditional game tree search and \
              evaluation." in
