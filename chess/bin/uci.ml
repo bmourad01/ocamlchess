@@ -119,7 +119,7 @@ let info_of_result root tt result =
     ])
 
 (* Don't output the result of the search. *)
-let cancel = Atomic.make false
+let cancel = ref false
 
 (* Current search thread. *)
 let search_thread = Atomic.make None
@@ -130,13 +130,13 @@ let cv, cvm = Condition.create (), Mutex.create ()
 let kill stop =
   Mutex.lock cvm;
   Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
-  Atomic.set cancel true;
+  cancel := true;
   Condition.signal cv;
   Mutex.unlock cvm
 
 let wait_for_stop stop =
   Mutex.lock cvm;
-  while not (Future.is_decided stop || Atomic.get cancel) do
+  while not (Future.is_decided stop || !cancel) do
     Condition.wait cv cvm;
   done;
   Mutex.unlock cvm
@@ -153,7 +153,8 @@ let search ~root ~limits ~history ~tt ~stop =
      sending `bestmove`. *)
   if Search.Limits.infinite limits then wait_for_stop stop;
   (* If we canceled the thread then don't output the result. *)
-  if not @@ Atomic.get cancel then
+  Mutex.lock cvm;
+  if not !cancel then
     let make ?p m =
       let move = Position.Legal.move m in
       let ponder = Option.map p ~f:Position.Legal.move in
@@ -163,7 +164,8 @@ let search ~root ~limits ~history ~tt ~stop =
       | [m] -> Some (make m)
       | m :: p :: _ -> Some (make m ~p) in
     printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
-  else Atomic.set cancel false;
+  else cancel := false;
+  Mutex.unlock cvm;
   (* Thread completed. *)
   Atomic.set search_thread None
 
