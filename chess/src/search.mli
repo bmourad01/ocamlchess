@@ -157,7 +157,9 @@ exception No_moves
     - [root]: the position to start the search from.
     - [limits]: the search limits.
     - [history]: the history of how many times a position, indexed by 
-      its Zobrist key, has occurred.
+      its Zobrist key, has occurred. A local copy of this table is made
+      for the duration of the search, so there is no risk of mutating
+      the existing entries.
     - [tt]: the transposition table.
 
     An optional callback [iter] can be provided, which is invoked for each
