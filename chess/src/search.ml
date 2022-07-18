@@ -384,7 +384,7 @@ module State = struct
   let push_history pos st =
     Position.hash pos |>
     Hashtbl.update st.history ~f:(function
-          | Some n -> n + 1 | None -> 1)
+        | Some n -> n + 1 | None -> 1)
 
   let pop_history pos st =
     Position.hash pos |>
