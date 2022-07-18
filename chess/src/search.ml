@@ -1196,6 +1196,7 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
     Option.value_map ~default:false ~f:(fun n -> depth >= n) in
   (* Stop searching once we've reached the node limit. *)
   let max_nodes =
+    not (State.pondering st) &&
     Limits.nodes st.limits |>
     Option.value_map ~default:false ~f:(fun n -> st.nodes >= n) in
   (* Stop searching once we've found a mate in X (if applicable). *)
