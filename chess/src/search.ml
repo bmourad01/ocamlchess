@@ -660,7 +660,6 @@ module Search = struct
     if alpha >= beta then First alpha else Second (alpha, beta)
 end
 
-(* let negm = Fn.compose return Int.neg *)
 let b2i = Bool.to_int
 let b2in = Fn.compose b2i not
 
@@ -680,7 +679,8 @@ module Quiescence = struct
      there is some bug (seemingly related to fail-low nodes) that I haven't
      figured out yet.
   *)
-  let eval pos ~alpha ~beta ~ply ~ttentry =
+  let eval st pos ~alpha ~beta ~ply ~ttentry =
+    State.inc_nodes st;
     let eval = Eval.go pos in
     let score = match (ttentry : Tt.entry option) with
       | Some {score; node = Cut; _}
@@ -716,8 +716,7 @@ module Quiescence = struct
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~node with
     | First score -> Search.leaf st score ~ply
     | Second (alpha, beta, ttentry) ->
-      State.inc_nodes st;
-      match eval pos ~alpha ~beta ~ply ~ttentry with
+      match eval st pos ~alpha ~beta ~ply ~ttentry with
       | First score -> Search.leaf st score ~ply
       | Second alpha -> match Order.qscore moves ~ttentry with
         | None -> Search.leaf st alpha ~ply
