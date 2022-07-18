@@ -196,6 +196,9 @@ let go g =
   let winc = ref None in
   let binc = ref None in
   let movestogo = ref None in
+  let opt r v s = match !r with
+    | Some _ -> failwithf "Error in go command: option '%s' already exists" s ()
+    | None -> r := Some v in
   (* If no parameters were given, then assume an infinite search. This is how
      Stockfish behaves. To be fair, the UCI protocol is very underspecified
      and underdocumented. It begs the question as to why it's still so widely
@@ -204,17 +207,17 @@ let go g =
   else List.iter g ~f:(fun go ->
       let open Uci.Recv.Go in
       match go with
-      | Infinite -> infinite := true
-      | Nodes n -> nodes := Some n
-      | Mate n -> mate := Some n
-      | Depth n -> depth := Some n
-      | Movetime t -> movetime := Some t
-      | Wtime t -> wtime := Some t
-      | Btime t -> btime := Some t
-      | Winc n -> winc := Some n
-      | Binc n -> binc := Some n
-      | Movestogo n -> movestogo := Some n
-      | Ponder -> failwith "Unsupported command: ponder"
+      | Infinite      -> infinite := true
+      | Nodes n       -> opt nodes n "nodes"
+      | Mate n        -> opt mate n "mate"
+      | Depth n       -> opt depth n "depth"
+      | Movetime t    -> opt movetime t "movetime"
+      | Wtime t       -> opt wtime t "wtime"
+      | Btime t       -> opt btime t "btime"
+      | Winc n        -> opt winc n "winc"
+      | Binc n        -> opt binc n "binc"
+      | Movestogo n   -> opt movestogo n "movestogo"
+      | Ponder        -> failwith "Unsupported command: ponder"
       | Searchmoves _ -> failwith "Unsupported command: searchmoves");
   (* Construct the search limits. *)
   State.(gets pos) >>= fun root ->
