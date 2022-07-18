@@ -195,9 +195,13 @@ let go g =
   let binc = ref None in
   let movestogo = ref None in
   let ponder = ref false in
+  let moves = ref [] in
   let opt r v s = match !r with
     | Some _ -> failwithf "Error in go command: option '%s' already exists" s ()
     | None -> r := Some v in
+  let lst l v s = match !l with
+    | _ :: _ -> failwithf "Error in go command: option '%s' already exists" s ()
+    | [] -> l := v in
   (* As a hack, ponder mode will initially be set up as an infinite search.
      Then, when the ponderhit command is sent, the search can continue with
      the normal limits. *)
@@ -221,7 +225,7 @@ let go g =
       | Binc n        -> opt binc n "binc"
       | Movestogo n   -> opt movestogo n "movestogo"
       | Ponder        -> pondering ()
-      | Searchmoves _ -> failwith "Unsupported command: searchmoves");
+      | Searchmoves l -> lst moves l "searchmoves");
   (* Construct the search limits. *)
   State.(gets pos) >>= fun root ->
   let active = Position.active root in
@@ -242,6 +246,7 @@ let go g =
       ~btime:!btime
       ~binc:!binc
       ~infinite:!infinite
+      ~moves:!moves
       ~active
       ~stop
       () in

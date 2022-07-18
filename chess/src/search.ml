@@ -20,6 +20,7 @@ module Limits = struct
     depth    : int option;
     time     : int option;
     stop     : unit future;
+    moves    : Move.t list;
   } [@@deriving fields]
 
   let stopped limits = Future.is_decided @@ stop limits
@@ -94,6 +95,7 @@ module Limits = struct
       ?(btime = None)
       ?(binc = None)
       ?(infinite = false)
+      ?(moves = [])
       ~active
       ~stop
       () =
@@ -118,8 +120,9 @@ module Limits = struct
     && Option.is_none mate
     && Option.is_none depth
     && Option.is_none time
+    && List.is_empty moves
     then invalid_arg "Limits were explicitly unspecified"
-    else {infinite; nodes; mate; depth; time; stop}
+    else {infinite; nodes; mate; depth; time; stop; moves}
 end
 
 type limits = Limits.t
@@ -1231,8 +1234,16 @@ let no_moves root iter =
   iter r;
   r
 
+let moves pos limits =
+  let moves = Position.legal_moves pos in
+  match Limits.moves limits with
+  | [] -> moves
+  | searchmoves ->
+    List.filter moves ~f:(fun m ->
+        List.exists searchmoves ~f:(Legal.is_move m))
+
 let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~history ~tt () =
-  match Position.legal_moves root with
+  match moves root limits with
   | [] -> no_moves root iter
   | moves ->
     let st = State.create ~root ~limits ~history ~tt ~iter ~ponder in

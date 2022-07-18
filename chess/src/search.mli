@@ -21,6 +21,9 @@ module Limits : sig
   (** The time limit (in milliseconds) for the search, if any. *)
   val time : t -> int option
 
+  (** The moves that will be exclusively searched (if any). *)
+  val moves : t -> Move.t list
+
   (** The default depth to search to. *)
   val default_depth : int
 
@@ -39,6 +42,8 @@ module Limits : sig
       - [btime]: black has [n] milliseconds left on the clock
       - [binc]: black gets [n] millisecond increments per move
       - [infinite]: search until the [stop] command.
+      - [moves]: If not empty, this is the list of moves that will be
+        exclusively searched.
 
       By default, if no values are given for these parameters, the search will
       use the [depth] value of [default_depth]. If all parameters are left
@@ -61,6 +66,7 @@ module Limits : sig
     ?btime:int option ->
     ?binc:int option ->
     ?infinite:bool ->
+    ?moves:Move.t list ->
     active:Piece.color ->
     stop:unit Bap_future.Std.future ->
     unit ->
