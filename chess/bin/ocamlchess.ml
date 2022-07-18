@@ -18,18 +18,29 @@ let man_players () =
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
   | s -> match Players.lookup s with
-    | None -> Core_kernel.invalid_argf "Player %s is not registered" s ()
     | Some _ as player -> player
+    | None ->
+      Format.eprintf "Player %s is not registered\n%!" s;
+      exit 1
 
 let no_validate =
   let doc = "Don't validate the input FEN position" in
   Arg.(value & flag (info ["no-validate"] ~doc))
 
+let try_create_pos fen validate =
+  try Chess.Position.Fen.of_string_exn fen ~validate
+  with Invalid_argument msg ->
+    Format.eprintf "%s\n%!" msg;
+    exit 1
+
 module Perft = struct
   let go depth pos no_validate =
     let validate = not no_validate in
-    if depth < 1 then Core_kernel.invalid_argf "Invalid depth value %d" depth ()
-    else Perft.run depth @@ Chess.Position.Fen.of_string_exn pos ~validate
+    let pos = try_create_pos pos validate in
+    if depth < 1 then begin
+      Format.eprintf "Invalid depth value %d\n%!" depth;
+      exit 1
+    end else Perft.run depth pos
 
   let depth =
     let doc = "The depth to search in the game tree." in
@@ -55,26 +66,38 @@ module Perft = struct
 end
 
 module Gui = struct
+  let try_create_limits pos nodes depth =
+    try Chess.Search.Limits.create ()
+          ~nodes
+          ~depth:(Some depth)
+          ~active:(Chess.Position.active pos)
+          ~infinite:false
+          ~stop:(fst @@ Bap_future.Std.Future.create ())
+    with Invalid_argument msg ->
+      Format.eprintf "Error when creating search limits: %s\n%!" msg;
+      exit 1
+
+  let try_load_book filename =
+    try Caml_player.book := Some (Chess.Book.create filename);
+    with Sys_error msg | Failure msg ->
+      Format.eprintf "Error when loading book: %s\n%!" msg;
+      exit 1
+
   let go pos white black delay depth nodes book no_validate =
     let validate = not no_validate in
-    let pos = Chess.Position.Fen.of_string_exn pos ~validate in
+    let pos = try_create_pos pos validate in
     let white = choose_player white in
     let black = choose_player black in
     let delay = match white, black with
       | Some _, Some _ when Float.(delay <= 0.0) -> Fun.id
       | Some _, Some _ -> fun () -> ignore @@ Unix.sleepf delay
       | _ -> Fun.id in
-    let limits = Chess.Search.Limits.create ()
-        ~nodes
-        ~depth:(Some depth)
-        ~active:(Chess.Position.active pos)
-        ~infinite:false
-        ~stop:(fst @@ Bap_future.Std.Future.create ()) in
+    let limits = try_create_limits pos nodes depth in
     Caml_player.limits := Some limits;
     Base.Option.iter book ~f:(fun filename ->
         let open Core_kernel in
         let t = Time.now () in
-        Caml_player.book := Some (Chess.Book.create filename);
+        try_load_book filename;
         let t' = Time.now () in
         let sec = Time.(Span.to_sec @@ diff t' t) in
         printf "Loaded book %s in %fs\n\n%!" filename sec);

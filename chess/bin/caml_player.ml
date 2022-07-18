@@ -50,7 +50,7 @@ let choice (history, tt, in_book) moves =
   | None ->
     let limits = Option.value_exn !limits in
     let res = Search.go ~root ~limits ~history ~tt ~iter:print_res () in
-    let m = Search.Result.best res in
+    let m = Search.Result.best_exn res in
     let new_pos = Position.Legal.child m in
     update_history history new_pos;
     m, (history, tt, false)

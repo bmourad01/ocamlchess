@@ -249,7 +249,8 @@ module Result = struct
     time     : int;
   } [@@deriving fields]
 
-  let best {pv; _} = List.hd_exn pv
+  let best {pv; _} = List.hd pv
+  let best_exn {pv; _} = List.hd_exn pv
 end
 
 type result = Result.t
@@ -1208,11 +1209,19 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
     iterdeep st moves ~depth:(depth + 1) ~prev
   end else result
 
-exception No_moves
+(* Either checkmate or stalemate. *)
+let no_moves root iter =
+  let score =
+    let open Uci.Send.Info in
+    if Position.in_check root then Mate 0 else Cp (0, None) in
+  let r = Result.Fields.create
+      ~pv:[] ~score ~nodes:0 ~depth:0 ~seldepth:0 ~time:0 in
+  iter r;
+  r
 
 let go ?(iter = ignore) ~root ~limits ~history ~tt () =
   match Position.legal_moves root with
-  | [] -> raise No_moves
+  | [] -> no_moves root iter
   | moves ->
     let st = State.create ~root ~limits ~history ~tt ~iter in
     iterdeep st moves

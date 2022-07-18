@@ -34,13 +34,13 @@ end
 
 open State.Syntax
 
-let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
-    "Clear Hash", Button;
-  ]
-
 let return = State.return
 let cont () = return true
 let finish () = return false
+
+let options = Hashtbl.of_alist_exn (module String) Uci.Send.Option.Type.[
+    "Clear Hash", Button;
+  ]
 
 let uci =
   let open Uci.Send in
@@ -95,6 +95,8 @@ let position pos moves =
     failwithf "Received invalid position %s: %s\n%!"
       (Position.Fen.to_string pos) (Position.Valid.Error.to_string err) ()
 
+(* For each iteration in the search, send a UCI `info` command about the
+   search. *)
 let info_of_result root tt result =
   let depth = Search.Result.depth result in
   let seldepth = Search.Result.seldepth result in
@@ -122,47 +124,47 @@ let cancel = Atomic.make false
 (* Current search thread. *)
 let search_thread = Atomic.make None
 
+(* Condition variable for `infinite` and `ponder`. *)
+let cv, cvm = Condition.create (), Mutex.create ()
+
 let kill stop =
+  Mutex.lock cvm;
   Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
-  Atomic.set cancel true
+  Atomic.set cancel true;
+  Condition.signal cv;
+  Mutex.unlock cvm
 
 (* The main search routine, should be run in a separate thread. *)
 let search ~root ~limits ~history ~tt ~stop =
   let result =
-    (* For each iteration, send a UCI `info` command about the search. *)
-    let iter result = info_of_result root tt result in
-    try Some (Search.go () ~root ~limits ~history ~tt ~iter) with
-    | Search.No_moves ->
-      printf "%s\n%!" @@ Uci.Send.(to_string @@ Info Info.[
-          Depth 0;
-          Score (if Position.in_check root then Mate 0 else Cp (0, None));
-        ]);
-      None
-    | exn ->
-      (* Notify the user and abort. *)
-      printf "Search encountered an exception: %s\n%!" @@ Exn.to_string exn;
+    try Search.go () ~root ~limits ~history ~tt ~iter:(info_of_result root tt)
+    with exn ->
+      Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
       exit 1 in
-  (* The UCI protocol says that `infinite` and `ponder` searches must wait for
-     a corresponding `stop` or `ponderhit` command before sending `bestmove`.
-     So, we will busy-wait in this thread until it happens. *)
-  if Search.Limits.infinite limits then
+  (* The UCI protocol says that `infinite` and `ponder` searches must
+     wait for a corresponding `stop` or `ponderhit` command before
+     sending `bestmove`. *)
+  if Search.Limits.infinite limits then begin
+    Mutex.lock cvm;
     while not (Future.is_decided stop || Atomic.get cancel) do
-      Thread.yield ()
+      Condition.wait cv cvm;
     done;
-  begin match Atomic.get cancel with
-    | true ->
-      (* We canceled the thread, so don't output the result. *)
-      Atomic.set cancel false
-    | false -> Option.iter result ~f:(fun result ->
-        (* Send the bestmove. *)
-        let ponder = match Search.Result.pv result with
-          | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
-          | _ -> None in
-        let move = Position.Legal.move @@ Search.Result.best result in
-        printf "%s\n%!" @@
-        Uci.Send.to_string @@
-        Uci.Send.(Bestmove Bestmove.{move; ponder}))
+    Mutex.unlock cvm;
   end;
+  (* If we canceled the thread then don't output the result. *)
+  if not @@ Atomic.get cancel then
+    let bestmove =
+      Search.Result.best result |>
+      Option.map ~f:(fun m ->
+          let move = Position.Legal.move m in
+          let ponder = match Search.Result.pv result with
+            | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
+            | _ -> None in
+          Uci.Send.Bestmove.{move; ponder}) in
+    printf "%s\n%!" @@
+    Uci.Send.to_string @@
+    Uci.Send.(Bestmove bestmove)
+  else Atomic.set cancel false;
   (* Thread completed. *)
   Atomic.set search_thread None
 
@@ -172,12 +174,13 @@ let check_thread =
   Atomic.get search_thread |> Option.iter ~f:(fun t ->
       kill stop;
       Thread.join t;
-      failwith "Error: tried to start a new search while the previous one is \
-                still running")
+      failwith
+        "Error: tried to start a new search while the previous one is \
+         still running")
 
 let new_thread ~root ~limits ~history ~tt ~stop =
-  Atomic.set search_thread @@ Option.return @@ Thread.create (fun () ->
-      search ~root ~limits ~history ~tt ~stop) ()
+  Atomic.set search_thread @@ Option.return @@
+  Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop) ()
 
 let go g =
   check_thread >>= fun () ->
@@ -239,7 +242,10 @@ let go g =
 
 let stop = State.update @@ function
   | {stop = Some stop; _} as st ->
+    Mutex.lock cvm;
     Promise.fulfill stop ();
+    Condition.signal cv;
+    Mutex.unlock cvm;
     {st with stop = None}
   | st -> st
 
@@ -276,13 +282,16 @@ let run () =
   let history = Hashtbl.of_alist_exn (module Int64) [
       Position.(hash start), 1;
     ] in
-  let State.{stop; _} =
-    Monad.State.exec (loop ()) @@
-    State.Fields.create
-      ~pos:Position.start
-      ~history
-      ~tt:(Search.Tt.create ())
-      ~stop:None in
+  let State.{stop; _} = try
+      Monad.State.exec (loop ()) @@
+      State.Fields.create
+        ~pos:Position.start
+        ~history
+        ~tt:(Search.Tt.create ())
+        ~stop:None
+    with Failure msg ->
+      eprintf "%s\n%!" msg;
+      exit 1 in
   (* Stop the search thread. *)
   Atomic.get search_thread |>
   Option.iter ~f:(fun t -> kill stop; Thread.join t);

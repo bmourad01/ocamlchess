@@ -448,7 +448,7 @@ module Send = struct
     | Id of [`name of string | `author of string]
     | Uciok
     | Readyok
-    | Bestmove of Bestmove.t
+    | Bestmove of Bestmove.t option
     | Copyprotection of [`checking | `ok | `error]
     | Registration of [`checking | `ok | `error]
     | Info of Info.t list
@@ -460,7 +460,8 @@ module Send = struct
     | Id (`author author) -> sprintf "id author %s" author
     | Uciok -> "uciok"
     | Readyok -> "readyok"
-    | Bestmove bestmove ->
+    | Bestmove None -> "bestmove (none)"
+    | Bestmove (Some bestmove) ->
       sprintf "bestmove %s" @@ Bestmove.to_string bestmove
     | Copyprotection `checking -> "copyprotection checking"
     | Copyprotection `ok -> "copyprotection ok"
@@ -560,8 +561,10 @@ module Send = struct
       Some (Id (`author (concat author)))
     | ["uciok"] -> Some Uciok
     | ["readyok"] -> Some Readyok
+    | "bestmove" :: "(none)" :: [] -> Some (Bestmove None)
     | "bestmove" :: rest ->
-      Bestmove.of_tokens rest >>| fun bestmove -> Bestmove bestmove
+      Bestmove.of_tokens rest >>| fun bestmove ->
+      Bestmove (Some bestmove)
     | ["copyprotection"; "checking"] -> Some (Copyprotection `checking)
     | ["copyprotection"; "ok"] -> Some (Copyprotection `ok)
     | ["copyprotection"; "error"] -> Some (Copyprotection `error)

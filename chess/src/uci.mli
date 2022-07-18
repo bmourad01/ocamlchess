@@ -156,7 +156,7 @@ module Send : sig
     | Id of [`name of string | `author of string]
     | Uciok
     | Readyok
-    | Bestmove of Bestmove.t
+    | Bestmove of Bestmove.t option
     | Copyprotection of [`checking | `ok | `error]
     | Registration of [`checking | `ok | `error]
     | Info of Info.t list

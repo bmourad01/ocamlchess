@@ -120,8 +120,11 @@ module Result : sig
   (** The search result. *)
   type t
 
-  (** The best move to play. *)
-  val best : t -> Position.legal
+  (** The best move to play, if any. *)
+  val best : t -> Position.legal option
+
+  (** The best move to play. Raises if the PV is empty. *)
+  val best_exn : t -> Position.legal
 
   (** The principal variation. If this is not a mating sequence, then it
       is guaranteed to have a length that is at most the depth that was
@@ -147,12 +150,8 @@ end
 (** The search result. *)
 type result = Result.t
 
-(** Raised when the root position has no legal moves. *)
-exception No_moves
-
 (** [go () ~root ~limits ~history ~tt ~iter ~stop] runs the game tree search
-    and returns the search result. Raises [No_moves] if there are no legal
-    moves.
+    and returns the search result.
 
     - [root]: the position to start the search from.
     - [limits]: the search limits.
