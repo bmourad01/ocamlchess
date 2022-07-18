@@ -767,8 +767,6 @@ module Quiescence = struct
     State.(update @@ push_history pos) >>= fun () ->
     go pos ~node ~init:false ~ply:(ply + 1)
       ~alpha:(-beta) ~beta:(-t.alpha) >>= negm >>= fun score ->
-    (* if score >= inf || score <= -inf then *)
-    (*   eprintf "%d: %d, %d, %d\n%!" ply t.alpha score beta; *)
     State.(update @@ pop_history pos) >>= fun () ->
     Search.better t m ~score;
     if score >= beta then
