@@ -88,14 +88,18 @@ let is_over game = match game.result with
 let result_of pos history =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
+  let no_moves = List.is_empty @@ Position.legal_moves pos in
   let hash = Position.hash pos in
-  if not in_check && Position.is_insufficient_material pos
-  then Draw `Insufficient_material
-  else if not in_check && Position.halfmove pos >= 150
-  then Draw `Seventy_five_move_rule
-  else if List.is_empty @@ Position.legal_moves pos
-  then if in_check then Checkmate c else Draw `Stalemate
-  else if Map.find_exn history hash >= 5 then Draw `Fivefold_repetition
+  if in_check && no_moves then
+    Checkmate c
+  else if no_moves then
+    Draw `Stalemate
+  else if Position.is_insufficient_material pos then
+    Draw `Insufficient_material
+  else if Position.halfmove pos >= 150 then
+    Draw `Seventy_five_move_rule
+  else if Map.find_exn history hash >= 5 then
+    Draw `Fivefold_repetition
   else Ongoing 
 
 let create
