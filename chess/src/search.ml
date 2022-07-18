@@ -583,8 +583,8 @@ module Order = struct
   let qscore moves ~ttentry =
     let is_hash = is_hash ttentry in
     List.filter moves ~f:(fun m -> is_noisy m || is_hash m) |> function
-    | [] -> First ()
-    | moves -> Second (score_aux moves ~eval:(fun m ->
+    | [] -> None
+    | moves -> Some (score_aux moves ~eval:(fun m ->
         if is_hash m then inf
         else
           let p = promote_by_value m in
@@ -751,8 +751,8 @@ module Quiescence = struct
       match eval pos ~alpha ~beta ~ply ~ttentry with
       | First score -> Search.leaf score ~ply
       | Second alpha -> match Order.qscore moves ~ttentry with
-        | First () -> Search.leaf alpha ~ply
-        | Second (it, best) ->
+        | None -> Search.leaf alpha ~ply
+        | Some (it, best) ->
           let t = Search.create ~alpha ~best () in
           let finish () = return t.alpha in
           let f = child t ~beta ~eval ~ply ~node in
@@ -991,8 +991,8 @@ module Main = struct
       let finish () = return None in
       let f = probcut_child pos ~depth ~ply ~beta_cut in
       match Order.qscore moves ~ttentry with
-      | First () -> return None
-      | Second (it, _) -> Iterator.fold_until it ~init:() ~finish ~f
+      | Some (it, _) -> Iterator.fold_until it ~init:() ~finish ~f
+      | None -> return None
     else return None
 
   and probcut_child pos ~depth ~ply ~beta_cut = fun () (m, _) ->
