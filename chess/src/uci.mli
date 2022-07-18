@@ -92,6 +92,9 @@ module Send : sig
 
       val to_string : t -> string
       val of_string : string -> t option
+
+      val clamp : int -> spin -> int
+      val is_var : string -> combo -> bool
     end
 
     type t = {

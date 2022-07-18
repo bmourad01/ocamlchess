@@ -71,15 +71,25 @@ module Options = struct
   type 'a callback = 'a t -> 'a -> unit state
 
   module Callbacks = struct
-    let clear_hash : unit t -> unit -> unit state = fun Button () ->
-      State.clear_tt
+    let spin : int t -> int -> unit state = fun (Spin c) n ->
+      return (c.value <- T.clamp n c.spin)
 
-    let ponder : bool t -> bool -> unit state = fun (Check c) b ->
+    let check : bool t -> bool -> unit state = fun (Check c) b ->
       return (c.value <- b)
 
-    let multi_pv : int t -> int -> unit state = fun (Spin c) n ->
-      let T.{min; max; _} = c.spin in
-      return (c.value <- Int.clamp_exn n ~min ~max)
+    let combo : string t -> string -> unit state = fun t v ->
+      match t with
+      | String _ -> assert false
+      | Combo c when not @@ T.is_var v c.combo -> return ()
+      | Combo c -> return (c.value <- v)
+
+    let string : string t -> string -> unit state = fun t v ->
+      match t with
+      | Combo _ -> assert false
+      | String s -> return (s.value <- v)
+
+    let button : unit state -> (unit t -> unit -> unit state) =
+      fun x -> fun Button () -> x
   end
 
   let parse ~name ~value ~f = match value with
@@ -100,7 +110,7 @@ module Options = struct
     | String _ -> callback t @@ parse ~name ~value ~f:Fn.id
     | Button   -> callback t ()
 
-  type entry = T : 'a t * 'a callback -> entry
+  type entry = E : 'a t * 'a callback -> entry
 
   module Defaults = struct
     let ponder = false
@@ -108,10 +118,26 @@ module Options = struct
   end
 
   let tbl = Hashtbl.of_alist_exn (module String) [
-      "Clear Hash", T (button, Callbacks.clear_hash);
-      "Ponder",     T (check Defaults.ponder, Callbacks.ponder);
-      "MultiPV",    T (spin Defaults.multi_pv, Callbacks.multi_pv);
+      "MultiPV",    E (spin Defaults.multi_pv, Callbacks.spin);
+      "Ponder",     E (check Defaults.ponder, Callbacks.check);
+      "Clear Hash", E (button, Callbacks.button State.clear_tt);
     ]
+
+  let spin_value name = match Hashtbl.find_exn tbl name with
+    | E (Spin {value; _}, _) -> value
+    | _ -> assert false
+
+  let check_value name = match Hashtbl.find_exn tbl name with
+    | E (Check {value; _}, _) -> value
+    | _ -> assert false
+
+  let combo_value name = match Hashtbl.find_exn tbl name with
+    | E (Combo {value; _}, _) -> value
+    | _ -> assert false
+
+  let string_value name = match Hashtbl.find_exn tbl name with
+    | E (String {value; _}, _) -> value
+    | _ -> assert false
 end
 
 let uci =
@@ -123,7 +149,7 @@ let uci =
   fun () ->
     List.iter id ~f:(fun cmd -> printf "%s\n%!" @@ to_string cmd);
     printf "\n%!";
-    Hashtbl.iteri Options.tbl ~f:(fun ~key:name ~data:Options.(T (t, _)) ->
+    Hashtbl.iteri Options.tbl ~f:(fun ~key:name ~data:Options.(E (t, _)) ->
         let typ = Options.to_uci t in
         printf "%s\n%!" @@ to_string (Option Option.{name; typ}));
     printf "%s\n%!" @@ to_string Uciok
@@ -134,7 +160,7 @@ let setoption ({name; value} : Uci.Recv.Setoption.t) =
   let open Uci.Recv.Setoption in
   match Hashtbl.find Options.tbl name with
   | None -> cont @@ printf "No such option: %s\n%!" name
-  | Some Options.(T (t, callback)) ->
+  | Some Options.(E (t, callback)) ->
     Options.call t callback ~name ~value >>= cont
 
 let ucinewgame = State.set_position Position.start

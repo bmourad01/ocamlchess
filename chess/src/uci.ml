@@ -289,6 +289,9 @@ module Send = struct
         | _ -> None
 
       let of_string s = of_tokens @@ tokens s
+
+      let clamp n {min; max; _} = Int.clamp_exn n ~min ~max
+      let is_var v {var; _} = List.mem var v ~equal:String.equal
     end
 
     type t = {
