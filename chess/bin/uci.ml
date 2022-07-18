@@ -134,6 +134,13 @@ let kill stop =
   Condition.signal cv;
   Mutex.unlock cvm
 
+let wait_for_stop stop =
+  Mutex.lock cvm;
+  while not (Future.is_decided stop || Atomic.get cancel) do
+    Condition.wait cv cvm;
+  done;
+  Mutex.unlock cvm
+
 (* The main search routine, should be run in a separate thread. *)
 let search ~root ~limits ~history ~tt ~stop =
   let result =
@@ -144,26 +151,18 @@ let search ~root ~limits ~history ~tt ~stop =
   (* The UCI protocol says that `infinite` and `ponder` searches must
      wait for a corresponding `stop` or `ponderhit` command before
      sending `bestmove`. *)
-  if Search.Limits.infinite limits then begin
-    Mutex.lock cvm;
-    while not (Future.is_decided stop || Atomic.get cancel) do
-      Condition.wait cv cvm;
-    done;
-    Mutex.unlock cvm;
-  end;
+  if Search.Limits.infinite limits then wait_for_stop stop;
   (* If we canceled the thread then don't output the result. *)
   if not @@ Atomic.get cancel then
-    let bestmove =
-      Search.Result.best result |>
-      Option.map ~f:(fun m ->
-          let move = Position.Legal.move m in
-          let ponder = match Search.Result.pv result with
-            | _ :: ponder :: _ -> Some (Position.Legal.move ponder)
-            | _ -> None in
-          Uci.Send.Bestmove.{move; ponder}) in
-    printf "%s\n%!" @@
-    Uci.Send.to_string @@
-    Uci.Send.(Bestmove bestmove)
+    let make ?p m =
+      let move = Position.Legal.move m in
+      let ponder = Option.map p ~f:Position.Legal.move in
+      Uci.Send.Bestmove.{move; ponder} in
+    let bestmove = match Search.Result.pv result with
+      | [] -> None
+      | [m] -> Some (make m)
+      | m :: p :: _ -> Some (make m ~p) in
+    printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
   else Atomic.set cancel false;
   (* Thread completed. *)
   Atomic.set search_thread None
