@@ -1121,12 +1121,14 @@ module Main = struct
     if score >= beta then low, high * 2 else low * 2, high
 end
 
+let ply_to_moves ply = (ply + (ply land 1)) / 2
+
 (* We'll use the UCI datatype, which is either a numerical score in centipawns,
    or our distance from checkmate. *)
 let convert_score score tt root ~pv ~mate ~mated =
   let open Uci.Send.Info in
-  if mate then Mate (mate_score - score)
-  else if mated then Mate (mate_score + score)
+  if mate then Mate (ply_to_moves (mate_score - score))
+  else if mated then Mate (-(ply_to_moves (mate_score + score)))
   else match Tt.find tt root with
     | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
     | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
@@ -1190,7 +1192,8 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
   let mate_in_x =
     mate &&
     Limits.mate st.limits |>
-    Option.value_map ~default:false ~f:(fun n -> mate_score - score <= n) in
+    Option.value_map ~default:false ~f:(fun n ->
+        ply_to_moves (mate_score - score) <= n) in
   (* Don't continue if there's a mating sequence within the
      current depth limit. *)
   let stop_mate =
