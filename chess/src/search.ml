@@ -1183,11 +1183,12 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st moves =
 and next st moves ~depth ~score ~best ~mate ~mated ~time =
   let pv = extract_pv st moves ~depth ~best ~mate ~mated in
   let result = result st ~depth ~score ~time ~pv ~mate ~mated in
+  let no_ponder = not @@ State.pondering st in
   (* Last iteration may have eaten up at least half the allocated time,
      so the next (deeper) iteration is likely to take longer without
      having completed. Thus, we should abort the search. *)
   let too_long =
-    not (State.pondering st) &&
+    no_ponder &&
     Limits.time st.limits |>
     Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
   (* Stop searching once we've reached the depth limit. *)
@@ -1196,21 +1197,22 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
     Option.value_map ~default:false ~f:(fun n -> depth >= n) in
   (* Stop searching once we've reached the node limit. *)
   let max_nodes =
-    not (State.pondering st) &&
+    no_ponder &&
     Limits.nodes st.limits |>
     Option.value_map ~default:false ~f:(fun n -> st.nodes >= n) in
   (* Stop searching once we've found a mate in X (if applicable). *)
   let mate_in_x =
-    mate &&
+    no_ponder && mate &&
     Limits.mate st.limits |>
     Option.value_map ~default:false ~f:(fun n ->
         ply_to_moves (mate_score - score) <= n) in
   (* Don't continue if there's a mating sequence within the
      current depth limit. *)
   let stop_mate =
-    if mate then mate_score - score <= depth
-    else if mated then mate_score + score <= depth
-    else false in
+    no_ponder && begin
+      (mate && mate_score - score <= depth) ||
+      (mated && mate_score + score <= depth)
+    end in
   (* Continue iterating? *)
   if not (too_long || max_nodes || max_depth || mate_in_x || stop_mate)
   then begin
