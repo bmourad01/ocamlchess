@@ -140,7 +140,7 @@ let search ~root ~limits ~history ~tt ~stop =
     try Search.go () ~root ~limits ~history ~tt ~iter:(info_of_result root tt)
     with exn ->
       Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
-      exit 1 in
+      Err.exit () in
   (* The UCI protocol says that `infinite` and `ponder` searches must
      wait for a corresponding `stop` or `ponderhit` command before
      sending `bestmove`. *)
@@ -291,7 +291,7 @@ let run () =
         ~stop:None
     with Failure msg ->
       eprintf "%s\n%!" msg;
-      exit 1 in
+      Err.exit () in
   (* Stop the search thread. *)
   Atomic.get search_thread |>
   Option.iter ~f:(fun t -> kill stop; Thread.join t);

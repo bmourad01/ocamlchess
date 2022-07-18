@@ -20,8 +20,8 @@ let choose_player ?(none_ok = true) = function
   | s -> match Players.lookup s with
     | Some _ as player -> player
     | None ->
-      Format.eprintf "Player %s is not registered\n%!" s;
-      exit 1
+      Format.eprintf "Error: player %s is not registered\n%!" s;
+      Err.exit ()
 
 let no_validate =
   let doc = "Don't validate the input FEN position" in
@@ -31,7 +31,7 @@ let try_create_pos fen validate =
   try Chess.Position.Fen.of_string_exn fen ~validate
   with Invalid_argument msg ->
     Format.eprintf "%s\n%!" msg;
-    exit 1
+    Err.exit ()
 
 module Perft = struct
   let go depth pos no_validate =
@@ -39,7 +39,7 @@ module Perft = struct
     let pos = try_create_pos pos validate in
     if depth < 1 then begin
       Format.eprintf "Invalid depth value %d\n%!" depth;
-      exit 1
+      Err.exit ()
     end else Perft.run depth pos
 
   let depth =
@@ -75,13 +75,13 @@ module Gui = struct
           ~stop:(fst @@ Bap_future.Std.Future.create ())
     with Invalid_argument msg ->
       Format.eprintf "Error when creating search limits: %s\n%!" msg;
-      exit 1
+      Err.exit ()
 
   let try_load_book filename =
     try Caml_player.book := Some (Chess.Book.create filename);
     with Sys_error msg | Failure msg ->
       Format.eprintf "Error when loading book: %s\n%!" msg;
-      exit 1
+      Err.exit ()
 
   let go pos white black delay depth nodes book no_validate =
     let validate = not no_validate in
