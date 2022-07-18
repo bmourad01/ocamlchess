@@ -11,3 +11,6 @@ val name : string
 
 (** Create the player. *)
 val create : unit -> Player.e
+
+(** Registers the player. *)
+val init : unit -> unit

@@ -64,3 +64,10 @@ let create () =
       ~desc:"The flagship player, based on traditional game tree search and \
              evaluation." in
   Player.T player
+
+let init =
+  let once = ref false in
+  fun () -> if not !once then begin
+      Players.register name create;
+      once := true;
+    end

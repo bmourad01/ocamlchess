@@ -2,19 +2,6 @@ open Cmdliner
 
 let version = Format.sprintf "%d.%d" Version.major Version.minor
 
-let man_players () =
-  Players.register Caml_player.name Caml_player.create;
-  Elo_world.init ();  
-  `S "PLAYER" ::
-  `Pre "Predefined algorithms for the computer." :: begin
-    Players.enumerate () |> Core_kernel.Sequence.map
-      ~f:(fun Player.(T player) ->
-          `P (Format.sprintf "%s: %s"
-                (Player.name player)
-                (Player.desc player))) |>
-    Core_kernel.Sequence.to_list
-  end
-
 let choose_player ?(none_ok = true) = function
   | "" when none_ok -> None
   | s -> match Players.lookup s with
@@ -66,6 +53,19 @@ module Perft = struct
 end
 
 module Gui = struct
+  let man_players () =
+    Caml_player.init ();
+    Elo_world.init ();
+    `S "PLAYER" ::
+    `Pre "Predefined algorithms for the computer." :: begin
+      Players.enumerate () |> Core_kernel.Sequence.map
+        ~f:(fun Player.(T player) ->
+            `P (Format.sprintf "%s: %s"
+                  (Player.name player)
+                  (Player.desc player))) |>
+      Core_kernel.Sequence.to_list
+    end
+
   let try_create_limits pos nodes depth =
     try Chess.Search.Limits.create ()
           ~nodes
@@ -151,12 +151,13 @@ module Gui = struct
       no_validate)
 
   let info =
+    let man = man_players () in
     let doc = "Runs the testing GUI." in
     Cmd.info "gui"
       ~version
       ~doc
       ~exits:Cmd.Exit.defaults
-      ~man:[]
+      ~man
 
   let cmd = Cmd.v info t
 end
@@ -178,12 +179,10 @@ end
 let default = Term.(ret @@ const @@ `Help (`Pager, None))
 
 let info =
-  let man = man_players () in
   let doc = "A UCI-compatible chess engine." in
   Cmd.info "ocamlchess"
     ~doc
     ~version
-    ~man
     ~exits:Cmd.Exit.defaults
 
 let () = exit @@ Cmd.eval @@ Cmd.group ~default info [
