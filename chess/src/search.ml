@@ -1189,7 +1189,6 @@ let result ~depth ~score ~time ~pv ~mate ~mated =
 let rec iterdeep ?(prev = None) ?(depth = 1) moves =
   let basis = Option.value_map prev ~default:(-inf) ~f:snd in
   Main.aspire moves depth basis >>= fun (score, best) ->
-  assert (score < inf);
   (* Get the elapsed time ASAP. *)
   State.(gets elapsed) >>= fun time ->
   (* If the search was stopped, use the previous completed result, if
@@ -1206,7 +1205,6 @@ let rec iterdeep ?(prev = None) ?(depth = 1) moves =
 and next moves ~depth ~score ~best ~mate ~mated ~time =
   State.(gets limits) >>= fun limits ->
   State.(gets nodes) >>= fun nodes ->
-  State.(gets seldepth) >>= fun seldepth ->
   extract_pv moves ~depth ~best ~mate ~mated >>= fun pv ->
   result ~depth ~score ~time ~pv ~mate ~mated >>= fun result ->
   (* Last iteration may have eaten up at least half the allocated time,
