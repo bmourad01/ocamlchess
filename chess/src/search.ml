@@ -174,6 +174,11 @@ module Tt = struct
   let clear = Hashtbl.clear
   let find tt pos = Hashtbl.find tt @@ Position.hash pos
 
+  let of_score score ply =
+    if is_mate score then score + ply
+    else if is_mated score then score - ply
+    else score
+
   (* Store the evaluation results for the position.
 
      If the position has already been cached in the table, then we can
@@ -184,11 +189,10 @@ module Tt = struct
     Position.hash pos |> Hashtbl.update tt ~f:(function
         | Some entry when Entry.depth entry > depth -> entry
         | None | Some _ ->
+          let score = of_score score ply in
           Entry.Fields.create ~ply ~depth ~score ~best ~node)
 
-  (* If this was a mate score, then adjust it to be relative to the
-     current distance from root. *)
-  let adjust_mate score ply =
+  let to_score score ply =
     if is_mate score then score - ply
     else if is_mated score then score + ply
     else score
@@ -210,7 +214,7 @@ module Tt = struct
     | Some entry when ply <= 0 || Entry.depth entry < depth ->
       Second (alpha, beta, Some entry)
     | Some entry ->
-      let score = adjust_mate entry.score ply in
+      let score = to_score entry.score ply in
       match entry.node with
       | Pv when not pv -> First (score, entry.best)
       | Pv -> Second (alpha, beta, Some entry)
@@ -227,10 +231,8 @@ module Tt = struct
   let pv ?(mate = false) tt n m =
     let rec aux i acc pos = match find tt pos with
       | None -> List.rev acc
-      | Some Entry.{best; _} when mate || n > i ->
-        let i = i + 1 in
-        let acc = best :: acc in
-        aux i acc @@ Legal.child best
+      | Some Entry.{best; _} when mate ||  n > i ->
+        aux (i + 1) (best :: acc) @@ Legal.child best
       | _ -> List.rev acc in
     aux 1 [m] @@ Legal.child m
 end
@@ -580,13 +582,12 @@ module Order = struct
   (* Score the moves for quiescence search. *)
   let qscore moves =
     List.filter moves ~f:is_noisy |> function
-    | [] -> Either.first ()
-    | moves -> Either.second @@ score_aux moves ~eval:(fun m ->
+    | [] -> First ()
+    | moves -> Second (score_aux moves ~eval:(fun m ->
         let p = promote_by_value m in
-        if p <> 0 then p
-        else match See.go m with
+        if p <> 0 then p else match See.go m with
           | Some value -> value
-          | None -> 0)
+          | None -> 0))
 end
 
 (* Helpers for the search. *)
@@ -631,19 +632,6 @@ module Search = struct
     State.(gets tt) >>| fun tt ->
     Tt.store tt pos ~ply ~depth ~score ~best:t.best ~node:t.node
 
-  (* Decide whether to use the TT evaluation or the result of the evaluation
-     function (or whether to skip altogether). *)
-  let eval pos ~ply ~check ~ttentry =
-    if not check then
-      let eval = Eval.go pos in
-      let score = match (ttentry : Tt.entry option) with
-        | Some {score; node = Cut; _} when score > eval -> score
-        | Some {score; node = All; _} when score < eval -> score
-        | None | Some _ -> eval in
-      State.(gets @@ update_eval pos ply score) >>| fun improving ->
-      Some score, improving
-    else return (None, false)
-
   let leaf score ~ply = begin State.update @@ fun st -> {
       st with seldepth = max st.seldepth ply;
     } end >>| fun () -> score
@@ -686,10 +674,17 @@ module Search = struct
 
      If we've already found a shorter path to checkmate than our current
      distance from the root, then just cut off the search here.
+
+     It's important to leave alpha and beta unchanged if they are set to
+     the default window (-inf/inf).
   *)
   let mdp ~alpha ~beta ~ply =
-    let alpha = max alpha (-mate_score + ply) in
-    let beta = min beta (mate_score - ply) in
+    let alpha =
+      if alpha = -inf then alpha
+      else max alpha (-mate_score + ply) in
+    let beta =
+      if beta = inf then beta
+      else min beta (mate_score - ply) in
     if alpha >= beta then First alpha else Second (alpha, beta)
 end
 
@@ -704,17 +699,26 @@ module Quiescence = struct
   (* Delta pruning. *)
   let delta =
     let margin = Piece.Kind.value Queen * Eval.material_weight in
-    fun pos ~eval ~alpha ->
-      eval + margin <= alpha && not (Eval.is_endgame pos)
+    fun pos eval alpha -> eval + margin <= alpha && not (Eval.is_endgame pos)
 
-  (* Decide whether to fail low or high before searching. Otherwise, return
-     the new value of alpha. *)
-  let eval pos ~ply ~check ~alpha ~beta ~ttentry =
-    Search.eval pos ~ply ~check ~ttentry >>| function
-    | Some eval, _ when eval >= beta -> First beta
-    | Some eval, _ when delta pos ~eval ~alpha -> First alpha
-    | Some eval, _ -> Second (max eval alpha)
-    | None,      _ -> Second alpha
+  (* Decide whether to use the TT evaluation or the result of the evaluation
+     function.
+
+     XXX: Normally, this would be skipped when the position is in check, but
+     there is some bug (seemingly related to fail-low nodes) that I haven't
+     figured out yet.
+  *)
+  let eval pos ~alpha ~beta ~ply ~ttentry =
+    let eval = Eval.go pos in
+    let score = match (ttentry : Tt.entry option) with
+      | Some {score; node = Cut; _}
+        when Tt.to_score score ply > eval -> score
+      | Some {score; node = All; _}
+        when Tt.to_score score ply <= eval -> score
+      | None | Some _ -> eval in
+    if score >= beta then First beta
+    else if delta pos score alpha then First alpha
+    else Second (max score alpha)
 
   (* TT entries for quiescence search have a depth of either 0 or -1,
      depending on whether this is the first ply or we're in check. *)
@@ -743,7 +747,7 @@ module Quiescence = struct
   and with_moves ?(ttentry = None) ?(init = true)
       pos moves ~alpha ~beta ~ply ~check ~node =
     State.(update inc_nodes) >>= fun () ->
-    eval pos ~ply ~check ~alpha ~beta ~ttentry >>= function
+    match eval pos ~alpha ~beta ~ply ~ttentry with
     | First score -> Search.leaf score ~ply
     | Second alpha -> match Order.qscore moves with
       | First () -> Search.leaf alpha ~ply
@@ -763,6 +767,8 @@ module Quiescence = struct
     State.(update @@ push_history pos) >>= fun () ->
     go pos ~node ~init:false ~ply:(ply + 1)
       ~alpha:(-beta) ~beta:(-t.alpha) >>= negm >>= fun score ->
+    (* if score >= inf || score <= -inf then *)
+    (*   eprintf "%d: %d, %d, %d\n%!" ply t.alpha score beta; *)
     State.(update @@ pop_history pos) >>= fun () ->
     Search.better t m ~score;
     if score >= beta then
@@ -773,6 +779,21 @@ end
 (* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
+  (* Decide whether to use the TT evaluation or the result of the evaluation
+     function (or whether to skip altogether). *)
+  let eval pos ~ply ~check ~ttentry =
+    if not check then
+      let eval = Eval.go pos in
+      let score = match (ttentry : Tt.entry option) with
+        | Some {score; node = Cut; _}
+          when Tt.to_score score ply > eval -> score
+        | Some {score; node = All; _}
+          when Tt.to_score score ply <= eval -> score
+        | None | Some _ -> eval in
+      State.(gets @@ update_eval pos ply score) >>| fun improving ->
+      Some score, improving
+    else return (None, false)
+
   (* Search from a new position. *)
   let rec go ?(null = false) pos ~alpha ~beta ~ply ~depth ~node =
     Search.check_limits_or_draw pos >>= function
@@ -803,7 +824,7 @@ module Main = struct
   (* Search the available moves for the given position. *)
   and with_moves ?(null = false) pos moves
       ~alpha ~beta ~ply ~depth ~check ~ttentry ~node =
-    Search.eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
+    eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
     try_pruning_before_child pos moves
       ~eval ~alpha ~beta ~ply ~depth ~check
       ~null ~node ~improving ~ttentry >>= function
@@ -1093,11 +1114,11 @@ module Main = struct
   let root moves ~alpha ~beta ~depth =
     let ply = 0 and node = Pv in
     State.(gets root) >>= fun pos ->
-    let check = Position.in_check pos in
     Search.lookup pos ~depth ~ply ~alpha ~beta ~node >>= function
     | First _ -> assert false
     | Second (alpha, beta, ttentry) ->
-      Search.eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
+      let check = Position.in_check pos in
+      eval pos ~ply ~check ~ttentry >>= fun (eval, improving) ->
       Order.score moves ~ply ~pos ~ttentry >>= fun (it, best) ->
       let t = Search.create ~alpha ~best () in
       let finish _ = return t.alpha in
@@ -1136,10 +1157,8 @@ end
    or our distance from checkmate. *)
 let convert_score score tt root ~pv ~mate ~mated =
   let open Uci.Send.Info in
-  let len = List.length pv in
-  let full = (len + (len land 1)) / 2 in
-  if mate then Mate full
-  else if mated then Mate (-full)
+  if mate then Mate (mate_score - score)
+  else if mated then Mate (mate_score + score)
   else match Tt.find tt root with
     | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
     | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
@@ -1170,6 +1189,7 @@ let result ~depth ~score ~time ~pv ~mate ~mated =
 let rec iterdeep ?(prev = None) ?(depth = 1) moves =
   let basis = Option.value_map prev ~default:(-inf) ~f:snd in
   Main.aspire moves depth basis >>= fun (score, best) ->
+  assert (score < inf);
   (* Get the elapsed time ASAP. *)
   State.(gets elapsed) >>= fun time ->
   (* If the search was stopped, use the previous completed result, if
@@ -1186,6 +1206,7 @@ let rec iterdeep ?(prev = None) ?(depth = 1) moves =
 and next moves ~depth ~score ~best ~mate ~mated ~time =
   State.(gets limits) >>= fun limits ->
   State.(gets nodes) >>= fun nodes ->
+  State.(gets seldepth) >>= fun seldepth ->
   extract_pv moves ~depth ~best ~mate ~mated >>= fun pv ->
   result ~depth ~score ~time ~pv ~mate ~mated >>= fun result ->
   (* Last iteration may have eaten up at least half the allocated time,
@@ -1202,16 +1223,19 @@ and next moves ~depth ~score ~best ~mate ~mated ~time =
   let max_nodes =
     Limits.nodes limits |>
     Option.value_map ~default:false ~f:(fun n -> nodes >= n) in
-  (* Stop searching once we've found a mate in X (if applicable).
-     Alternatively, we can stop once we've found a mate within the
-     current depth limit. *)
-  let mate =
+  (* Stop searching once we've found a mate in X (if applicable). *)
+  let mate_in_x =
     mate &&
-    let len = List.length pv in
-    Limits.mate limits |> Option.value_map
-      ~default:(len <= depth) ~f:(fun n -> len <= n * 2) in
+    Limits.mate limits |>
+    Option.value_map ~default:false ~f:(fun n -> mate_score - score <= n) in
+  (* Don't continue if there's a mating sequence within the
+     current depth limit. *)
+  let stop_mate =
+    if mate then mate_score - score <= depth
+    else if mated then mate_score + score <= depth
+    else false in
   (* Continue iterating? *)
-  if not (too_long || max_nodes || max_depth || mate || mated) then
+  if not (too_long || max_nodes || max_depth || mate_in_x || stop_mate) then
     State.(update new_iter) >>= fun () ->
     let prev = Some (result, score) in
     iterdeep moves ~depth:(depth + 1) ~prev
