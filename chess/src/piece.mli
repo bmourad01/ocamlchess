@@ -44,6 +44,10 @@ module Color : sig
       color of [c]. *)
   val opposite_int : t -> int
 
+  (** [pp_hum ppf c] pretty-prints the human-readable string of color [c]
+      to formatter [ppf]. *)
+  val pp_hum : Format.formatter -> t -> unit
+
   (** [to_string_hum c] returns the human-readable string of color [c]. *)
   val to_string_hum : t -> string
 end

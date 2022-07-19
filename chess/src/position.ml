@@ -1526,7 +1526,7 @@ let null_move pos =
 (* Standard Algebraic Notation (SAN). *)
 
 module San = struct
-  let disambiguate parent k ~addc ~adds ~src ~dst =
+  let disambiguate ppf parent k ~src ~dst =
     let a = Analysis.create parent in
     (* More than one checker means it's a king move, which is unambiguous. *)
     if a.Analysis.num_checkers <= 1 then
@@ -1543,14 +1543,13 @@ module San = struct
           not @@ List.exists moves ~f:(fun (sq, _) -> f sq = x) in
         (* First try to distinguish by file, then by rank, and finally the
            departing square. *)
-        if search file Square.file then addc @@ Square.File.to_char file
-        else if search rank Square.rank then addc @@ Square.Rank.to_char rank
-        else adds @@ Square.to_string src
+        if search file Square.file then
+          Format.fprintf ppf "%c%!" @@ Square.File.to_char file
+        else if search rank Square.rank then
+          Format.fprintf ppf "%c%!" @@ Square.Rank.to_char rank
+        else Format.fprintf ppf "%a%!" Square.pp src
 
-  let of_legal legal =
-    let buf = Buffer.create 16 in
-    let adds = Buffer.add_string buf in
-    let addc = Buffer.add_char buf in
+  let pp ppf legal =
     let src, dst, promote = Move.decomp @@ Legal.move legal in
     let pos = Legal.child legal in
     let num_checkers =
@@ -1562,46 +1561,48 @@ module San = struct
     let checkmate = num_checkers <> 0 && List.is_empty @@ legal_moves pos in
     begin match Legal.castle_side legal with
       (* Castling *)
-      | Some Cr.Kingside -> adds "O-O"
-      | Some Cr.Queenside -> adds "O-O-O"
+      | Some Cr.Kingside -> Format.fprintf ppf "O-O%!"
+      | Some Cr.Queenside -> Format.fprintf ppf "O-O-O%!"
       | None ->
         let p = piece_at_square_exn pos dst in
         let p = match promote with
           | Some _ -> Piece.with_kind p Pawn
           | None -> p in
         (* Piece being moved *)
-        let dis = disambiguate ~addc ~adds ~src ~dst @@ Legal.parent legal in
+        let dis = disambiguate ppf ~src ~dst @@ Legal.parent legal in
         begin match Piece.kind p with
           | Piece.Pawn -> if Uopt.is_none legal.capture
-            then adds @@ Square.to_string dst
-            else addc @@ Square.file_char src
-          | Piece.Knight -> addc 'N'; dis Knight
-          | Piece.Bishop -> addc 'B'; dis Bishop
-          | Piece.Rook   -> addc 'R'; dis Rook
-          | Piece.Queen  -> addc 'Q'; dis Queen
-          | Piece.King   -> addc 'K'
+            then Format.fprintf ppf "%a%!" Square.pp dst
+            else Format.fprintf ppf "%c%!" @@ Square.file_char src
+          | Piece.Knight -> Format.fprintf ppf "N%!"; dis Knight
+          | Piece.Bishop -> Format.fprintf ppf "B%!"; dis Bishop
+          | Piece.Rook   -> Format.fprintf ppf "R%!"; dis Rook
+          | Piece.Queen  -> Format.fprintf ppf "Q%!"; dis Queen
+          | Piece.King   -> Format.fprintf ppf "K%!"
         end;
         (* Capture *)
-        Uopt.to_option legal.capture |> Option.iter ~f:(fun _ -> addc 'x');
+        Uopt.to_option legal.capture |>
+        Option.iter ~f:(fun _ -> Format.fprintf ppf "x%!");
         (* Destination *)
-        if not (Piece.is_pawn p && Uopt.is_none legal.capture)
-        then adds @@ Square.to_string dst;
+        if not (Piece.is_pawn p && Uopt.is_none legal.capture) then
+          Format.fprintf ppf "%a%!" Square.pp dst;
         (* Promotion *)
         Option.iter promote ~f:(function
-            | Move.Promote.Knight -> adds "=N"
-            | Move.Promote.Bishop -> adds "=B"
-            | Move.Promote.Rook   -> adds "=R"
-            | Move.Promote.Queen  -> adds "=Q");
+            | Move.Promote.Knight -> Format.fprintf ppf "=N%!"
+            | Move.Promote.Bishop -> Format.fprintf ppf "=B%!"
+            | Move.Promote.Rook   -> Format.fprintf ppf "=R%!"
+            | Move.Promote.Queen  -> Format.fprintf ppf "=Q%!");
     end;
     (* Checkmate or check *)
-    if checkmate then addc '#'
-    else if num_checkers = 1 then addc '+'
-    else if num_checkers = 2 then adds "++";
-    Buffer.contents buf
+    if checkmate then Format.fprintf ppf "#%!"
+    else if num_checkers = 1 then Format.fprintf ppf "+%!"
+    else if num_checkers = 2 then Format.fprintf ppf "++%!"
+
+  let to_string legal = Format.asprintf "%a%!" pp legal
 
   let of_string s pos =
     legal_moves pos |> List.find ~f:(fun legal ->
-        String.(s = of_legal legal))
+        String.equal s @@ to_string legal)
 end
 
 include Comparable.Make(T)

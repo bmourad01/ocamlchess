@@ -1150,7 +1150,7 @@ let convert_score score tt root ~pv ~mate ~mated =
 let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
     if not @@ List.exists moves ~f:(Legal.same m) then
       failwithf "Found an invalid move %s in the PV"
-        (Position.San.of_legal m) ();
+        (Position.San.to_string m) ();
     Position.legal_moves @@ Legal.child m) |> ignore
 
 let extract_pv (st : state) moves ~depth ~best ~mate ~mated =

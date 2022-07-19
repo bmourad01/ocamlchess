@@ -147,5 +147,8 @@ val add_move :
   Position.legal ->
   t
 
-(** Returns a PGN representation of the game. *)
+(** Pretty-prints the PGN representation of the game. *)
+val pp : Format.formatter -> t -> unit
+
+(** Returns the PGN representation of the game. *)
 val to_string : t -> string

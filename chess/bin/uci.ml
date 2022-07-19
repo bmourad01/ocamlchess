@@ -147,19 +147,19 @@ let uci =
     Id (`author "Benjamin Mourad");
   ] in
   fun () ->
-    List.iter id ~f:(fun cmd -> printf "%s\n%!" @@ to_string cmd);
-    printf "\n%!";
+    List.iter id ~f:(fun cmd -> Format.printf "%s\n%!" @@ to_string cmd);
+    Format.printf "\n%!";
     Hashtbl.iteri Options.tbl ~f:(fun ~key:name ~data:Options.(E (t, _)) ->
         let typ = Options.to_uci t in
-        printf "%s\n%!" @@ to_string (Option Option.{name; typ}));
-    printf "%s\n%!" @@ to_string Uciok
+        Format.printf "%s\n%!" @@ to_string (Option Option.{name; typ}));
+    Format.printf "%s\n%!" @@ to_string Uciok
 
-let isready () = printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
+let isready () = Format.printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
 
 let setoption ({name; value} : Uci.Recv.Setoption.t) =
   let open Uci.Recv.Setoption in
   match Hashtbl.find Options.tbl name with
-  | None -> cont @@ printf "No such option: %s\n%!" name
+  | None -> cont @@ Format.printf "No such option: %s\n%!" name
   | Some Options.(E (t, callback)) ->
     Options.call t callback ~name ~value >>= cont
 
@@ -204,7 +204,7 @@ let info_of_result root tt result =
         Time time;
         Pv (List.map pv ~f:Position.Legal.move);
       ] in
-  printf "%s\n%!" @@ Uci.Send.to_string @@ Info info
+  Format.printf "%s\n%!" @@ Uci.Send.to_string @@ Info info
 
 (* Current search thread. *)
 let search_thread = Atomic.make None
@@ -236,7 +236,7 @@ let bestmove result =
     | [] -> None
     | [m] -> Some (make m)
     | m :: p :: _ -> Some (make m ~p) in
-  printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
+  Format.printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
 
 (* The main search routine, should be run in a separate thread. *)
 let search ~root ~limits ~history ~tt ~stop ~ponder =
@@ -391,7 +391,7 @@ let rec loop () = match In_channel.(input_line stdin) with
   | None -> return ()
   | Some "" -> loop ()
   | Some line -> match Uci.Recv.of_string line with
-    | None -> loop @@ printf "what?\n%!"
+    | None -> loop @@ Format.printf "what?\n%!"
     | Some cmd -> recv cmd >>= function
       | false -> return ()
       | true -> loop ()
@@ -416,7 +416,7 @@ let exec () =
 let run () =
   (* Run the main interpreter loop. *)
   let stop = try exec () with Failure msg ->
-    eprintf "%s\n%!" msg;
+    Format.eprintf "%s\n%!" msg;
     Err.exit () in
   (* Stop the search thread. *)
   Atomic.get search_thread |>

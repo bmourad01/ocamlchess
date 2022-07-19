@@ -20,8 +20,8 @@ let best moves ~eval =
 module Alphabetical = struct
   let choice _ moves =
     List.sort moves ~compare:(fun a b ->
-        let sa = Position.San.of_legal a in
-        let sb = Position.San.of_legal b in
+        let sa = Position.San.to_string a in
+        let sb = Position.San.to_string b in
         String.compare sa sb) |> List.hd_exn, ()
 
   let name = "alphabetical"

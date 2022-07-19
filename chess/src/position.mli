@@ -403,8 +403,11 @@ val null_move : t -> t
 
 (** Implements SAN (Standard Algebraic Notation). *)
 module San : sig
-  (** [of_legal legal] returns a string representing the legal move in SAN. *)
-  val of_legal : legal -> string
+  (** [pp ppf legal] pretty-prints the [legal] move in SAN to formatter [ppf]. *)
+  val pp : Format.formatter -> legal -> unit
+
+  (** [to_string legal] returns a string representing the [legal] move in SAN. *)
+  val to_string : legal -> string
 
   (** [of_string s pos] returns the legal move of string [s] given the
       position [pos], if it exists. *)

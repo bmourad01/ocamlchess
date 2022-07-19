@@ -74,6 +74,10 @@ module Color = struct
   let[@inline] opposite_int c = to_int c lxor 1
   let[@inline] opposite c = (Obj.magic @@ opposite_int c : t)
 
+  let pp_hum ppf = function
+    | White -> Format.fprintf ppf "white%!"
+    | Black -> Format.fprintf ppf "black%!"
+
   let to_string_hum = function
     | White -> "white"
     | Black -> "black"

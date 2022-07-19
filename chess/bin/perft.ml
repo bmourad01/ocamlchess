@@ -18,12 +18,12 @@ let run depth pos =
     List.fold roots ~init:0L ~f:(fun acc m ->
         let m = Legal.move m and pos = Legal.child m in
         let n = perft pos depth in
-        printf "%s: %Lu\n%!" (Move.to_string m) n;
+        Format.printf "%a: %Lu\n%!" Move.pp m n;
         Int64.(acc + n)) in
   let t' = Time.now () in
   let sec = Time.(Span.to_sec @@ diff t' t) in
   let nps = Float.(to_int64 (of_int64 n / (sec + epsilon_float))) in
-  printf "\n%!";
-  printf "Time taken: %fs\n%!" sec;
-  printf "Nodes searched: %Lu\n%!" n;
-  printf "Nodes per second: %Lu\n%!" nps
+  Format.printf "\n%!";
+  Format.printf "Time taken: %fs\n%!" sec;
+  Format.printf "Nodes searched: %Lu\n%!" n;
+  Format.printf "Nodes per second: %Lu\n%!" nps

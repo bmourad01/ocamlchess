@@ -49,13 +49,13 @@ module Result = struct
   include T
   include Comparable.Make(T)
 
-  let to_pgn = function
-    | Checkmate White -> "0-1"
-    | Checkmate Black -> "1-0"
-    | Resigned White -> "0-1"
-    | Resigned Black -> "1-0"
-    | Draw _ -> "1/2-1/2"
-    | Ongoing -> "*"
+  let pp ppf = function
+    | Checkmate White -> Format.fprintf ppf "0-1%!"
+    | Checkmate Black -> Format.fprintf ppf "1-0%!"
+    | Resigned White -> Format.fprintf ppf "0-1%!"
+    | Resigned Black -> Format.fprintf ppf "1-0%!"
+    | Draw _ -> Format.fprintf ppf "1/2-1/2%!"
+    | Ongoing -> Format.fprintf ppf "%%!"
 end
 
 module T = struct
@@ -161,56 +161,39 @@ let add_move ?(resigned = None) ?(declared_draw = None) game legal =
     {game with moves; result; history}
   else raise Game_over
 
-let to_string game =
-  let buf = Buffer.create 256 in
-  let adds = Buffer.add_string buf in
-  let addc = Buffer.add_char buf in
-  (* Event *)
-  adds "[Event \"";
-  adds @@ Option.value ~default:"" game.event;
-  adds "\"]\n";
-  (* Site *)
-  adds "[Site \"";
-  adds @@ Option.value ~default:"" game.site;
-  adds "\"]\n";
-  (* Date *)
-  adds "[Date \"";
-  adds @@ Option.value_map ~default:"" game.date ~f:Date.to_string;
-  adds "\"]\n";
-  (* White *)
-  adds "[White \"";
-  adds @@ Option.value ~default:"" game.white;
-  adds "\"]\n";
-  (* Black *)
-  adds "[Black \"";
-  adds @@ Option.value ~default:"" game.black;
-  adds "\"]\n";
-  (* Result *)
-  let result = Result.to_pgn game.result in
-  adds "[Result \"";
-  adds result;
-  adds "\"]\n";
-  (* FEN *)
-  if Position.(game.start <> start) then begin
-    adds "[FEN \"";
-    adds @@ Position.Fen.to_string game.start;
-    adds "\"]\n";
-  end;
-  (* Moves *)
-  addc '\n';
+let pp_option_string ppf = function
+  | None -> Format.fprintf ppf "%!"
+  | Some s -> Format.fprintf ppf "%s%!" s
+
+let pp_option_date ppf = function
+  | None -> Format.fprintf ppf "%!"
+  | Some d -> Format.fprintf ppf "%a%!" Date.pp d
+
+let pp ppf game =
+  Format.fprintf ppf "[Event \"%a\"]\n%!" pp_option_string game.event;
+  Format.fprintf ppf "[Site \"%a\"]\n%!" pp_option_string game.site;
+  Format.fprintf ppf "[Date \"%a\"]\n%!" pp_option_date game.date;
+  Format.fprintf ppf "[White \"%a\"]\n%!" pp_option_string game.white;
+  Format.fprintf ppf "[Black \"%a\"]\n%!" pp_option_string game.black;
+  Format.fprintf ppf "[Result \"%a\"]\n%!" Result.pp game.result;
+  if Position.(game.start <> start) then
+    Format.fprintf ppf "[FEN \"%a\"]\n%!" Position.pp game.start;
+  Format.fprintf ppf "\n%!";
   moves game |> List.fold ~init:true ~f:(fun full legal ->
       let parent = Legal.parent legal in
-      if full then adds @@ sprintf "%d." @@ Position.fullmove parent;
+      if full then
+        Format.fprintf ppf "%d.%!" @@ Position.fullmove parent;
       let full =
         (* We may have started this game from a position where black
            moves first. *)
         let active = Position.active parent in
-        if full && Piece.Color.(active = Black)
-        then (adds ".."; full) else not full in
-      adds @@ Position.San.of_legal legal;
-      addc ' ';
+        if full && Piece.Color.(active = Black) then begin
+          Format.fprintf ppf "..%!"; full
+        end else not full in
+      Format.fprintf ppf "%a %!" Position.San.pp legal;
       full) |> ignore;
-  adds result;
-  Buffer.contents buf
+  Format.fprintf ppf "%a\n%!" Result.pp game.result
+
+let to_string = Format.asprintf "%a\n%!" pp
 
 include Comparable.Make(T)

@@ -10,7 +10,7 @@ let update_history m pos =
 let print_res res =
   let pv =
     Search.Result.pv res |>
-    List.map ~f:(fun m -> Position.San.of_legal m) |>
+    List.map ~f:(fun m -> Position.San.to_string m) |>
     String.concat ~sep:" " in
   let score = match Search.Result.score res with
     | Mate n when n < 0 -> sprintf "lose (mate in %d)" (-n)
@@ -18,13 +18,13 @@ let print_res res =
     | Cp (s, None) -> Int.to_string s
     | Cp (s, Some `lower) -> sprintf "%d (lower-bound)" s
     | Cp (s, Some `upper) -> sprintf "%d (upper-bound)" s in
-  printf "Time taken: %dms\n%!" @@ Search.Result.time res;
-  printf "Principal variation: %s\n%!" pv;
-  printf "Depth: %d\n%!" @@ Search.Result.depth res;
-  printf "Maximum ply reached: %d\n%!" @@ Search.Result.seldepth res;
-  printf "Nodes evaluated: %d\n%!" @@ Search.Result.nodes res;
-  printf "Score: %s\n%!" score;
-  printf "\n%!"
+  Format.printf "Time taken: %dms\n%!" @@ Search.Result.time res;
+  Format.printf "Principal variation: %s\n%!" pv;
+  Format.printf "Depth: %d\n%!" @@ Search.Result.depth res;
+  Format.printf "Maximum ply reached: %d\n%!" @@ Search.Result.seldepth res;
+  Format.printf "Nodes evaluated: %d\n%!" @@ Search.Result.nodes res;
+  Format.printf "Score: %s\n%!" score;
+  Format.printf "\n%!"
 
 let book = ref None
 
@@ -33,14 +33,23 @@ let try_book in_book root history =
   else Option.bind !book ~f:(fun book ->
       match Book.lookup book root with
       | Ok m ->
-        printf "Book move: %s\n\n%!" @@ Position.San.of_legal m;
+        Format.printf "Book move: %a\n\n%!" Position.San.pp m;
         let new_pos = Position.Legal.child m in
         update_history history new_pos;
         Some m
-      | Error (Book.Error.Position_not_found _) -> None
-      | Error (Book.Error.No_moves _) -> None
-      | Error err ->
-        failwithf "Opening book error: %s" (Book.Error.to_string err) ())
+      | Error (Book.Error.Position_not_found _) ->
+        Format.printf "Position %a not found; using search\n\n%!"
+          Position.pp root;
+        None
+      | Error (Book.Error.No_moves _) ->
+        Format.printf "Position %a was found, but no moves; \
+                       using search\n\n%!" Position.pp root;
+        None
+      | Error (Book.Error.Illegal_move (m, _)) ->
+        Format.printf "Illegal move %a for position %a was encountered \
+                       (perhaps a hash collision?); using search\n\n%!"
+          Move.pp m Position.pp root;
+        None)
 
 let choice (history, tt, in_book) moves =
   let root = Position.Legal.parent @@ List.hd_exn moves in

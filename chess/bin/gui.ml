@@ -65,14 +65,14 @@ let screen_to_sq window mx my =
 (* FIXME: maybe do this part in the GUI? *)
 
 let promote_prompt () =
-  eprintf "Choose promotion piece (n|b|r|q): %!"
+  Format.eprintf "Choose promotion piece (n|b|r|q): %!"
 
 let rec promote () = match In_channel.(input_line stdin) with
   | Some "n" -> Move.Promote.Knight
   | Some "b" -> Move.Promote.Bishop
   | Some "r" -> Move.Promote.Rook
   | Some "q" -> Move.Promote.Queen
-  | _ -> eprintf "Invalid promotion, try again: %!"; promote ()
+  | _ -> Format.eprintf "Invalid promotion, try again: %!"; promote ()
 
 let find_move sq mv =
   let m = Legal.move mv in
@@ -116,12 +116,15 @@ let is_fifty_move pos = Position.halfmove pos >= 100
 
 let print_result : Game.result -> unit = function
   | Checkmate c ->
-    printf "Checkmate, %s wins\n%!" @@
-    Piece.Color.(to_string_hum @@ opposite c)
-  | Draw `Stalemate -> printf "Draw by stalemate.\n%!"
-  | Draw `Insufficient_material -> printf "Draw by insufficient material\n%!"
-  | Draw `Seventy_five_move_rule -> printf "Draw by seventy-five move rule\n%!"
-  | Draw `Fivefold_repetition -> printf "Draw by fivefold repetition\n%!"
+    let c = Piece.Color.opposite c in
+    Format.printf "Checkmate, %a wins\n%!" Piece.Color.pp_hum c
+  | Draw `Stalemate -> Format.printf "Draw by stalemate.\n%!"
+  | Draw `Insufficient_material ->
+    Format.printf "Draw by insufficient material\n%!"
+  | Draw `Seventy_five_move_rule ->
+    Format.printf "Draw by seventy-five move rule\n%!"
+  | Draw `Fivefold_repetition ->
+    Format.printf "Draw by fivefold repetition\n%!"
   | _ -> ()
 
 let human_move = State.(gets game) >>= fun game ->
@@ -140,7 +143,8 @@ let ai_move c player = State.(gets game) >>= fun game ->
   let pos = Game.position game in
   let Player.(T player) = player in
   let m, st = try Player.choose player pos with
-    | Player.No_moves -> failwith "Tried to play AI move with no legal moves."
+    | Player.No_moves ->
+      failwith "Tried to play AI move with no legal moves."
     | Player.Invalid_move (_, m) ->
       failwithf "Tried to play invalid move %s."
         (Move.to_string @@ Legal.move m) () in
@@ -163,7 +167,7 @@ let display_board ?(bb = 0L) ?(sq = None) ?(prev = None) pos window =
 
 (* Prompt the user to quit when ready. *)
 let prompt_end window =
-  printf "Enter any key to quit: %!";
+  Format.printf "Enter any key to quit: %!";
   ignore @@ In_channel.(input_line stdin);
   Window.close window
 
@@ -207,15 +211,14 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     if not @@ Position.same_hash pos new_pos then begin
       let mv = Option.value_exn prev in
       let m = Legal.move mv in
-      printf "%s (%s): %s\n%!"
-        (Move.to_string m) (Position.San.of_legal mv)
-        (Position.Fen.to_string new_pos);
-      printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
-      printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
+      Format.printf "%a (%a): %a\n%!"
+        Move.pp m Position.San.pp mv Position.pp new_pos;
+      Format.printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
+      Format.printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
       See.go mv |> Option.iter ~f:(fun see ->
-          printf "Static Exchange Evaluation: %d\n%!" see);
-      printf "%d legal moves\n%!" @@ List.length legal;
-      printf "\n%!";
+          Format.printf "Static Exchange Evaluation: %d\n%!" see);
+      Format.printf "%d legal moves\n%!" @@ List.length legal;
+      Format.printf "\n%!";
     end;
     let prev = Option.map prev ~f:Legal.move in
     (* Get the valid squares for our selected piece to move to. *)
@@ -235,15 +238,19 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   else State.return ()
 
 let start_with_game_over_check delay =
-  State.(gets game) >>= fun game ->
-  State.(gets window) >>= fun window ->
-  display_board (Game.position game) window;
-  if not @@ Game.is_over game then main_loop ~delay ()
-  else begin
-    print_result @@ Game.result game;
-    printf "\n%!";
-    State.return () 
-  end
+  try
+    State.(gets game) >>= fun game ->
+    State.(gets window) >>= fun window ->
+    display_board (Game.position game) window;
+    if not @@ Game.is_over game then main_loop ~delay ()
+    else begin
+      print_result @@ Game.result game;
+      Format.printf "\n%!";
+      State.return () 
+    end
+  with exn ->
+    Format.printf "GUI encountered an exception: %a\n%!" Exn.pp exn;
+    Err.exit ()
 
 let () = Callback.register "piece_at_square" Position.piece_at_square
 let () = Callback.register "string_of_square" Square.to_string
@@ -263,12 +270,12 @@ let run pos ~white ~black ~delay =
   let window = Window.create window_size window_size "chess" in
   let legal = Position.legal_moves pos in
   let white_name = match white with
-    | None -> printf "White is human\n%!"; "human"
+    | None -> Format.printf "White is human\n%!"; "human"
     | Some Player.(T player) ->
-      printf "White is AI: %s\n%!" @@ Player.name player;
+      Format.printf "White is AI: %s\n%!" @@ Player.name player;
       Player.name player in
   let black_name = match black with
-    | None -> printf "Black is human\n%!"; "human"
+    | None -> Format.printf "Black is human\n%!"; "human"
     | Some Player.(T player) ->
       printf "Black is AI: %s\n%!" @@ Player.name player;
       Player.name player in
@@ -280,17 +287,16 @@ let run pos ~white ~black ~delay =
       ~white:(Some white_name)
       ~black:(Some black_name)
       ~start:pos in
-  printf "\n%!";
-  printf "Initial position: %s\n%!" @@ Position.Fen.to_string pos;
-  printf "Hash: %016LX\n%!" @@ Position.hash pos;
-  printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
-  printf "%d legal moves\n%!" @@ List.length legal;
-  printf "\n%!";
+  Format.printf "\n%!";
+  Format.printf "Initial position: %a\n%!" Position.pp pos;
+  Format.printf "Hash: %016LX\n%!" @@ Position.hash pos;
+  Format.printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
+  Format.printf "%d legal moves\n%!" @@ List.length legal;
+  Format.printf "\n%!";
   let State.T.{game; _} =
     let sel = None in
     let prev = None in
     Monad.State.exec (start_with_game_over_check delay) @@
     State.Fields.create ~window ~game ~legal ~sel ~prev ~white ~black in
-  printf "PGN of game:\n\n%!";
-  printf "%s\n\n%!" @@ Game.to_string game;
+  Format.printf "PGN of game:\n\n%a\n%!" Game.pp game;
   prompt_end window
