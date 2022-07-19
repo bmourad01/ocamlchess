@@ -280,33 +280,36 @@ let new_thread ~root ~limits ~history ~tt ~stop ~ponder =
    such as the md5sums of either file. *)
 let same_book b path = String.(path = Book.filename b)
 
-let book () =
+let load_book () =
+  let path = Options.string_value "BookPath" in
+  State.(gets book) >>= function
+  | Some b when same_book b path -> return b
+  | Some _ | None ->
+    Format.printf "%a\n%!" Uci.Send.pp @@ Info [String "Loading Book"];
+    match Book.create path with
+    | exception exn ->
+      failwithf "Error loading book: %s" (Exn.to_string exn) ()
+    | b -> State.(update @@ fun st -> {
+        st with book = Some b
+      }) >>| fun () -> b
+
+let book_move m =
   let open Uci.Send in
-  if Options.check_value "OwnBook" then begin
-    let path = Options.string_value "BookPath" in
-    begin State.(gets book) >>= function
-      | Some b when same_book b path -> return b
-      | Some _ | None ->
-        Format.printf "%a\n%!" pp @@ Info [String "Loading Book"];
-        match Book.create path with
-        | exception exn ->
-          failwithf "Error loading book: %s" (Exn.to_string exn) ()
-        | b -> State.(update @@ fun st -> {
-            st with book = Some b
-          }) >>| fun () -> b
-    end >>= fun book -> State.(gets pos) >>= fun pos ->
+  let bestmove = Bestmove.{move = Legal.move m; ponder = None} in
+  Format.printf "%a\n%!" pp @@ Info [String "Book Move"];
+  Format.printf "%a\n%!" pp @@ Bestmove (Some bestmove)
+
+let book () =
+  if Options.check_value "OwnBook" then
+    load_book () >>= fun book ->
+    State.(gets pos) >>| fun pos ->
     match Book.lookup book pos with
-    | Error _ -> return false
-    | Ok m ->
-      let bestmove = Bestmove.{move = Legal.move m; ponder = None} in
-      Format.printf "%a\n%!" pp @@ Info [String "Book Move"];
-      Format.printf "%a\n%!" pp @@ Bestmove (Some bestmove);
-      return true
-  end else return false
+    | Ok m -> book_move m; true
+    | Error _ -> false
+  else return false
 
 let go g =
-  check_thread >>= fun () ->
-  book () >>= function
+  check_thread >>= book >>= function
   | true -> cont ()
   | false ->
     (* Parse the search limits. *)
