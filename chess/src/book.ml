@@ -14,6 +14,8 @@ type t = {
   table    : (int64, entry list) Hashtbl.t;
 }
 
+let filename book = book.filename
+
 let b8 b i o = Char.to_int @@ Bytes.get b (i + o)
 
 let b64_be b o =
@@ -106,7 +108,7 @@ let create filename =
   let table = In_channel.with_file filename ~binary:true ~f:read in
   let compare x y = compare y.weight x.weight in
   Hashtbl.map_inplace table ~f:(List.sort ~compare);
-  {filename = Filename.basename filename; table}
+  {filename; table}
 
 module Error = struct
   type t =

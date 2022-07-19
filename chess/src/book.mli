@@ -9,6 +9,9 @@ type t
     the file does not exist or the file is incorrectly formatted. *)
 val create : string -> t
 
+(** [filename book] returns the filename of the book. *)
+val filename : t -> string
+
 module Error : sig
   (** Errors that may be raised during lookup. *)
   type t =

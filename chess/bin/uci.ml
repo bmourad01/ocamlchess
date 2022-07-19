@@ -3,6 +3,8 @@ open Chess
 open Bap_future.Std
 open Monads.Std
 
+module Legal = Position.Legal
+
 module State = struct
   module T = struct
     type t = {
@@ -12,6 +14,7 @@ module State = struct
       stop    : unit promise option;
       ponder  : unit promise option;
       debug   : bool;
+      book    : Book.t option;
     } [@@deriving fields]
   end
 
@@ -113,12 +116,16 @@ module Options = struct
 
   module Defaults = struct
     let ponder = false
+    let own_book = false
+    let book_path = "book.bin"
     let multi_pv = T.{default = 1; min = 1; max = 1}
   end
 
-  let tbl = Hashtbl.of_alist_exn (module String) [
+  let rec tbl = Hashtbl.of_alist_exn (module String) [
       "MultiPV",    spin Defaults.multi_pv;
       "Ponder",     check Defaults.ponder;
+      "OwnBook",    check Defaults.own_book;
+      "BookPath",   string Defaults.book_path;
       "Clear Hash", button State.clear_tt;
     ]
 
@@ -170,7 +177,7 @@ let play_move m =
   | exception _ ->
     failwithf "Received illegal move %s for position %s\n%!"
       (Move.to_string m) (Position.Fen.to_string pos) ()
-  | m -> State.update_position @@ Position.Legal.child m
+  | m -> State.update_position @@ Legal.child m
 
 let position pos moves = match Position.Valid.check pos with
   | Ok () ->
@@ -201,7 +208,7 @@ let info_of_result root tt result =
         Nodes nodes;
         Nps nps;
         Time time;
-        Pv (List.map pv ~f:Position.Legal.move);
+        Pv (List.map pv ~f:Legal.move);
       ] in
   Format.printf "%a\n%!" Uci.Send.pp @@ Info info
 
@@ -228,8 +235,8 @@ let wait_for_stop stop ponder =
 
 let bestmove result =
   let make ?p m =
-    let move = Position.Legal.move m in
-    let ponder = Option.map p ~f:Position.Legal.move in
+    let move = Legal.move m in
+    let ponder = Option.map p ~f:Legal.move in
     Uci.Send.Bestmove.{move; ponder} in
   let bestmove = match Search.Result.pv result with
     | [] -> None
@@ -269,82 +276,113 @@ let new_thread ~root ~limits ~history ~tt ~stop ~ponder =
   Atomic.set search_thread @@ Option.return @@
   Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop ~ponder) ()
 
+(* Just compare the file paths. We could have a stronger notion of equivalence
+   such as the md5sums of either file. *)
+let same_book b path = String.(path = Book.filename b)
+
+let book () =
+  let open Uci.Send in
+  if Options.check_value "OwnBook" then begin
+    let path = Options.string_value "BookPath" in
+    begin State.(gets book) >>= function
+      | Some b when same_book b path -> return b
+      | Some _ | None ->
+        Format.printf "%a\n%!" pp @@ Info [String "Loading Book"];
+        match Book.create path with
+        | exception exn ->
+          failwithf "Error loading book: %s" (Exn.to_string exn) ()
+        | b -> State.(update @@ fun st -> {
+            st with book = Some b
+          }) >>| fun () -> b
+    end >>= fun book -> State.(gets pos) >>= fun pos ->
+    match Book.lookup book pos with
+    | Error _ -> return false
+    | Ok m ->
+      let bestmove = Bestmove.{move = Legal.move m; ponder = None} in
+      Format.printf "%a\n%!" pp @@ Info [String "Book Move"];
+      Format.printf "%a\n%!" pp @@ Bestmove (Some bestmove);
+      return true
+  end else return false
+
 let go g =
   check_thread >>= fun () ->
-  (* Parse the search limits. *)
-  let infinite = ref false in
-  let nodes = ref None in
-  let mate = ref None in
-  let depth = ref None in
-  let movetime = ref None in
-  let wtime = ref None in
-  let btime = ref None in
-  let winc = ref None in
-  let binc = ref None in
-  let movestogo = ref None in
-  let ponder = ref false in
-  let moves = ref [] in
-  let opt r v s = match !r with
-    | Some _ -> failwithf "Error in go command: option '%s' already exists" s ()
-    | None -> r := Some v in
-  let lst l v s = match !l with
-    | _ :: _ -> failwithf "Error in go command: option '%s' already exists" s ()
-    | [] -> l := v in
-  (* As a hack, ponder mode will initially be set up as an infinite search.
-     Then, when the ponderhit command is sent, the search can continue with
-     the normal limits. *)
-  let pondering () = ponder := true; infinite := true in
-  (* If no parameters were given, then assume an infinite search. This is how
-     Stockfish behaves. To be fair, the UCI protocol is very underspecified
-     and underdocumented. It begs the question as to why it's still so widely
-     supported. *)
-  if List.is_empty g then infinite := true
-  else List.iter g ~f:(fun go ->
-      let open Uci.Recv.Go in
-      match go with
-      | Infinite      -> infinite := true
-      | Nodes n       -> opt nodes n "nodes"
-      | Mate n        -> opt mate n "mate"
-      | Depth n       -> opt depth n "depth"
-      | Movetime t    -> opt movetime t "movetime"
-      | Wtime t       -> opt wtime t "wtime"
-      | Btime t       -> opt btime t "btime"
-      | Winc n        -> opt winc n "winc"
-      | Binc n        -> opt binc n "binc"
-      | Movestogo n   -> opt movestogo n "movestogo"
-      | Ponder        -> pondering ()
-      | Searchmoves l -> lst moves l "searchmoves");
-  (* Construct the search limits. *)
-  State.(gets pos) >>= fun root ->
-  let active = Position.active root in
-  let stop, stop_promise = Future.create () in
-  let ponder, ponder_promise =
-    if !ponder then
-      let f, p = Future.create () in
-      Some f, Some p
-    else None, None in
-  let limits = Search.Limits.create
-      ~nodes:!nodes
-      ~mate:!mate
-      ~depth:!depth
-      ~movetime:!movetime
-      ~movestogo:!movestogo
-      ~wtime:!wtime
-      ~winc:!winc
-      ~btime:!btime
-      ~binc:!binc
-      ~infinite:!infinite
-      ~moves:!moves
-      ~active
-      ~stop
-      () in
-  (* Start the search. *)
-  State.(gets history) >>= fun history ->
-  State.(gets tt) >>= fun tt ->
-  State.set_stop (Some stop_promise) >>= fun () ->
-  State.set_ponder ponder_promise >>= fun () ->
-  new_thread ~root ~limits ~history ~tt ~stop ~ponder;
-  cont ()
+  book () >>= function
+  | true -> cont ()
+  | false ->
+    (* Parse the search limits. *)
+    let infinite = ref false in
+    let nodes = ref None in
+    let mate = ref None in
+    let depth = ref None in
+    let movetime = ref None in
+    let wtime = ref None in
+    let btime = ref None in
+    let winc = ref None in
+    let binc = ref None in
+    let movestogo = ref None in
+    let ponder = ref false in
+    let moves = ref [] in
+    let opt r v s = match !r with
+      | Some _ -> failwithf "Error in go command: option '%s' already exists" s ()
+      | None -> r := Some v in
+    let lst l v s = match !l with
+      | _ :: _ -> failwithf "Error in go command: option '%s' already exists" s ()
+      | [] -> l := v in
+    (* As a hack, ponder mode will initially be set up as an infinite search.
+       Then, when the ponderhit command is sent, the search can continue with
+       the normal limits. *)
+    let pondering () = ponder := true; infinite := true in
+    (* If no parameters were given, then assume an infinite search. This is how
+       Stockfish behaves. To be fair, the UCI protocol is very underspecified
+       and underdocumented. It begs the question as to why it's still so widely
+       supported. *)
+    if List.is_empty g then infinite := true
+    else List.iter g ~f:(fun go ->
+        let open Uci.Recv.Go in
+        match go with
+        | Infinite      -> infinite := true
+        | Nodes n       -> opt nodes n "nodes"
+        | Mate n        -> opt mate n "mate"
+        | Depth n       -> opt depth n "depth"
+        | Movetime t    -> opt movetime t "movetime"
+        | Wtime t       -> opt wtime t "wtime"
+        | Btime t       -> opt btime t "btime"
+        | Winc n        -> opt winc n "winc"
+        | Binc n        -> opt binc n "binc"
+        | Movestogo n   -> opt movestogo n "movestogo"
+        | Ponder        -> pondering ()
+        | Searchmoves l -> lst moves l "searchmoves");
+    (* Construct the search limits. *)
+    State.(gets pos) >>= fun root ->
+    let active = Position.active root in
+    let stop, stop_promise = Future.create () in
+    let ponder, ponder_promise =
+      if !ponder then
+        let f, p = Future.create () in
+        Some f, Some p
+      else None, None in
+    let limits = Search.Limits.create
+        ~nodes:!nodes
+        ~mate:!mate
+        ~depth:!depth
+        ~movetime:!movetime
+        ~movestogo:!movestogo
+        ~wtime:!wtime
+        ~winc:!winc
+        ~btime:!btime
+        ~binc:!binc
+        ~infinite:!infinite
+        ~moves:!moves
+        ~active
+        ~stop
+        () in
+    (* Start the search. *)
+    State.(gets history) >>= fun history ->
+    State.(gets tt) >>= fun tt ->
+    State.set_stop (Some stop_promise) >>= fun () ->
+    State.set_ponder ponder_promise >>= fun () ->
+    new_thread ~root ~limits ~history ~tt ~stop ~ponder;
+    cont ()
 
 let stop = State.update @@ function
   | {stop = Some stop; _} as st ->
@@ -410,6 +448,7 @@ let exec () =
     ~stop:None
     ~ponder:None
     ~debug:false
+    ~book:None
 
 (* Entry point. *)
 let run () =
