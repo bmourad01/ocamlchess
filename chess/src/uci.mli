@@ -12,6 +12,7 @@ module Recv : sig
       value : string option;
     } [@@deriving equal, compare, sexp]
 
+    val pp : Format.formatter -> t -> unit
     val to_string : t -> string
     val of_string : string -> t option
   end
@@ -33,6 +34,7 @@ module Recv : sig
       | Infinite
     [@@deriving equal, compare, sexp]
 
+    val pp : Format.formatter -> t -> unit
     val to_string : t -> string
     val of_string : string -> t option
   end
@@ -55,6 +57,9 @@ module Recv : sig
     | Ponderhit
     | Quit
   [@@deriving equal, compare, sexp]
+
+  (** Pretty-prints the command to a formatter. *)
+  val pp : Format.formatter -> t -> unit
 
   (** Textual representation of the command. *)
   val to_string : t -> string
@@ -90,6 +95,7 @@ module Send : sig
         | Button
       [@@deriving equal, compare, sexp]
 
+      val pp : Format.formatter -> t -> unit
       val to_string : t -> string
       val of_string : string -> t option
 
@@ -102,6 +108,7 @@ module Send : sig
       typ  : Type.t;
     } [@@deriving equal, compare, sexp]
 
+    val pp : Format.formatter -> t -> unit
     val to_string : t -> string
     val of_string : string -> t option
   end
@@ -114,6 +121,7 @@ module Send : sig
       ponder : Move.t option;
     } [@@deriving equal, compare, sexp]
 
+    val pp : Format.formatter -> t -> unit
     val to_string : t -> string
     val of_string : string -> t option
   end
@@ -150,6 +158,7 @@ module Send : sig
       | Currline of currline
     [@@deriving equal, compare, sexp]
 
+    val pp : Format.formatter -> t -> unit
     val to_string : t -> string
     val of_string : string -> t option
   end
@@ -166,6 +175,9 @@ module Send : sig
     | Option of Option.t
   [@@deriving equal, compare, sexp]
 
+  (** Pretty-prints the command to a formatter. *)
+  val pp : Format.formatter -> t -> unit
+
   (** Textual representation of the command. *)
   val to_string : t -> string
 
@@ -180,6 +192,9 @@ type t =
   | Recv of Recv.t
   | Send of Send.t
 [@@deriving equal, compare, sexp]
+
+(** Pretty-prints the command to a formatter. *)
+val pp : Format.formatter -> t -> unit
 
 (** Textual representation of the command. *)
 val to_string : t -> string

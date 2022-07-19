@@ -3,7 +3,15 @@ open Monads.Std
 
 let concat = String.concat ~sep:" "
 let concat_rev tok = concat @@ List.rev tok
-let string_of_moves moves = concat @@ List.map moves ~f:Move.to_string
+
+let pp_moves ppf moves =
+  let rec aux = function
+    | [] -> ()
+    | [m] -> Format.fprintf ppf "%a%!" Move.pp m
+    | m :: ms ->
+      Format.fprintf ppf "%a %!" Move.pp m;
+      aux ms in
+  aux moves
 
 let tokens s =
   String.split s ~on:' ' |>
@@ -16,9 +24,12 @@ module Recv = struct
       value : string option;
     } [@@deriving equal, compare, sexp]
 
-    let to_string = function
-      | {name; value = None} -> sprintf "name %s" name
-      | {name; value = Some value} -> sprintf "name %s value %s" name value
+    let pp ppf = function
+      | {name; value = None} -> Format.fprintf ppf "name %s%!" name
+      | {name; value = Some value} ->
+        Format.fprintf ppf "name %s value %s%!" name value
+
+    let to_string t = Format.asprintf "%a%!" pp t
 
     let of_tokens tok = match tok with
       | "name" :: tok ->
@@ -56,19 +67,22 @@ module Recv = struct
       | Infinite
     [@@deriving equal, compare, sexp]
 
-    let to_string = function
-      | Searchmoves moves -> sprintf "searchmoves %s" @@ string_of_moves moves
-      | Ponder -> "ponder"
-      | Wtime t -> sprintf "wtime %d" t
-      | Btime t -> sprintf "btime %d" t
-      | Winc i -> sprintf "winc %d" i
-      | Binc i -> sprintf "binc %d" i
-      | Movestogo n -> sprintf "movestogo %d" n
-      | Depth n -> sprintf "depth %d" n
-      | Nodes n -> sprintf "nodes %d" n
-      | Mate n -> sprintf "mate %d" n
-      | Movetime t -> sprintf "movetime %d" t
-      | Infinite -> "infinite"
+    let pp ppf = function
+      | Searchmoves moves ->
+        Format.fprintf ppf "searchmoves %a%!" pp_moves moves
+      | Ponder -> Format.fprintf ppf "ponder%!"
+      | Wtime t -> Format.fprintf ppf "wtime %d%!" t
+      | Btime t -> Format.fprintf ppf "btime %d%!" t
+      | Winc i -> Format.fprintf ppf "winc %d%!" i
+      | Binc i -> Format.fprintf ppf "binc %d%!" i
+      | Movestogo n -> Format.fprintf ppf "movestogo %d%!" n
+      | Depth n -> Format.fprintf ppf "depth %d%!" n
+      | Nodes n -> Format.fprintf ppf "nodes %d%!" n
+      | Mate n -> Format.fprintf ppf "mate %d%!" n
+      | Movetime t -> Format.fprintf ppf "movetime %d%!" t
+      | Infinite -> Format.fprintf ppf "infinite%!"
+
+    let to_string t = Format.asprintf "%a%!" pp t
 
     let of_tokens tok =
       let open Monad.Option.Syntax in
@@ -108,31 +122,39 @@ module Recv = struct
     | Quit
   [@@deriving equal, compare, sexp]
 
-  let to_string = function
-    | Uci -> "uci"
-    | Debug `on -> "debug on"
-    | Debug `off -> "debug off"
-    | Isready -> "isready"
-    | Setoption opt -> sprintf "setoption %s" @@ Setoption.to_string opt
-    | Register `later -> "register later"
+  let pp_go ppf go =
+    let rec aux = function
+      | [] -> ()
+      | [g] -> Format.fprintf ppf "%a%!" Go.pp g
+      | g :: gs ->
+        Format.fprintf ppf "%a %!" Go.pp g;
+        aux gs in
+    aux go
+
+  let pp ppf = function
+    | Uci -> Format.fprintf ppf "uci%!"
+    | Debug `on -> Format.fprintf ppf "debug on%!"
+    | Debug `off -> Format.fprintf ppf "debug off%!"
+    | Isready -> Format.fprintf ppf "isready%!"
+    | Setoption opt -> Format.fprintf ppf "setoption %a%!" Setoption.pp opt
+    | Register `later -> Format.fprintf ppf "register later%!"
     | Register (`namecode (name, code)) ->
-      sprintf "register name %s code %s" name code
-    | Ucinewgame -> "ucinewgame"
+      Format.fprintf ppf "register name %s code %s%!" name code
+    | Ucinewgame -> Format.fprintf ppf "ucinewgame%!"
+    | Position (`fen pos, []) ->
+      Format.fprintf ppf "position fen %a%!" Position.pp pos
     | Position (`fen pos, moves) ->
-      let moves =
-        let s = string_of_moves moves in
-        if String.is_empty s then s else sprintf " moves %s" s in
-      sprintf "position fen %s%s" (Position.Fen.to_string pos) moves
+      Format.fprintf ppf "position fen %a moves %a%!"
+        Position.pp pos pp_moves moves
+    | Position (`startpos, []) -> Format.fprintf ppf "position startpos%!"
     | Position (`startpos, moves) ->
-      let moves =
-        let s = string_of_moves moves in
-        if String.is_empty s then s else sprintf " moves %s" s in
-      sprintf "position startpos%s" moves
-    | Go go ->
-      sprintf "go %s" @@ concat @@ List.map go ~f:Go.to_string
-    | Stop -> "stop"
-    | Ponderhit -> "ponderhit"
-    | Quit -> "quit"
+      Format.fprintf ppf "position startpos moves %a%!" pp_moves moves
+    | Go go -> Format.fprintf ppf "go %a%!" pp_go go
+    | Stop -> Format.fprintf ppf "stop%!"
+    | Ponderhit -> Format.fprintf ppf "ponderhit%!"
+    | Quit -> Format.fprintf ppf "quit%!"
+
+  let to_string t = Format.asprintf "%a%!" pp t
 
   let parse_gos gos =
     let open Go in
@@ -241,16 +263,30 @@ module Send = struct
         | Button
       [@@deriving equal, compare, sexp]
 
-      let to_string = function
+      let pp_var ppf var =
+        let rec aux = function
+          | [] -> ()
+          | [v] -> Format.fprintf ppf "var %s%!" v
+          | v :: vs ->
+            Format.fprintf ppf "var %s %!" v;
+            aux vs in
+        aux var
+
+      let pp ppf = function
         | Spin {default; min; max} ->
-          sprintf "type spin default %d min %d max %d" default min max
-        | Check default -> sprintf "type check default %b" default
+          Format.fprintf ppf "type spin default %d min %d max %d%!"
+            default min max
+        | Check default ->
+          Format.fprintf ppf "type check default %b%!" default
+        | Combo {default; var = []} ->
+          Format.fprintf ppf "type combo default %s%!" default
         | Combo {default; var} ->
-          let default = sprintf "default %s" default in
-          let var = List.map var ~f:(sprintf "var %s") in
-          sprintf "type combo %s" @@ concat (default :: var)
-        | String default -> sprintf "type string default %s" default
-        | Button -> "type button"
+          Format.fprintf ppf "type combo default %s %a%!" default pp_var var
+        | String default ->
+          Format.fprintf ppf "type string default %s%!" default
+        | Button -> Format.fprintf ppf "type button%!"
+
+      let to_string t = Format.asprintf "%a%!" pp t
 
       let of_tokens tok =
         let open Monad.Option.Syntax in
@@ -299,8 +335,10 @@ module Send = struct
       typ  : Type.t;
     } [@@deriving equal, compare, sexp]
 
-    let to_string {name; typ} =
-      sprintf "name %s %s" name @@ Type.to_string typ
+    let pp ppf {name; typ} =
+      Format.fprintf ppf "name %s %a%!" name Type.pp typ
+
+    let to_string t = Format.asprintf "%a%!" pp t
 
     let of_tokens tok =
       let open Monad.Option.Syntax in
@@ -323,10 +361,12 @@ module Send = struct
       ponder : Move.t option;
     } [@@deriving equal, compare, sexp]
 
-    let to_string = function
-      | {move; ponder = None} -> Format.asprintf "%a" Move.pp move
+    let pp ppf = function
+      | {move; ponder = None} -> Format.fprintf ppf "%a" Move.pp move
       | {move; ponder = Some ponder} ->
-        Format.asprintf "%a ponder %a" Move.pp move Move.pp ponder
+        Format.fprintf ppf "%a ponder %a" Move.pp move Move.pp ponder
+
+    let to_string t = Format.asprintf "%a%!" pp t
 
     let of_tokens tok =
       let open Monad.Option.Syntax in
@@ -372,39 +412,40 @@ module Send = struct
       | Currline of currline
     [@@deriving equal, compare, sexp]
 
-    let string_of_bound = function
-      | `lower -> "lowerbound"
-      | `upper -> "upperbound"
+    let pp_bound ppf = function
+      | `lower -> Format.fprintf ppf "lowerbound%!"
+      | `upper -> Format.fprintf ppf "upperbound%!"
 
     let bound_of_string = function
       | "lowerbound" -> Some `lower
       | "upperbound" -> Some `upper
       | _ -> None
 
-    let to_string = function
-      | Depth n -> sprintf "depth %d" n
-      | Seldepth n -> sprintf "seldepth %d" n
-      | Time t -> sprintf "time %d" t
-      | Nodes n -> sprintf "nodes %d" n
-      | Pv moves -> sprintf "pv %s" @@ string_of_moves moves
-      | Multipv n -> sprintf "multipv %d" n
-      | Score (Mate n) -> sprintf "score mate %d" n
-      | Score (Cp (cp, bound)) ->
-        let bound = match bound with
-          | Some bound -> sprintf " bound %s" @@ string_of_bound bound
-          | None -> "" in
-        sprintf "score cp %d%s" cp bound
-      | Currmove move -> sprintf "currmove %s" @@ Move.to_string move
-      | Currmovenumber n -> sprintf "currmovenumber %d" n
-      | Hashfull n -> sprintf "hashfull %d" n
-      | Nps n -> sprintf "nps %d" n
-      | Tbhits n -> sprintf "tbhits %d" n
-      | Sbhits n -> sprintf "sbhits %d" n
-      | Cpuload n -> sprintf "cpuload %d" n
-      | String s -> sprintf "string %s" s
-      | Refutation moves -> sprintf "refutation %s" @@ string_of_moves moves
+    let pp ppf = function
+      | Depth n -> Format.fprintf ppf "depth %d%!" n
+      | Seldepth n -> Format.fprintf ppf "seldepth %d%!" n
+      | Time t -> Format.fprintf ppf "time %d%!" t
+      | Nodes n -> Format.fprintf ppf "nodes %d%!" n
+      | Pv moves -> Format.fprintf ppf "pv %a%!" pp_moves moves
+      | Multipv n -> Format.fprintf ppf "multipv %d%!" n
+      | Score (Mate n) -> Format.fprintf ppf "score mate %d%!" n
+      | Score (Cp (cp, None)) -> Format.fprintf ppf "score cp %d%!" cp
+      | Score (Cp (cp, Some bound)) ->
+        Format.fprintf ppf "score cp %d bound %a%!" cp pp_bound bound
+      | Currmove move -> Format.fprintf ppf "currmove %a%!" Move.pp move
+      | Currmovenumber n -> Format.fprintf ppf "currmovenumber %d%!" n
+      | Hashfull n -> Format.fprintf ppf "hashfull %d%!" n
+      | Nps n -> Format.fprintf ppf "nps %d%!" n
+      | Tbhits n -> Format.fprintf ppf "tbhits %d%!" n
+      | Sbhits n -> Format.fprintf ppf "sbhits %d%!" n
+      | Cpuload n -> Format.fprintf ppf "cpuload %d%!" n
+      | String s -> Format.fprintf ppf "string %s%!" s
+      | Refutation moves ->
+        Format.fprintf ppf "refutation %a%!" pp_moves moves
       | Currline {cpunr; moves} ->
-        sprintf "currline %d %s" cpunr @@ string_of_moves moves
+        Format.fprintf ppf "currline %d %a%!" cpunr pp_moves moves
+
+    let to_string t = Format.asprintf "%a%!" pp t
 
     let of_string s =
       let open Monad.Option.Syntax in
@@ -458,23 +499,39 @@ module Send = struct
     | Option of Option.t
   [@@deriving equal, compare, sexp]
 
-  let to_string = function
-    | Id (`name name) -> sprintf "id name %s" name
-    | Id (`author author) -> sprintf "id author %s" author
-    | Uciok -> "uciok"
-    | Readyok -> "readyok"
-    | Bestmove None -> "bestmove (none)"
+  let pp_info ppf info =
+    let rec aux = function
+      | [] -> ()
+      | [i] -> Format.fprintf ppf "%a%!" Info.pp i
+      | i :: is ->
+        Format.fprintf ppf "%a %!" Info.pp i;
+        aux is in
+    aux info
+
+  let pp ppf = function
+    | Id (`name name) -> Format.fprintf ppf "id name %s%!" name
+    | Id (`author author) -> Format.fprintf ppf "id author %s%!" author
+    | Uciok -> Format.fprintf ppf "uciok%!"
+    | Readyok -> Format.fprintf ppf "readyok%!"
+    | Bestmove None -> Format.fprintf ppf "bestmove (none)%!"
     | Bestmove (Some bestmove) ->
-      sprintf "bestmove %s" @@ Bestmove.to_string bestmove
-    | Copyprotection `checking -> "copyprotection checking"
-    | Copyprotection `ok -> "copyprotection ok"
-    | Copyprotection `error -> "copyprotection error"
-    | Registration `checking -> "registration checking"
-    | Registration `ok -> "registration ok"
-    | Registration `error -> "registration error"
-    | Info info ->
-      sprintf "info %s" @@ concat @@ List.map info ~f:Info.to_string
-    | Option opt -> sprintf "option %s" @@ Option.to_string opt
+      Format.fprintf ppf "bestmove %a%!" Bestmove.pp bestmove
+    | Copyprotection `checking ->
+      Format.fprintf ppf "copyprotection checking%!"
+    | Copyprotection `ok ->
+      Format.fprintf ppf "copyprotection ok%!"
+    | Copyprotection `error ->
+      Format.fprintf ppf "copyprotection error%!"
+    | Registration `checking ->
+      Format.fprintf ppf "registration checking%!"
+    | Registration `ok ->
+      Format.fprintf ppf "registration ok%!"
+    | Registration `error ->
+      Format.fprintf ppf "registration error%!"
+    | Info info -> Format.fprintf ppf "info %a%!" pp_info info
+    | Option opt -> Format.fprintf ppf "option %a%!" Option.pp opt
+
+  let to_string t = Format.asprintf "%a%!" pp t
 
   (* We have to write a special version of the `Info` parser that will
      keep looking ahead for more tokens. *)
@@ -584,9 +641,11 @@ type t =
   | Send of Send.t
 [@@deriving equal, compare, sexp]
 
-let to_string = function
-  | Recv recv -> Recv.to_string recv
-  | Send send -> Send.to_string send
+let pp ppf = function
+  | Recv recv -> Format.fprintf ppf "%a%!" Recv.pp recv
+  | Send send -> Format.fprintf ppf "%a%!" Send.pp send
+
+let to_string t = Format.asprintf "%a%!" pp t
 
 let of_string s = match Recv.of_string s with
   | None -> Send.of_string s |> Option.map ~f:(fun send -> Send send)

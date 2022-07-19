@@ -145,15 +145,15 @@ let uci =
     Id (`name (sprintf "ocamlchess v%d.%d" Version.major Version.minor));
     Id (`author "Benjamin Mourad");
   ] in
+  let opt name t = Option.{name; typ = Options.to_uci t} in
   fun () ->
-    List.iter id ~f:(fun cmd -> Format.printf "%s\n%!" @@ to_string cmd);
+    List.iter id ~f:(fun cmd -> Format.printf "%a\n%!" pp cmd);
     Format.printf "\n%!";
     Hashtbl.iteri Options.tbl ~f:(fun ~key:name ~data:Options.(E (t, _)) ->
-        let typ = Options.to_uci t in
-        Format.printf "%s\n%!" @@ to_string (Option Option.{name; typ}));
-    Format.printf "%s\n%!" @@ to_string Uciok
+        Format.printf "%a\n%!" Option.pp @@ opt name t);
+    Format.printf "%a\n%!" pp Uciok
 
-let isready () = Format.printf "%s\n%!" @@ Uci.Send.(to_string Readyok)
+let isready () = Format.printf "%a\n%!" Uci.Send.pp Readyok
 
 let setoption ({name; value} : Uci.Recv.Setoption.t) =
   let open Uci.Recv.Setoption in
@@ -203,7 +203,7 @@ let info_of_result root tt result =
         Time time;
         Pv (List.map pv ~f:Position.Legal.move);
       ] in
-  Format.printf "%s\n%!" @@ Uci.Send.to_string @@ Info info
+  Format.printf "%a\n%!" Uci.Send.pp @@ Info info
 
 (* Current search thread. *)
 let search_thread = Atomic.make None
@@ -235,7 +235,7 @@ let bestmove result =
     | [] -> None
     | [m] -> Some (make m)
     | m :: p :: _ -> Some (make m ~p) in
-  Format.printf "%s\n%!" @@ Uci.Send.(to_string @@ Bestmove bestmove)
+  Format.printf "%a\n%!" Uci.Send.pp @@ Bestmove bestmove
 
 (* The main search routine, should be run in a separate thread. *)
 let search ~root ~limits ~history ~tt ~stop ~ponder =
