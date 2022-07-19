@@ -16,19 +16,19 @@ type t = {
 
 let filename book = book.filename
 
-let b8 b i o = Char.to_int @@ Bytes.get b (i + o)
+let i8 b i o = Char.to_int @@ Bytes.get b (i + o)
 
-let b64_be b o =
+let i64_be b o =
   let open Int64 in
-  let b8 b i o = of_int @@ b8 b i o in
-  let b0 = b8 b 0 o in
-  let b1 = b8 b 1 o in
-  let b2 = b8 b 2 o in
-  let b3 = b8 b 3 o in
-  let b4 = b8 b 4 o in
-  let b5 = b8 b 5 o in
-  let b6 = b8 b 6 o in
-  let b7 = b8 b 7 o in
+  let i8 b i o = of_int @@ i8 b i o in
+  let b0 = i8 b 0 o in
+  let b1 = i8 b 1 o in
+  let b2 = i8 b 2 o in
+  let b3 = i8 b 3 o in
+  let b4 = i8 b 4 o in
+  let b5 = i8 b 5 o in
+  let b6 = i8 b 6 o in
+  let b7 = i8 b 7 o in
   (b0 lsl 56) lor
   (b1 lsl 48) lor
   (b2 lsl 40) lor
@@ -38,18 +38,18 @@ let b64_be b o =
   (b6 lsl  8) lor
   (b7 lsl  0)
 
-let b16_be b o =
-  let b0 = b8 b 0 o in
-  let b1 = b8 b 1 o in
+let i16_be b o =
+  let b0 = i8 b 0 o in
+  let b1 = i8 b 1 o in
   (b0 lsl 8) lor b1
 
 (* Moves are stored compactly within a 16-bit integer:
 
-   ------------------------------------------------------------------------
+   +--------+-----------------+----------+----------+----------+----------+
    | unused | promotion piece | src rank | src file | dst rank | dst file |
-   ------------------------------------------------------------------------
+   +--------+-----------------+----------+----------+----------+----------+
    |   15   | 14           12 | 11     9 | 8      6 | 5      3 | 2      0 |
-   ------------------------------------------------------------------------
+   +--------+-----------------+----------+----------+----------+----------+
 *)
 let decode_move i =
   let src =
@@ -91,11 +91,11 @@ let read file =
   let buf = Bytes.create len in
   let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
     | n when n = len ->
-      let key = b64_be buf 0 in
-      let move = decode_move @@ b16_be buf 8 in
-      let weight = b16_be buf 10 in
-      let depth = b16_be buf 12 in
-      let score = b16_be buf 12 in
+      let key = i64_be buf 0 in
+      let move = decode_move @@ i16_be buf 8 in
+      let weight = i16_be buf 10 in
+      let depth = i16_be buf 12 in
+      let score = i16_be buf 12 in
       Hashtbl.add_multi book ~key ~data:{move; weight; depth; score};
       read ()
     | 0 -> book
