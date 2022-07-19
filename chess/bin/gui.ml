@@ -19,6 +19,9 @@ module Window = struct
   external close : t -> unit = "ml_window_close"
   external clear : t -> unit = "ml_window_clear"
 
+  external promote :
+    int -> int -> string -> Piece.color -> Move.promote = "ml_promote"
+
   external paint_board :
     t -> Position.t -> int64 -> Square.t option -> Move.t option -> unit =
     "ml_window_paint_board"
@@ -62,18 +65,6 @@ let screen_to_sq window mx my =
       | Some _ as sq -> sq in
   loop_y 0
 
-(* FIXME: maybe do this part in the GUI? *)
-
-let promote_prompt () =
-  Format.eprintf "Choose promotion piece (n|b|r|q): %!"
-
-let rec promote () = match In_channel.(input_line stdin) with
-  | Some "n" -> Move.Promote.Knight
-  | Some "b" -> Move.Promote.Bishop
-  | Some "r" -> Move.Promote.Rook
-  | Some "q" -> Move.Promote.Queen
-  | _ -> Format.eprintf "Invalid promotion, try again: %!"; promote ()
-
 let find_move sq mv =
   let m = Legal.move mv in
   Square.(sq = Move.dst m)
@@ -82,6 +73,10 @@ let find_promote sq k mv =
   let m = Legal.move mv in
   Square.(sq = Move.dst m) &&
   Option.exists (Move.promote m) ~f:(Move.Promote.equal k)
+
+let promote_w = 320
+let promote_h = 80
+let promote_name = "Pick a promotion piece"
 
 let click mx my = State.update @@ fun ({window; game; legal; sel; _} as st) ->
   match screen_to_sq window mx my with
@@ -100,8 +95,8 @@ let click mx my = State.update @@ fun ({window; game; legal; sel; _} as st) ->
         let m = match Move.promote @@ Legal.move m with
           | None -> m
           | Some _ ->
-            promote_prompt ();
-            let k = promote () in
+            let c = Position.active @@ Legal.parent m in
+            let k = Window.promote promote_w promote_h promote_name c in
             List.find_exn moves ~f:(find_promote sq k) in
         let game = Game.add_move game m in
         let legal = Position.legal_moves @@ Legal.child m in

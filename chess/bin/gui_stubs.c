@@ -56,8 +56,8 @@ static void init_font_or_fail(sfFont **font, const char *name,
   }
 }
 
-enum Color { White, Black };
-enum Kind { Pawn, Knight, Bishop, Rook, Queen, King };
+typedef enum { White, Black } Color;
+typedef enum { Pawn, Knight, Bishop, Rook, Queen, King } Kind;
 
 static wchar_t piece_unicode(int color, int kind) {
   bool is_white = color == White;
@@ -186,6 +186,118 @@ value ml_window_poll_event(value window) {
     }
   }
 
+  CAMLreturn(result);
+}
+
+static void paint_promote(sfRenderWindow *sf_window, int tw, int th, int sz,
+                          int c, int sel) {
+  int x, y;
+  for (y = 0; y < 1; ++y) {
+    for (x = 0; x < 4; ++x) {
+      sfRectangleShape *tile = sfRectangleShape_create();
+      sfVector2f tile_size;
+      sfColor color;
+      tile_size.x = tw;
+      tile_size.y = th;
+      sfRectangleShape_setSize(tile, tile_size);
+      if (x == sel) {
+        color.a = 0xFF;
+        color.r = 0xF3;
+        color.g = 0xF7;
+        color.b = 0x81;
+      } else {
+        if (x % 2) {
+          color.a = 0xFF;
+          color.r = 0xFF;
+          color.g = 0xFF;
+          color.b = 0xFF;
+        } else {
+          color.a = 0xFF;
+          color.r = 0xF7;
+          color.g = 0xF2;
+          color.b = 0xF0;
+        }
+      }
+      sfVector2f position;
+      position.x = x * tw;
+      position.y = y * th;
+      sfRectangleShape_setFillColor(tile, color);
+      sfRectangleShape_setPosition(tile, position);
+      sfRenderWindow_drawRectangleShape(sf_window, tile, NULL);
+      sfRectangleShape_destroy(tile);
+
+      wchar_t u = piece_unicode(c, (Kind)(x + 1));
+      sfUint32 unicode[2] = {(sfUint32)u, 0};
+      float fx = x * tw;
+      float fy = y * th;
+      float xa = ((float)(tw - sz) / 2.0f) + ((float)sz / 8.5f);
+      float ya = ((float)(th - sz) / 10.0f) - ((float)sz / 5.0f);
+      position.x = fx + xa;
+      position.y = fy + ya;
+      sfText *text = sfText_create();
+      sfText_setUnicodeString(text, unicode);
+      sfText_setFont(text, _piece_font);
+      sfText_setCharacterSize(text, sz);
+      sfText_setPosition(text, position);
+      sfText_setColor(text, sfBlack);
+      sfRenderWindow_drawText(sf_window, text, NULL);
+      sfText_destroy(text);
+    }
+  }
+  sfRenderWindow_display(sf_window);
+}
+
+static bool mouse_within(int mx, int my, int px, int py, int tw, int th) {
+  return mx >= px && mx < px + tw && my >= py && my < py + th;
+}
+
+value ml_promote(value w, value h, value name, value c) {
+  CAMLparam4(w, h, name, c);
+  CAMLlocal1(result);
+
+  sfVideoMode video_mode = sfVideoMode_getDesktopMode();
+  video_mode.width = Int_val(w);
+  video_mode.height = Int_val(h);
+
+  sfRenderWindow *sf_window =
+      sfRenderWindow_create(video_mode, String_val(name), sfTitlebar, NULL);
+
+  sfVector2u size = sfRenderWindow_getSize(sf_window);
+  int tw = size.x / 4;
+  int th = size.y / 1;
+  int sz = (tw + th) / 2;
+  paint_promote(sf_window, tw, th, sz, Int_val(c), -1);
+
+  bool found = false;
+  int x, y, mx, my, px, py, sel;
+  sfEvent event;
+  while (!found) {
+    while (sfRenderWindow_pollEvent(sf_window, &event)) {
+      switch (event.type) {
+      case sfEvtMouseButtonPressed:
+        mx = event.mouseButton.x;
+        my = event.mouseButton.y;
+        for (y = 0; !found && y < 1; ++y) {
+          for (x = 0; x < 4; ++x) {
+            px = x * tw;
+            py = y * th;
+            if (mouse_within(mx, my, px, py, tw, th)) {
+              result = Val_int(x);
+              sel = x;
+              found = true;
+              break;
+            }
+          }
+        }
+        break;
+      default:
+        break;
+      }
+    }
+  }
+
+  paint_promote(sf_window, tw, th, sz, Int_val(c), sel);
+  sfRenderWindow_destroy(sf_window);
   CAMLreturn(result);
 }
 
