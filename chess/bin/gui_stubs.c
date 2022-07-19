@@ -192,6 +192,7 @@ value ml_window_poll_event(value window) {
 static void paint_promote(sfRenderWindow *sf_window, int tw, int th, int sz,
                           int c, int sel) {
   int x, y;
+  sfVector2f position;
   for (y = 0; y < 1; ++y) {
     for (x = 0; x < 4; ++x) {
       sfRectangleShape *tile = sfRectangleShape_create();
@@ -218,7 +219,6 @@ static void paint_promote(sfRenderWindow *sf_window, int tw, int th, int sz,
           color.b = 0xF0;
         }
       }
-      sfVector2f position;
       position.x = x * tw;
       position.y = y * th;
       sfRectangleShape_setFillColor(tile, color);
@@ -268,19 +268,19 @@ value ml_promote(value w, value h, value name, value c) {
   int sz = (tw + th) / 2;
   paint_promote(sf_window, tw, th, sz, Int_val(c), -1);
 
-  bool found = false;
-  int x, y, mx, my, px, py, sel;
-  sfEvent event;
-  while (!found) {
+  int sel;
+  for (bool found = false; !found;) {
+    int mx, my;
+    sfEvent event;
     while (sfRenderWindow_pollEvent(sf_window, &event)) {
       switch (event.type) {
       case sfEvtMouseButtonPressed:
         mx = event.mouseButton.x;
         my = event.mouseButton.y;
-        for (y = 0; !found && y < 1; ++y) {
-          for (x = 0; x < 4; ++x) {
-            px = x * tw;
-            py = y * th;
+        for (int y = 0; y < 1; ++y) {
+          for (int x = 0; x < 4; ++x) {
+            int px = x * tw;
+            int py = y * th;
             if (mouse_within(mx, my, px, py, tw, th)) {
               result = Val_int(x);
               sel = x;
