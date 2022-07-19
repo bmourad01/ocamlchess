@@ -3,7 +3,8 @@ open Core_kernel
 type entry = {
   move   : Move.t;
   weight : int;
-  learn  : int32;
+  depth  : int;
+  score  : int;
 }
 
 let entry_size = 16
@@ -13,9 +14,32 @@ type t = {
   table    : (int64, entry list) Hashtbl.t;
 }
 
-external b64 : bytes -> int -> int64 = "ml_bytes_int64_be"
-external b32 : bytes -> int -> int32 = "ml_bytes_int32_be"
-external b16 : bytes -> int -> int   = "ml_bytes_int16_be" [@@noalloc]
+let b8 b i o = Char.to_int @@ Bytes.get b (i + o)
+
+let b64_be b o =
+  let open Int64 in
+  let b8 b i o = of_int @@ b8 b i o in
+  let b0 = b8 b 0 o in
+  let b1 = b8 b 1 o in
+  let b2 = b8 b 2 o in
+  let b3 = b8 b 3 o in
+  let b4 = b8 b 4 o in
+  let b5 = b8 b 5 o in
+  let b6 = b8 b 6 o in
+  let b7 = b8 b 7 o in
+  (b0 lsl 56) lor
+  (b1 lsl 48) lor
+  (b2 lsl 40) lor
+  (b3 lsl 32) lor
+  (b4 lsl 24) lor
+  (b5 lsl 16) lor
+  (b6 lsl  8) lor
+  (b7 lsl  0)
+
+let b16_be b o =
+  let b0 = b8 b 0 o in
+  let b1 = b8 b 1 o in
+  (b0 lsl 8) lor b1
 
 (* Moves are stored compactly within a 16-bit integer:
 
@@ -50,14 +74,14 @@ let decode_move i =
      uint64_t key;
      uint16_t move;
      uint16_t weight;
-     uint32_t learn;
+     uint16_t depth;
+     uint16_t score;
    };
 
    - `key` is the Zobrist hash of the position that was stored.
    - `move` is the move chosen in response to this position.
    - `weight` is the measurement of how "good" the response was.
-   - `learn` is used to record learning information, and we will
-      leave it unused.
+   - `depth` and `score` are unused.
 *)
 let read file =
   let book = Hashtbl.create (module Int64) in
@@ -65,11 +89,12 @@ let read file =
   let buf = Bytes.create len in
   let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
     | n when n = len ->
-      let key = b64 buf 0 in
-      let move = decode_move @@ b16 buf 8 in
-      let weight = b16 buf 10 in
-      let learn = b32 buf 12 in
-      Hashtbl.add_multi book ~key ~data:{move; weight; learn};
+      let key = b64_be buf 0 in
+      let move = decode_move @@ b16_be buf 8 in
+      let weight = b16_be buf 10 in
+      let depth = b16_be buf 12 in
+      let score = b16_be buf 12 in
+      Hashtbl.add_multi book ~key ~data:{move; weight; depth; score};
       read ()
     | 0 -> book
     | n ->
@@ -89,16 +114,18 @@ module Error = struct
     | Illegal_move of Move.t * Position.t
     | No_moves of Position.t
 
-  let to_string = function
+  let pp ppf = function
     | Position_not_found pos ->
-      sprintf "Failed to find position %s in the book"
-        (Position.Fen.to_string pos)
+      Format.fprintf ppf "Failed to find position %a in the book%!"
+        Position.pp pos
     | Illegal_move (m, pos) ->
-      sprintf "Lookup found illegal move %s for position %s"
-        (Move.to_string m) (Position.Fen.to_string pos)
+      Format.fprintf ppf "Lookup found illegal move %a for position %a%!"
+        Move.pp m Position.pp pos
     | No_moves pos ->
-      sprintf "Failed to find best weighted move for positon %s"
-        (Position.Fen.to_string pos)
+      Format.fprintf ppf "Failed to find best weighted move for positon %a%!"
+        Position.pp pos
+
+  let to_string t = Format.asprintf "%a%!" pp t
 end
 
 type error = Error.t

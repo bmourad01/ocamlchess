@@ -257,10 +257,12 @@ module Attacks = struct
   let[@inline] knight ?(ignore_same = true) pos c =
     gen pos c Knight Pre.knight ~ignore_same
 
-  (* Get the occupied squares for the board. Kingside_danger` indicates that the
-     king of the opposite color should be ignored, so that sliding attacks
-     can "see through" the inactive king. This is useful when the king is blocking
-     the attack of a sliding piece. *)
+  (* Get the occupied squares for the board.
+
+     `king_danger` indicates that the king of the opposite color should be'
+     ignored, so that sliding attacks can "see through" the inactive king.
+     This is useful when the king is blocking the attack of a sliding piece.
+  *)
   let[@inline] occupied pos c king_danger =
     let open Bb.Syntax in
     if king_danger then
@@ -525,50 +527,50 @@ module Valid = struct
       | Invalid_halfmove
       | Invalid_fullmove
 
-    let to_string = function
-      | Empty_board -> "Board is empty"
-      | Full_board -> "Board is full"
+    let pp ppf = function
+      | Empty_board -> Format.fprintf ppf "Board is empty%!"
+      | Full_board -> Format.fprintf ppf "Board is full%!"
       | Invalid_number_of_kings (c, n) ->
-        sprintf "Invalid number of %s kings (%d)"
-          (Piece.Color.to_string_hum c) n
+        Format.fprintf ppf "Invalid number of %a kings (%d)%!"
+          Piece.Color.pp_hum c n
       | Kings_not_separated ->
-        sprintf "Kings must be separated by at least one square"
+        Format.fprintf ppf "Kings must be separated by at least one square%!"
       | Inactive_in_check c ->
-        sprintf "Inactive player %s is in check" @@
-        Piece.Color.to_string_hum c
+        Format.fprintf ppf "Inactive player %a is in check%!"
+          Piece.Color.pp_hum c
       | Invalid_number_of_checkers (c, n) ->
-        sprintf "Player %s has %d checkers, max is two"
-          (Piece.Color.to_string_hum c) n
+        Format.fprintf ppf "Player %a has %d checkers, max is two%!"
+          Piece.Color.pp_hum c n
       | Invalid_two_checkers (c, k1, k2) ->
-        sprintf "Player %s has invalid two checkers: %s and %s"
-          (Piece.Color.to_string_hum c)
-          (Piece.Kind.to_string_hum k1)
-          (Piece.Kind.to_string_hum k2)
+        Format.fprintf ppf "Player %a has invalid two checkers: %a and %a%!"
+          Piece.Color.pp_hum c Piece.Kind.pp_hum k1 Piece.Kind.pp_hum k2
       | Invalid_number_of_pawns (c, n) ->
-        sprintf "Invalid number of %s pawns (%d)"
-          (Piece.Color.to_string_hum c) n
+        Format.fprintf ppf "Invalid number of %a pawns (%d)%!"
+          Piece.Color.pp_hum c n
       | Pawns_in_back_rank c ->
-        sprintf "Player %s has pawns in the back rank" @@
-        Piece.Color.to_string_hum c
+        Format.fprintf ppf "Player %a has pawns in the back rank%!"
+          Piece.Color.pp_hum c
       | Missing_pawn_en_passant c ->
-        sprintf "Missing %s pawn in front of en passant square" @@
-        Piece.Color.to_string_hum c
+        Format.fprintf ppf "Missing %a pawn in front of en passant square%!"
+          Piece.Color.pp_hum c
       | Invalid_en_passant_square sq ->
-        Format.asprintf "Invalid en passant square %a" Square.pp sq
+        Format.fprintf ppf "Invalid en passant square %a%!" Square.pp sq
       | Invalid_extra_pieces (c, n) ->
-        sprintf "Invalid number of extra %s pieces (%d)"
-          (Piece.Color.to_string_hum c) n
+        Format.fprintf ppf "Invalid number of extra %a pieces (%d)%!"
+          Piece.Color.pp_hum c n
       | Invalid_number_of_pieces (c, n) ->
-        sprintf "Invalid number of %s pieces (%d)"
-          (Piece.Color.to_string_hum c) n
+        Format.fprintf ppf "Invalid number of %a pieces (%d)%!"
+          Piece.Color.pp_hum c n
       | Invalid_castling_rights (c, k) ->
-        sprintf "Invalid castling rights, %s %s moved"
-          (Piece.Color.to_string_hum c)
-          (Piece.Kind.to_string_hum k)
+        Format.fprintf ppf "Invalid castling rights, %a %a moved%!"
+          Piece.Color.pp_hum c Piece.Kind.pp_hum k
       | En_passant_wrong_halfmove ->
-        sprintf "En passant square is set, but halfmove clock is not zero"
-      | Invalid_halfmove -> sprintf "Invalid halfmove clock"
-      | Invalid_fullmove -> sprintf "Invalid fullmove clock"
+        Format.fprintf ppf
+          "En passant square is set, but halfmove clock is not zero%!"
+      | Invalid_halfmove -> Format.fprintf ppf "Invalid halfmove clock%!"
+      | Invalid_fullmove -> Format.fprintf ppf "Invalid fullmove clock%!"
+
+    let to_string t = Format.asprintf "%a%!" pp t
   end
 
   type error = Error.t
@@ -789,26 +791,36 @@ module Fen = struct
       | Invalid_position of Valid.error
       | Invalid_number_of_sections of int
 
-    let to_string = function
-      | Invalid_number_of_ranks n -> sprintf "Invalid number of ranks %d" n
+    let pp ppf = function
+      | Invalid_number_of_ranks n ->
+        Format.fprintf ppf "Invalid number of ranks %d%!" n
       | Invalid_file_increment (n, sq) ->
-        sprintf "Invalid file increment %d on square %s" n @@
-        Square.to_string sq
-      | Rank_full rank -> sprintf "Piece placement on full rank %d" (rank + 1)
+        Format.fprintf ppf "Invalid file increment %d on square %a%!"
+          n Square.pp sq
+      | Rank_full rank ->
+        Format.fprintf ppf "Piece placement on full rank %d%!" (rank + 1)
       | Invalid_piece_symbol (sym, sq) ->
-        sprintf "Invalid piece symbol '%c' placed at square %s" sym @@
-        Square.to_string sq
+        Format.fprintf ppf "Invalid piece symbol '%c' placed at square %a%!"
+          sym Square.pp sq
       | Unspecified_squares (rank, n) ->
-        sprintf "Rank %d has %d unspecified square(s)" (rank + 1) n
-      | Invalid_active_color s -> sprintf "Invalid active color '%s'" s
-      | Invalid_castling_rights s -> sprintf "Invalid castling rights '%s'" s
-      | Invalid_en_passant s -> sprintf "Invalid en passant square '%s'" s
-      | Invalid_halfmove s -> sprintf "Invalid halfmove clock '%s'" s
-      | Invalid_fullmove s -> sprintf "Invalid fullmove clock '%s'" s
+        Format.fprintf ppf "Rank %d has %d unspecified square(s)%!"
+          (rank + 1) n
+      | Invalid_active_color s ->
+        Format.fprintf ppf "Invalid active color '%s'%!" s
+      | Invalid_castling_rights s ->
+        Format.fprintf ppf "Invalid castling rights '%s'%!" s
+      | Invalid_en_passant s ->
+        Format.fprintf ppf "Invalid en passant square '%s'%!" s
+      | Invalid_halfmove s ->
+        Format.fprintf ppf "Invalid halfmove clock '%s'%!" s
+      | Invalid_fullmove s ->
+        Format.fprintf ppf "Invalid fullmove clock '%s'%!" s
       | Invalid_position e ->
-        sprintf "Invalid position; %s" @@ Valid.Error.to_string e
+        Format.fprintf ppf "Invalid position; %a%!" Valid.Error.pp e
       | Invalid_number_of_sections n ->
-        sprintf "Invalid number of sections %d" n
+        Format.fprintf ppf "Invalid number of sections %d%!" n
+
+    let to_string t = Format.asprintf "%a%!" pp t
   end
 
   type error = Error.t
@@ -979,8 +991,7 @@ module Fen = struct
     | Ok pos -> pos
 end
 
-let pp ppf pos = Format.fprintf ppf "%a%!" Fen.pp pos
-
+let pp = Fen.pp
 let start = Fen.(of_string_exn start)
 
 (* Handling moves.

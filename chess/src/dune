@@ -7,10 +7,6 @@
    core_kernel.uopt
    bap-future
    monads)
- (foreign_stubs
-  (language c)
-  (names bytes_stubs int64_stubs)
-  (flags -march=native))
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_compare
                   ppx_fields_conv

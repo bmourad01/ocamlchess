@@ -16,6 +16,9 @@ module Error : sig
     | Illegal_move of Move.t * Position.t
     | No_moves of Position.t
 
+  (** Pretty-prints the error to a formatter. *)
+  val pp : Format.formatter -> t -> unit
+
   (** Returns the error as a human-readable message. *)
   val to_string : t -> string
 end

@@ -1,5 +1,6 @@
 open Core_kernel
 open Chess
+open Monads.Std
 
 module Bb = Bitboard
 module Cr = Castling_rights
@@ -8,7 +9,7 @@ module Legal = Position.Legal
 let thunk player = fun () -> Player.T player
 
 let best moves ~eval =
-  let open Option.Monad_infix in
+  let open Monad.Option.Syntax in
   List.filter_map moves ~f:(fun m -> eval m >>| fun score -> (m, score)) |>
   List.sort ~compare:(fun (_, a) (_, b) -> Int.compare b a) |>
   List.fold_until ~init:([], 0) ~finish:fst

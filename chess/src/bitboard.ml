@@ -71,20 +71,15 @@ let compl = Int64.bit_not
 let diff  = Int64.bit_xor
 let shl   = Int64.shift_left
 let shr   = Int64.shift_right_logical
+let count = Int64.popcount
 
 let[@inline] minus x y = inter x @@ compl y
 let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
 let[@inline] set b sq = union b @@ singleton sq
 let[@inline] clear b sq = minus b @@ singleton sq
 let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
-
-external count : (int64[@unboxed]) -> (int[@untagged]) =
-  "ml_int64_popcount" "ml_int64_popcount_unboxed" [@@noalloc]
-
 let[@inline] next_square b = Square.of_int_unsafe @@ Int64.ctz b
-
-let[@inline] next_square_rev b =
-  Square.of_int_unsafe (Square.last lxor Int64.clz b)
+let[@inline] next_square_rev b = Square.(of_int_unsafe (last lxor Int64.clz b))
 
 (* Higher-order functions. *)
 

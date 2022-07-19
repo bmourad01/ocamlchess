@@ -7,23 +7,29 @@ let update_history m pos =
   Position.hash pos |> Hashtbl.update m ~f:(function
       | Some n -> n + 1 | None -> 1)
 
+let pp_pv ppf pv =
+  let rec aux = function
+    | [] -> ()
+    | [m] -> Format.fprintf ppf "%a%!" Position.San.pp m
+    | m :: ms ->
+      Format.fprintf ppf "%a %!" Position.San.pp m;
+      aux ms in
+  aux pv
+
+let pp_score ppf : Uci.Send.Info.score -> unit = function
+  | Mate n when n < 0 -> Format.fprintf ppf "lose (mate in %d)%!" (-n)
+  | Mate n -> Format.fprintf ppf "win (mate in %d)%!" n
+  | Cp (cp, None) -> Format.fprintf ppf "%d%!" cp
+  | Cp (cp, Some `lower) -> Format.fprintf ppf "%d (lower-bound)%!" cp
+  | Cp (cp, Some `upper) -> Format.fprintf ppf "%d (upper-bound)%!" cp
+
 let print_res res =
-  let pv =
-    Search.Result.pv res |>
-    List.map ~f:(fun m -> Position.San.to_string m) |>
-    String.concat ~sep:" " in
-  let score = match Search.Result.score res with
-    | Mate n when n < 0 -> sprintf "lose (mate in %d)" (-n)
-    | Mate n -> sprintf "win (mate in %d)" n
-    | Cp (s, None) -> Int.to_string s
-    | Cp (s, Some `lower) -> sprintf "%d (lower-bound)" s
-    | Cp (s, Some `upper) -> sprintf "%d (upper-bound)" s in
   Format.printf "Time taken: %dms\n%!" @@ Search.Result.time res;
-  Format.printf "Principal variation: %s\n%!" pv;
+  Format.printf "Principal variation: %a\n%!" pp_pv @@ Search.Result.pv res;
   Format.printf "Depth: %d\n%!" @@ Search.Result.depth res;
   Format.printf "Maximum ply reached: %d\n%!" @@ Search.Result.seldepth res;
   Format.printf "Nodes evaluated: %d\n%!" @@ Search.Result.nodes res;
-  Format.printf "Score: %s\n%!" score;
+  Format.printf "Score: %a\n%!" pp_score @@ Search.Result.score res;
   Format.printf "\n%!"
 
 let book = ref None
@@ -37,18 +43,8 @@ let try_book in_book root history =
         let new_pos = Position.Legal.child m in
         update_history history new_pos;
         Some m
-      | Error (Book.Error.Position_not_found _) ->
-        Format.printf "Position %a not found; using search\n\n%!"
-          Position.pp root;
-        None
-      | Error (Book.Error.No_moves _) ->
-        Format.printf "Position %a was found, but no moves; \
-                       using search\n\n%!" Position.pp root;
-        None
-      | Error (Book.Error.Illegal_move (m, _)) ->
-        Format.printf "Illegal move %a for position %a was encountered \
-                       (perhaps a hash collision?); using search\n\n%!"
-          Move.pp m Position.pp root;
+      | Error err ->
+        Format.printf "%a; using search\n\n%!" Book.Error.pp err;
         None)
 
 let choice (history, tt, in_book) moves =

@@ -86,7 +86,7 @@ val active_board : t -> Bitboard.t
     color. *)
 val inactive_board : t -> Bitboard.t
 
-(** [board_of_color pos k] returns the bitboard of kind [k] from position
+(** [board_of_kind pos k] returns the bitboard of kind [k] from position
     [pos]. *)
 val board_of_kind : t -> Piece.kind -> Bitboard.t
 
@@ -158,6 +158,9 @@ module Valid : sig
       | Invalid_halfmove
       | Invalid_fullmove
 
+    (** [pp ppf err] pretty-prints [err] to formatter [ppf]. *)
+    val pp : Format.formatter -> t -> unit
+
     (** [to_string err] converts [err] into a human-readable string. *)
     val to_string : t -> string
   end
@@ -190,6 +193,9 @@ module Fen : sig
       | Invalid_position of Valid.error
       | Invalid_number_of_sections of int
 
+    (** [pp ppf err] pretty-prints [err] to formatter [ppf]. *)
+    val pp : Format.formatter -> t -> unit
+
     (** [to_string err] converts [err] into a human-readable string. *)
     val to_string : t -> string
   end
@@ -211,11 +217,14 @@ module Fen : sig
       encountered. *)
   val of_string_exn : ?validate:bool -> string -> t
 
-  (** [to_string fen] returns a string representation of [fen]. *)
+  (** [pp ppf pos] pretty-prints the FEN representation of [pos]. *)
+  val pp : Format.formatter -> t -> unit
+
+  (** [to_string pos] returns the FEN representation of [pos]. *)
   val to_string : t -> string
 end
 
-(** [pp ppf pos] pretty-prints [pos] to formatter [ppf]. *)
+(** Alias for [Fen.pp]. *)
 val pp : Format.formatter -> t -> unit
 
 (** The starting position. *)

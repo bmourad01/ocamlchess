@@ -78,9 +78,7 @@ module Color = struct
     | White -> Format.fprintf ppf "white%!"
     | Black -> Format.fprintf ppf "black%!"
 
-  let to_string_hum = function
-    | White -> "white"
-    | Black -> "black"
+  let to_string_hum t = Format.asprintf "%a%!" pp_hum t
 end
 
 type kind = Pawn | Knight | Bishop | Rook | Queen | King
@@ -109,13 +107,15 @@ module Kind = struct
 
   let[@inline] to_int k = (Obj.(magic (repr k)) : int)
 
-  let to_string_hum = function
-    | Pawn -> "pawn"
-    | Knight -> "knight"
-    | Bishop -> "bishop"
-    | Rook -> "rook"
-    | Queen -> "queen"
-    | King -> "king"
+  let pp_hum ppf = function
+    | Pawn -> Format.fprintf ppf "pawn%!"
+    | Knight -> Format.fprintf ppf "knight%!"
+    | Bishop -> Format.fprintf ppf "bishop%!"
+    | Rook -> Format.fprintf ppf "rook%!"
+    | Queen -> Format.fprintf ppf "queen%!"
+    | King -> Format.fprintf ppf "king%!"
+
+  let to_string_hum t = Format.asprintf "%a%!" pp_hum t
 
   let[@inline] is_sliding = function
     | Bishop | Rook | Queen -> true

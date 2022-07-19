@@ -93,6 +93,10 @@ module Kind : sig
   (** [to_int p] returns the integer associated with piece [p]. *)
   val to_int : t -> int
 
+  (** [pp_hum ppf c] pretty-prints the human-readable string of kind [k]
+      to formatter [ppf]. *)
+  val pp_hum : Format.formatter -> t -> unit
+
   (** [to_string_hum k] returns the human-readable string of kind [k]. *)
   val to_string_hum : t -> string
 
