@@ -48,10 +48,14 @@ let finish () = return false
 module Options = struct
   module T = Uci.Send.Option.Type
 
+  (* Artificial type to resolve ambiguity between the Combo and String
+     constructors. *)
+  type combo = [`combo of string]
+
   type _ t =
     | Spin : {spin : T.spin; mutable value : int} -> int t
     | Check : {default : bool; mutable value : bool} -> bool t
-    | Combo : {combo : T.combo; mutable value : string} -> string t
+    | Combo : {combo : T.combo; mutable value : string} -> combo t
     | String : {default : string; mutable value : string} -> string t
     | Button : unit t
 
@@ -77,19 +81,14 @@ module Options = struct
     let check : bool t -> bool -> unit state = fun (Check c) b ->
       return (c.value <- b)
 
-    let combo : string t -> string -> unit state = fun t v ->
-      match t with
-      | String _ -> assert false
-      | Combo c when not @@ T.is_var v c.combo -> return ()
-      | Combo c -> return (c.value <- v)
+    let combo : combo t -> combo -> unit state = fun (Combo c) (`combo v) ->
+      return @@ if T.is_var v c.combo then c.value <- v
 
-    let string : string t -> string -> unit state = fun t v ->
-      match t with
-      | Combo _ -> assert false
-      | String s -> return (s.value <- v)
+    let string : string t -> string -> unit state = fun (String s) v ->
+      return (s.value <- v)
 
-    let button : unit state -> (unit t -> unit -> unit state) =
-      fun x -> fun Button () -> x
+    let button : unit state -> (unit t -> unit -> unit state) = fun x ->
+      fun Button () -> x
   end
 
   let parse ~name ~value ~f = match value with
@@ -106,7 +105,7 @@ module Options = struct
     unit state = fun t callback ~name ~value -> match t with
     | Spin _   -> callback t @@ parse ~name ~value ~f:Int.of_string
     | Check _  -> callback t @@ parse ~name ~value ~f:Bool.of_string
-    | Combo _  -> callback t @@ parse ~name ~value ~f:Fn.id
+    | Combo _  -> callback t @@ parse ~name ~value ~f:(fun s -> `combo s)
     | String _ -> callback t @@ parse ~name ~value ~f:Fn.id
     | Button   -> callback t ()
 
