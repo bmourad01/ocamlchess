@@ -59,12 +59,6 @@ module Options = struct
     | String : {default : string; mutable value : string} -> string t
     | Button : unit t
 
-  let spin s = Spin {spin = s; value = s.default}
-  let check c = Check {default = c; value = c}
-  let combo c = Combo {combo = c; value = c.default}
-  let string s = String {default = s; value = s}
-  let button = Button
-
   let to_uci : type a. a t -> T.t = function
     | Spin {spin; _} -> T.Spin spin
     | Check {default; _} -> T.Check default
@@ -111,15 +105,21 @@ module Options = struct
 
   type entry = E : 'a t * 'a callback -> entry
 
+  let spin s = E (Spin {spin = s; value = s.default}, Callbacks.spin)
+  let check c = E (Check {default = c; value = c}, Callbacks.check)
+  let combo c = E (Combo {combo = c; value = c.default}, Callbacks.combo)
+  let string s = E (String {default = s; value = s}, Callbacks.string)
+  let button c = E (Button, Callbacks.button c)
+
   module Defaults = struct
     let ponder = false
     let multi_pv = T.{default = 1; min = 1; max = 1}
   end
 
   let tbl = Hashtbl.of_alist_exn (module String) [
-      "MultiPV",    E (spin Defaults.multi_pv, Callbacks.spin);
-      "Ponder",     E (check Defaults.ponder, Callbacks.check);
-      "Clear Hash", E (button, Callbacks.button State.clear_tt);
+      "MultiPV",    spin Defaults.multi_pv;
+      "Ponder",     check Defaults.ponder;
+      "Clear Hash", button State.clear_tt;
     ]
 
   let spin_value name = match Hashtbl.find_exn tbl name with
