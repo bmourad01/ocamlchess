@@ -29,8 +29,8 @@ module State = struct
     {st with pos}
 
   (* Set the new starting position and history. *)
-  let set_position pos = update @@ fun st ->
-    Hashtbl.clear st.history;
+  let set_position ?(new_game = false) pos = update @@ fun st ->
+    if new_game then Hashtbl.clear st.history;
     Hashtbl.set st.history ~key:(Position.hash pos) ~data:1;
     {st with pos}
 
@@ -169,7 +169,7 @@ let setoption ({name; value} : Uci.Recv.Setoption.t) =
   | Some Options.(E (t, callback)) ->
     Options.call t callback ~name ~value >>= cont
 
-let ucinewgame = State.set_position Position.start
+let ucinewgame = State.set_position Position.start ~new_game:true
 
 let play_move m =
   State.(gets pos) >>= fun pos ->
