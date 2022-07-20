@@ -22,10 +22,14 @@ module State = struct
   include Monad.State.Make(T)(Monad.Ident)
   include Monad.State.T1(T)(Monad.Ident)
 
+  let set_new_game st =
+    Hashtbl.clear st.history;
+    Search.Tt.clear st.tt
+
   (* Update the position and history. If this is a new game, then
-     clear the history. *)
+     clear the history and TT. *)
   let set_position ?(new_game = false) pos = update @@ fun st ->
-    if new_game then Hashtbl.clear st.history;
+    if new_game then set_new_game st;
     Position.hash pos |> Hashtbl.update st.history ~f:(function
         | None -> 1 | Some n -> n + 1);
     {st with pos}
