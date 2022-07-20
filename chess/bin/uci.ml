@@ -22,17 +22,13 @@ module State = struct
   include Monad.State.Make(T)(Monad.Ident)
   include Monad.State.T1(T)(Monad.Ident)
 
-  (* Update the position and history after a move has been made. *)
-  let update_position pos = update @@ fun st ->
+  (* Update the position and history. If this is a new game, then
+     clear the history. *)
+  let set_position ?(new_game = false) pos = update @@ fun st ->
+    if new_game then Hashtbl.clear st.history;
     Position.hash pos |> Hashtbl.update st.history ~f:(function
         | None -> 1 | Some n -> n + 1);
     {st with pos}
-
-  (* Set the new starting position and history. *)
-  let set_position ?(new_game = false) pos =
-    gets history >>= fun history ->
-    if new_game then Hashtbl.clear history;
-    update_position pos
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
   let set_stop stop = update @@ fun st -> {st with stop}
@@ -177,7 +173,7 @@ let play_move m =
   | exception _ ->
     failwithf "Received illegal move %s for position %s\n%!"
       (Move.to_string m) (Position.Fen.to_string pos) ()
-  | m -> State.update_position @@ Legal.child m
+  | m -> State.set_position @@ Legal.child m
 
 let position pos moves = match Position.Valid.check pos with
   | Ok () ->
