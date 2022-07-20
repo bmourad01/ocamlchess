@@ -29,10 +29,10 @@ module State = struct
     {st with pos}
 
   (* Set the new starting position and history. *)
-  let set_position ?(new_game = false) pos = update @@ fun st ->
-    if new_game then Hashtbl.clear st.history;
-    Hashtbl.set st.history ~key:(Position.hash pos) ~data:1;
-    {st with pos}
+  let set_position ?(new_game = false) pos =
+    gets history >>= fun history ->
+    if new_game then Hashtbl.clear history;
+    update_position pos
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
   let set_stop stop = update @@ fun st -> {st with stop}
