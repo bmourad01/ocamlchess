@@ -18,7 +18,8 @@ module Limits = struct
     nodes    : int option;
     mate     : int option;
     depth    : int option;
-    time     : int option;
+    movetime : int option;
+    max_time : int option;
     stop     : unit future;
     moves    : Move.t list;
   } [@@deriving fields]
@@ -49,7 +50,7 @@ module Limits = struct
     | Some n ->
       invalid_argf "Invalid movetime %d, must be greater than 0" n ()
 
-  let gametime
+  let manage_time
       ?(movestogo = None)
       ~wtime
       ~winc
@@ -103,7 +104,7 @@ module Limits = struct
     check_mate mate;
     check_depth depth;
     let movetime = check_movetime movetime in
-    let gametime = match wtime, btime with
+    let max_time = match wtime, btime with
       | None, None -> None
       | Some _, None -> invalid_arg "Missinc btime"
       | None, Some _ -> invalid_arg "Missing wtime"
@@ -113,16 +114,16 @@ module Limits = struct
           | Some winc, Some binc -> winc, binc
           | Some _, None -> invalid_arg "Missing binc"
           | None, Some _ -> invalid_arg "Missing winc" in
-        Some (gametime ~wtime ~winc ~btime ~binc ~movestogo ~active ()) in
-    let time = Option.merge movetime gametime ~f:min in
+        Some (manage_time ~wtime ~winc ~btime ~binc ~movestogo ~active ()) in
     if not infinite
     && Option.is_none nodes
     && Option.is_none mate
     && Option.is_none depth
-    && Option.is_none time
+    && Option.is_none movetime
+    && Option.is_none max_time
     && List.is_empty moves
     then invalid_arg "Limits were explicitly unspecified"
-    else {infinite; nodes; mate; depth; time; stop; moves}
+    else {infinite; nodes; mate; depth; movetime; max_time; stop; moves}
 end
 
 type limits = Limits.t
@@ -626,9 +627,11 @@ module Search = struct
       Limits.stopped st.limits || begin
         match Limits.nodes st.limits with
         | Some n when st.nodes >= n -> true
-        | _ -> match Limits.time st.limits with
+        | _ -> match Limits.max_time st.limits with
           | Some t -> elapsed >= t
-          | None -> false
+          | None -> match Limits.movetime st.limits with
+            | Some t -> elapsed >= t
+            | None -> false
       end
     end
 
@@ -647,9 +650,6 @@ module Search = struct
     check_repetition st.history pos ||
     Position.halfmove pos >= 100 ||
     Position.is_insufficient_material pos
-
-  (* These are conditions for returning a score of 0. *)
-  let check_limits_or_draw st pos = check_limits st || drawn st pos
 
   (* Mate distance pruning.
 
@@ -707,8 +707,10 @@ module Quiescence = struct
 
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~node =
-    if Search.check_limits_or_draw st pos
-    then Search.leaf st 0 ~ply
+    if Search.drawn st pos then
+      Search.leaf st 0 ~ply
+    else if Search.check_limits st then
+      Search.leaf st (max alpha @@ Eval.go pos) ~ply
     else
       let check = Position.in_check pos in
       Position.legal_moves pos |> function
@@ -772,8 +774,10 @@ module Main = struct
 
   (* Search from a new position. *)
   let rec go ?(null = false) st pos ~alpha ~beta ~ply ~depth ~node =
-    if Search.check_limits_or_draw st pos
-    then Search.leaf st 0 ~ply
+    if Search.drawn st pos then
+      Search.leaf st 0 ~ply
+    else if Search.check_limits st then
+      Search.leaf st (max alpha @@ Eval.go pos) ~ply
     else
       let check = Position.in_check pos in
       match Position.legal_moves pos with
@@ -1187,12 +1191,17 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
   let pv = extract_pv st moves ~depth ~best ~mate ~mated in
   let result = result st ~depth ~score ~time ~pv ~mate ~mated in
   let no_ponder = not @@ State.pondering st in
+  (* If movetime was specified, check if we've reached the limit. *)
+  let movetime_done =
+    no_ponder &&
+    Limits.movetime st.limits |>
+    Option.value_map ~default:false ~f:(fun n -> time >= n) in
   (* Last iteration may have eaten up at least half the allocated time,
      so the next (deeper) iteration is likely to take longer without
      having completed. Thus, we should abort the search. *)
   let too_long =
     no_ponder &&
-    Limits.time st.limits |>
+    Limits.max_time st.limits |>
     Option.value_map ~default:false ~f:(fun n -> time * 2 >= n) in
   (* Stop searching once we've reached the depth limit. *)
   let max_depth =
@@ -1211,18 +1220,21 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
         ply_to_moves (mate_score - score) <= n) in
   (* Don't continue if there's a mating sequence within the
      current depth limit. *)
-  let stop_mate =
-    no_ponder && begin
+  let mate_inevitable = no_ponder && begin
       (mate && mate_score - score <= depth) ||
       (mated && mate_score + score <= depth)
     end in
   (* Continue iterating? *)
-  if not (too_long || max_nodes || max_depth || mate_in_x || stop_mate)
-  then begin
+  if movetime_done
+  || too_long
+  || max_nodes
+  || max_depth
+  || mate_in_x
+  || mate_inevitable then result else begin
     State.new_iter st;
     let prev = Some (result, score) in
     iterdeep st moves ~depth:(depth + 1) ~prev
-  end else result
+  end
 
 (* Either checkmate or stalemate. *)
 let no_moves root iter =

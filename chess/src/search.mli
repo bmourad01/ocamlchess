@@ -18,8 +18,12 @@ module Limits : sig
   (** The depth limit for the search, if any. *)
   val depth : t -> int option
 
-  (** The time limit (in milliseconds) for the search, if any. *)
-  val time : t -> int option
+  (** The exact amount of time (in milliseconds) to search. *)
+  val movetime : t -> int option
+
+  (** The maximum amount of time (in milliseconds) that the active player
+      has available to move. *)
+  val max_time : t -> int option
 
   (** The moves that will be exclusively searched (if any). *)
   val moves : t -> Move.t list
