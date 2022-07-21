@@ -1071,25 +1071,25 @@ module Main = struct
   and sext st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
     | None -> Second 0
     | Some entry ->
+      let ttscore = Tt.Entry.score entry in
       if not check
       && ply > 0
       && ply < st.root_depth * 2
       && equal_node Cut @@ Tt.Entry.node entry
+      && not (is_mate ttscore || is_mated ttscore)
       && depth >= sext_min_depth
       && not (State.has_excluded st)
       && Tt.Entry.same entry m
-      && Tt.Entry.depth entry >= sext_min_ttdepth depth
-      then
-        let ttscore = Tt.Entry.score entry in
-        let beta_cut = min beta (ttscore - depth * 2) in
+      && Tt.Entry.depth entry >= sext_min_ttdepth depth then
+        let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
         st.excluded <- Uopt.some m;
         let score = go st pos ~depth ~ply
-            ~alpha:(beta_cut - 1)
-            ~beta:beta_cut
+            ~alpha:(target - 1)
+            ~beta:target
             ~node:Cut in
         st.excluded <- Uopt.none;
-        if score < beta_cut then Second 1
+        if score < target then Second 1
         else if score >= beta then First score
         else Second 0
       else Second 0
