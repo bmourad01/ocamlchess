@@ -771,7 +771,7 @@ module Quiescence = struct
     end else Stop t.alpha
 
   and should_skip order evasion =
-    if evasion then order < Order.bad_capture_offset else order >= 0
+    if evasion then order < Order.bad_capture_offset else order < 0
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
