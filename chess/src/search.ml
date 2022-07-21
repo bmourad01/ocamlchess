@@ -264,18 +264,14 @@ end
 
 type result = Result.t
 
-(* A move produces a "quiet" position iff:
+(* The `check` parameter is for deciding when to generate quiet checks in
+   quiescence search. *)
+let is_noisy ?(check = true) m =
+  Legal.is_capture m ||
+  Option.is_some @@ Move.promote @@ Legal.move m ||
+  (check && Legal.gives_check m)
 
-   1. The move is not a capture.
-   2. The move is not a promotion.
-   3. The move does not give a check.
-*)
-let is_quiet m =
-  Option.is_none @@ Legal.capture m &&
-  Option.is_none @@ Move.promote @@ Legal.move m &&
-  not (Legal.gives_check m)
-
-let is_noisy = Fn.non is_quiet
+let is_quiet ?(check = true) = Fn.non @@ is_noisy ~check
 
 (* Our state for the entirety of the search. *)
 module State = struct
@@ -569,9 +565,10 @@ module Order = struct
                 | None -> move_history m + history_offset)
 
   (* Score the moves for quiescence search. *)
-  let qscore moves ~ttentry =
+  let qscore moves ~ttentry ~check =
     let is_hash = is_hash ttentry in
-    List.filter moves ~f:(fun m -> is_noisy m || is_hash m) |> function
+    let f m = is_noisy m ~check || is_hash m in
+    List.filter moves ~f |> function
     | [] -> None
     | moves -> Some (score_aux moves ~eval:(fun m ->
         if is_hash m then inf
@@ -683,39 +680,36 @@ module Quiescence = struct
     fun pos eval alpha -> eval + margin <= alpha && not (Eval.is_endgame pos)
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
-     function.
-
-     XXX: Evaluations shouldn't be used if the position is in check, but if
-     we don't adjust alpha somehow then there's situations where it never
-     gets improved and the algorithm diverges.
-  *)
+     function. *)
   let eval st pos ~alpha ~beta ~ply ~check ~ttentry =
-    State.inc_nodes st;
-    let eval = Eval.go pos in
-    let score = match (ttentry : Tt.entry option) with
-      | Some {score; node = Cut; _}
-        when Tt.to_score score ply > eval -> score
-      | Some {score; node = All; _}
-        when Tt.to_score score ply <= eval -> score
-      | None | Some _ -> eval in
-    if score >= beta then First beta
-    else if delta pos score alpha then First score
-    else Second (max score alpha)
+    if not check then begin
+      State.inc_nodes st;
+      let eval = Eval.go pos in
+      let score = match (ttentry : Tt.entry option) with
+        | Some {score; node = Cut; _}
+          when Tt.to_score score ply > eval -> score
+        | Some {score; node = All; _}
+          when Tt.to_score score ply <= eval -> score
+        | None | Some _ -> eval in
+      if score >= beta then First beta
+      else if delta pos score alpha then First alpha
+      else Second (max score alpha)
+    end else Second alpha
 
   (* TT entries for quiescence search have a depth of either 0 or -1,
      depending on whether this is the first ply or we're in check. *)
   let tt_depth ~check ~init = b2i (check || init) - 1
 
-  let order st moves pos ~ply ~check ~ttentry =
-    match Order.qscore moves ~ttentry with
-    | Some (it, best) -> Some (it, best)
+  (* To avoid state explosion, only generate quiet checks at the root. *)
+  let order st moves pos ~ply ~check ~init ~ttentry =
+    match Order.qscore moves ~check:init ~ttentry with
+    | Some (it, best) -> Some (it, best, false)
     | None when not check -> None
     | None ->
-      (* We're in check, but all of our moves are quiet. It would be too slow
-         to search every response, so we will just search the most promising
-         one according to the move ordering. *)
-      let _, best = Order.score st moves ~ply ~pos ~ttentry in
-      Some (Iterator.create [|best, 0|], best)
+      (* We're in check, but our only responses are quiet moves, so just
+         generate all evasions. *)
+      let it, best = Order.score st moves ~ply ~pos ~ttentry in
+      Some (it, best, true)
 
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~node =
@@ -728,8 +722,9 @@ module Quiescence = struct
         State.inc_nodes st; Eval.go pos
       end
     else if Search.drawn st pos then 0
-    else if Search.check_limits st then Eval.go pos
-    else Position.legal_moves pos |> function
+    else if Search.check_limits st then begin
+      State.inc_nodes st; Eval.go pos
+    end else Position.legal_moves pos |> function
       | [] -> if check then mated ply else 0
       | moves -> match Search.mdp ~alpha ~beta ~ply with
         | First alpha -> alpha
@@ -746,20 +741,20 @@ module Quiescence = struct
       match eval st pos ~alpha ~beta ~ply ~check ~ttentry with
       | First score -> score
       | Second alpha ->
-        match order st moves pos ~ply ~check ~ttentry with
+        match order st moves pos ~ply ~check ~init ~ttentry with
         | None -> alpha
-        | Some (it, best) ->
+        | Some (it, best, evasion) ->
           let t = Search.create ~alpha ~best () in
           let finish () = t.alpha in
-          let f = child st t ~beta ~eval ~ply ~node in
+          let f = child st t ~beta ~eval ~ply ~node ~evasion in
           let score = Iterator.fold_until it ~init:() ~finish ~f in
           Search.store st t pos ~depth ~ply ~score;
           score
 
   (* Search a child of the current node. *)
-  and child st t ~beta ~eval ~ply ~node = fun () (m, order) ->
+  and child st t ~beta ~eval ~ply ~node ~evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if order >= 0 then begin
+    if not @@ should_skip order evasion then begin
       let pos = Legal.child m in
       State.push_history pos st;
       let score = go st pos ~node
@@ -774,6 +769,9 @@ module Quiescence = struct
         Stop beta
       end else Continue ()
     end else Stop t.alpha
+
+  and should_skip order evasion =
+    if evasion then order < Order.bad_capture_offset else order >= 0
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -1001,7 +999,7 @@ module Main = struct
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = None in
       let f = probcut_child st pos ~depth ~ply ~beta_cut in
-      match Order.qscore moves ~ttentry with
+      match Order.qscore moves ~ttentry ~check:true with
       | Some (it, _) -> Iterator.fold_until it ~init:() ~finish ~f
       | None -> None
     else None
