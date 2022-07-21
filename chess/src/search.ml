@@ -220,22 +220,16 @@ module Tt = struct
             searched.
   *)
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
-    | None -> Second (alpha, beta, None)
-    | Some entry when ply <= 0 || Entry.depth entry < depth ->
-      Second (alpha, beta, Some entry)
+    | None -> Second None
+    | Some entry when pv || ply <= 0 || Entry.depth entry < depth ->
+      Second (Some entry)
     | Some entry ->
       let score = to_score entry.score ply in
       match entry.node with
-      | Pv when not pv -> First score
-      | Pv -> Second (alpha, beta, Some entry)
-      | Cut ->
-        let alpha = max alpha score in
-        if alpha >= beta then First score
-        else Second (alpha, beta, Some entry)
-      | All ->
-        let beta = min beta score in
-        if alpha >= beta then First score
-        else Second (alpha, beta, Some entry)
+      | Pv -> First score
+      | Cut when score >= beta -> First score
+      | All when score <= alpha -> First score
+      | _ -> Second (Some entry)
 
   (* Extract the principal variation from the table. *)
   let pv tt n m =
@@ -284,6 +278,7 @@ module State = struct
     history                    : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
+    excluded                   : Legal.t Oa.t;
     killer1                    : Legal.t Oa.t;
     killer2                    : Legal.t Oa.t;
     move_history               : int array;
@@ -293,7 +288,6 @@ module State = struct
     mutable seldepth           : int;
     mutable nodes              : int;
     mutable root_depth         : int;
-    mutable excluded           : Legal.t Uopt.t;
     evals                      : int array;
     iter                       : Result.t -> unit;
     ponder                     : unit future option;
@@ -313,6 +307,7 @@ module State = struct
       history;
       tt;
       start_time = Time.now ();
+      excluded = Oa.create ~len:max_ply;
       killer1 = Oa.create ~len:killer_size;
       killer2 = Oa.create ~len:killer_size;
       move_history = Array.create ~len:move_history_size 0;
@@ -322,7 +317,6 @@ module State = struct
       seldepth = 1;
       nodes = 0;
       root_depth = 1;
-      excluded = Uopt.none;
       evals = Array.create ~len:eval_size 0;
       iter;
       ponder;
@@ -410,11 +404,12 @@ module State = struct
     | Some p -> not @@ Future.is_decided p
     | None -> false
 
-  let has_excluded st = Uopt.is_some st.excluded
+  let has_excluded st ~ply = Oa.unsafe_is_some st.excluded ply
+  let set_excluded st m ~ply = Oa.unsafe_set_some st.excluded ply m
+  let clear_excluded st ~ply = Oa.unsafe_set_none st.excluded ply
 
-  let is_excluded st m =
-    Uopt.is_some st.excluded &&
-    Legal.same m @@ Uopt.unsafe_value st.excluded
+  let is_excluded st m ~ply =
+    Oa.unsafe_get st.excluded ply |> Option.exists ~f:(Legal.same m)
 end
 
 type state = State.state
@@ -747,7 +742,7 @@ module Quiescence = struct
     let depth = tt_depth ~check ~init in
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~node with
     | First score -> score
-    | Second (alpha, beta, ttentry) ->
+    | Second ttentry ->
       match eval st pos ~alpha ~beta ~ply ~check ~ttentry with
       | First score -> score
       | Second alpha ->
@@ -809,12 +804,12 @@ module Main = struct
 
   (* Search from a new position. *)
   let rec go ?(null = false) (st : state) pos ~alpha ~beta ~ply ~depth ~node =
+    let check = Position.in_check pos in
     update_seldepth st ply node;
     if Search.drawn st pos then 0
-    else if Search.check_limits st then Eval.go pos
-    else
-      let check = Position.in_check pos in
-      match Position.legal_moves pos with
+    else if ply >= max_ply || Search.check_limits st then
+      if check then 0 else Eval.go pos
+    else match Position.legal_moves pos with
       | [] -> if check then mated ply else 0
       | moves ->
         (* Check + single reply extension. *)
@@ -829,7 +824,7 @@ module Main = struct
           (* Find a cached evaluation of the position. *)
           match Search.lookup st pos ~depth ~ply ~alpha ~beta ~node with
           | First score -> score
-          | Second (alpha, beta, ttentry) ->
+          | Second ttentry ->
             (* Search the available moves. *)
             with_moves st pos moves ~alpha ~beta ~ply
               ~depth ~check ~node ~null ~ttentry
@@ -849,7 +844,7 @@ module Main = struct
       let f = child st t pos ~eval ~beta ~depth
           ~ply ~check ~node ~improving ~ttentry in
       let score = Iterator.fold_until it ~init:0 ~finish ~f in
-      if not @@ State.has_excluded st then
+      if not @@ State.has_excluded st ~ply then
         Search.store st t pos ~depth ~ply ~score;
       score
 
@@ -865,7 +860,8 @@ module Main = struct
     match eval with
     | None -> None
     | Some _ when equal_node node Pv || null -> None
-    | Some eval -> match razor st pos moves ~eval ~alpha ~ply ~depth with
+    | Some eval ->
+      match razor st pos moves ~eval ~alpha ~beta ~ply ~depth ~node with
       | Some _ as score -> score
       | None ->
         let their_threats =
@@ -881,7 +877,8 @@ module Main = struct
       ~check ~node ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
     let[@inline] next () = Continue (i + 1) in
-    if should_skip st t m ~eval ~beta ~depth ~check ~node ~order then next ()
+    if should_skip st t m ~eval ~beta ~depth ~ply ~check ~node ~order
+    then next ()
     else match sext st pos m ~depth ~ply ~beta ~check ~ttentry with
       | First score -> Stop score
       | Second _ when st.stopped -> Stop t.alpha
@@ -904,10 +901,10 @@ module Main = struct
      position at this point, then we should just skip searching the current
      move.
   *)
-  and should_skip st t m ~eval ~beta ~depth ~check ~node ~order =
+  and should_skip st t m ~eval ~beta ~depth ~ply ~check ~node ~order =
     futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node ||
     see m ~order ~depth ||
-    State.is_excluded st m
+    State.is_excluded st m ~ply
 
   (* Futility pruning.
 
@@ -948,16 +945,14 @@ module Main = struct
      good, and should cause a cutoff.
   *)
   and rfp ~depth ~eval ~beta ~their_threats ~improving =
-    Option.some_if begin
-      depth <= rfp_max_depth &&
-      eval - rfp_margin depth their_threats improving >= beta
-    end eval
+    let e = eval - rfp_margin depth their_threats improving in
+    Option.some_if (depth <= rfp_max_depth && e >= beta) eval
 
   and rfp_margin depth their_threats improving =
     let r = b2i (improving && their_threats <= 0) in
     Piece.Kind.value Pawn * Eval.material_weight * (depth - r)
 
-  and rfp_max_depth = 6
+  and rfp_max_depth = 8
 
   (* Null move pruning.
 
@@ -987,21 +982,20 @@ module Main = struct
   (* Razoring.
 
      When approaching the horizon, if our evaluation is significantly
-     lower than alpha, then do a zero window quiescence search and see
-     if it will improve.
+     lower than alpha, then drop down to quiescence search.
   *)
-  and razor st pos moves ~eval ~alpha ~ply ~depth =
-    if depth <= razor_max_depth && eval + razor_margin depth < alpha then
-      let score =
-        Quiescence.with_moves st pos moves ~ply ~check:false ~node:All
-          ~alpha:(alpha - 1) ~beta:alpha in
-      Option.some_if (score < alpha) score
+  and razor st pos moves ~eval ~alpha ~beta ~ply ~depth ~node =
+    if depth <= razor_max_depth && eval + razor_margin <= alpha then
+      Option.some @@ Quiescence.with_moves st pos moves
+        ~ply ~node ~alpha ~beta ~check:false
     else None
 
-  and razor_max_depth = 3
+  and razor_max_depth = 1
 
-  and razor_margin depth =
-    Piece.Kind.value Knight * Eval.material_weight * depth
+  and razor_margin =
+    let p = Piece.Kind.value Pawn * Eval.material_weight in
+    let n = Piece.Kind.value Knight * Eval.material_weight in
+    n + (p / 2)
 
   (* ProbCut
 
@@ -1022,7 +1016,7 @@ module Main = struct
 
   and probcut_child st pos ~depth ~ply ~beta_cut = fun () (m, _) ->
     let open Continue_or_stop in
-    if not @@ State.is_excluded st m then
+    if not @@ State.is_excluded st m ~ply then
       let alpha = -beta_cut and beta = -beta_cut + 1 in
       let child = Legal.child m in
       State.inc_nodes st;
@@ -1062,35 +1056,35 @@ module Main = struct
 
   and probcut_min_depth = 5
 
-  (* Singular extensions.
+  (* Singular extensions + multi-cut.
 
      If it is likely that we only have one good move, then extend the search.
-     If it turns out that this is not the only move to fail high, then we
-     produce a cutoff.
+     However, if it turns out that this is not the only move to fail high,
+     then we produce a cutoff.
   *)
   and sext st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
     | None -> Second 0
     | Some entry ->
-      let ttscore = Tt.Entry.score entry in
+      let ttscore = Tt.(to_score (Entry.score entry) ply) in
       if not check
       && ply > 0
       && ply < st.root_depth * 2
-      && equal_node Cut @@ Tt.Entry.node entry
+      && not (equal_node All @@ Tt.Entry.node entry)
       && not (is_mate ttscore || is_mated ttscore)
       && depth >= sext_min_depth
-      && not (State.has_excluded st)
+      && not (State.has_excluded st ~ply)
       && Tt.Entry.same entry m
       && Tt.Entry.depth entry >= sext_min_ttdepth depth then
         let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
-        st.excluded <- Uopt.some m;
+        State.set_excluded st m ~ply;
         let score = go st pos ~depth ~ply
             ~alpha:(target - 1)
             ~beta:target
             ~node:Cut in
-        st.excluded <- Uopt.none;
+        State.clear_excluded st ~ply;
         if score < target then Second 1
-        else if score >= beta then First score
+        else if target >= beta then First target
         else Second 0
       else Second 0
 
@@ -1178,7 +1172,7 @@ module Main = struct
     let pos = st.root in
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~node with
     | First _ -> assert false
-    | Second (alpha, beta, ttentry) ->
+    | Second ttentry ->
       let check = Position.in_check pos in
       let eval, improving = eval st pos ~ply ~check ~ttentry in
       let it, best = Order.score st moves ~ply ~pos ~ttentry in
