@@ -606,13 +606,11 @@ module Search = struct
     t.node <- Cut
 
   (* Alpha may have improved. *)
-  let better t m ~score ~node =
+  let better t m ~score =
     if score > t.alpha then begin
       t.best <- m;
-      if equal_node node Pv then begin
-        t.alpha <- score;
-        t.node <- Pv;
-      end;
+      t.alpha <- score;
+      t.node <- Pv;
     end
 
   (* Find a cached evaluation of the position. *)
@@ -770,7 +768,7 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) |> Int.neg in
       State.pop_history pos st;
-      Search.better t m ~score ~node;
+      Search.better t m ~score;
       if score >= beta then begin
         Search.cutoff st t m ~ply ~depth:0;
         Stop beta
@@ -878,7 +876,7 @@ module Main = struct
       let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
       let score = pvs st t pos ~i ~r ~beta ~ply ~depth ~node in
       (* Update alpha if needed. *)
-      Search.better t m ~score ~node;
+      Search.better t m ~score;
       if score >= beta then begin
         (* Move was too good. *)
         Search.cutoff st t m ~ply ~depth;
