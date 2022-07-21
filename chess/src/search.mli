@@ -83,6 +83,9 @@ type limits = Limits.t
 (** The types of nodes that are traversed in an alpha-beta search. *)
 type node = Pv | Cut | All [@@deriving equal]
 
+(** Pretty-prints the node type. *)
+val pp_node : Format.formatter -> node -> unit
+
 (** The transposition table. *)
 module Tt : sig
   type t
@@ -150,7 +153,7 @@ module Result : sig
   (** The depth that was searched to in order to obtain the result. *)
   val depth : t -> int
 
-  (** The maximum distance (ply) from the root that was reached. *)
+  (** The selective search depth in plies. *)
   val seldepth : t -> int
 
   (** The total time (in milliseconds) taken to complete the search.. *)

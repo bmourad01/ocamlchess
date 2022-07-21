@@ -27,7 +27,6 @@ let print_res res =
   Format.printf "Time taken: %dms\n%!" @@ Search.Result.time res;
   Format.printf "Principal variation: %a\n%!" pp_pv @@ Search.Result.pv res;
   Format.printf "Depth: %d\n%!" @@ Search.Result.depth res;
-  Format.printf "Maximum ply reached: %d\n%!" @@ Search.Result.seldepth res;
   Format.printf "Nodes evaluated: %d\n%!" @@ Search.Result.nodes res;
   Format.printf "Score: %a\n%!" pp_score @@ Search.Result.score res;
   Format.printf "\n%!"
