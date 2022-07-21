@@ -1155,7 +1155,7 @@ module Main = struct
   (* Set up the initial window to search around. *)
   and window basis depth low high =
     if basis <= -inf || depth <= 1 then -inf, inf
-    else basis - low, basis + high
+    else max (-inf) (basis - low), min inf (basis + high)
 
   (* Widen the window based on the result of a search. *)
   and widen score beta low high =
