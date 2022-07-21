@@ -147,7 +147,7 @@ module Result : sig
   (** The score that was given to the best move. *)
   val score : t -> Uci.Send.Info.score
 
-  (** The number of positions that were evaluated. *)
+  (** The number of nodes (positions) that were searched. *)
   val nodes : t -> int
 
   (** The depth that was searched to in order to obtain the result. *)

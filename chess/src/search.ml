@@ -597,10 +597,13 @@ module Search = struct
     end
 
   (* Beta cutoff. *)
-  let cutoff st t m ~ply ~depth =
-    update_history_and_killer st m ~ply ~depth ;
-    t.best <- m;
-    t.node <- Cut
+  let cutoff st t m ~score ~beta ~ply ~depth =
+    let result = score >= beta in
+    if result then begin
+      update_history_and_killer st m ~ply ~depth;
+      t.best <- m;
+      t.node <- Cut;
+    end; result
 
   (* Alpha may have improved. *)
   let better t m ~score =
@@ -683,7 +686,6 @@ module Quiescence = struct
      function. *)
   let eval st pos ~alpha ~beta ~ply ~check ~ttentry =
     if not check then begin
-      State.inc_nodes st;
       let eval = Eval.go pos in
       let score = match (ttentry : Tt.entry option) with
         | Some {score; node = Cut; _}
@@ -714,17 +716,13 @@ module Quiescence = struct
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~node =
     let check = Position.in_check pos in
-    if ply >= max_ply then
+    if Search.drawn st pos then 0
+    else if ply >= max_ply || Search.check_limits st then
       (* Evaluations aren't useful for positions that are in check, so just
          assume that if we've made it this far down the tree then this line
          ends with a draw. *)
-      if check then 0 else begin
-        State.inc_nodes st; Eval.go pos
-      end
-    else if Search.drawn st pos then 0
-    else if Search.check_limits st then begin
-      State.inc_nodes st; Eval.go pos
-    end else Position.legal_moves pos |> function
+      if check then 0 else Eval.go pos
+    else Position.legal_moves pos |> function
       | [] -> if check then mated ply else 0
       | moves -> match Search.mdp ~alpha ~beta ~ply with
         | First alpha -> alpha
@@ -754,21 +752,23 @@ module Quiescence = struct
   (* Search a child of the current node. *)
   and child st t ~beta ~eval ~ply ~node ~evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if not @@ should_skip order evasion then begin
+    if should_skip order evasion then Stop t.alpha
+    else begin
       let pos = Legal.child m in
       State.push_history pos st;
+      State.inc_nodes st;
       let score = go st pos ~node
           ~init:false
           ~ply:(ply + 1)
           ~alpha:(-beta)
           ~beta:(-t.alpha) |> Int.neg in
       State.pop_history pos st;
-      Search.better t m ~score;
-      if score >= beta then begin
-        Search.cutoff st t m ~ply ~depth:0;
-        Stop beta
-      end else Continue ()
-    end else Stop t.alpha
+      if Search.cutoff st t m ~score ~beta ~ply ~depth:0 then Stop beta
+      else begin
+        Search.better t m ~score;
+        if st.stopped then Stop t.alpha else Continue ()
+      end
+    end
 
   and should_skip order evasion =
     if evasion then order < Order.bad_capture_offset else order < 0
@@ -868,19 +868,19 @@ module Main = struct
       ~check ~node ~improving = fun i (m, order) ->
     let open Continue_or_stop in
     let[@inline] next () = Continue (i + 1) in
-    if not @@ should_skip t m ~eval ~beta ~depth ~check ~node ~order then
+    if should_skip t m ~eval ~beta ~depth ~check ~node ~order then next ()
+    else begin
       (* Explore the child node. *)
       let pos = Legal.child m in
+      State.inc_nodes st;
       let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
       let score = pvs st t pos ~i ~r ~beta ~ply ~depth ~node in
-      (* Update alpha if needed. *)
-      Search.better t m ~score;
-      if score >= beta then begin
-        (* Move was too good. *)
-        Search.cutoff st t m ~ply ~depth;
-        Stop beta
-      end else next ()
-    else next ()
+      if Search.cutoff st t m ~score ~beta ~ply ~depth then Stop beta
+      else begin
+        Search.better t m ~score;
+        if st.stopped then Stop t.alpha else next ()
+      end
+    end
 
   (* These pruning heuristics depend on conditions that change as we continue
      to search all children of the current node.
@@ -1006,8 +1006,9 @@ module Main = struct
 
   and probcut_child st pos ~depth ~ply ~beta_cut = fun () (m, _) ->
     let open Continue_or_stop in
-    let child = Legal.child m in
     let alpha = -beta_cut and beta = -beta_cut + 1 in
+    let child = Legal.child m in
+    State.inc_nodes st;
     State.push_history child st;
     (* Confirm with quiescence search first. *)
     let score = Int.neg @@ Quiescence.go st child
@@ -1025,6 +1026,7 @@ module Main = struct
       let depth = depth - probcut_min_depth + 2 in
       Tt.store st.tt pos ~ply ~depth ~score ~best:m ~node:Cut;
       Stop (Some score)
+    else if st.stopped then Stop None
     else Continue ()
 
   (* If the evaluation was cached then make sure that it doesn't refute
