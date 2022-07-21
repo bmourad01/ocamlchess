@@ -407,7 +407,7 @@ end
 
 type state = State.state
 
-(* We use an iterator object that incrementally applies insertion sort to
+(* We use an iterator object that incrementally applies selection sort to
    the array. In the context of alpha-beta pruning, we may not actually
    visit all the moves for a given position, so it makes no sense to waste
    time sorting the entire thing. *)
