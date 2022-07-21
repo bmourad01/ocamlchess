@@ -169,11 +169,12 @@ module Tt = struct
       ply   : int;
       depth : int;
       score : int;
-      best  : Position.legal;
+      best  : Legal.t;
       node  : node;
     } [@@deriving fields]
 
-    let position {best; _} = Position.Legal.parent best
+    let position {best; _} = Legal.parent best
+    let same {best; _} m = Legal.same best m
   end
 
   type entry = Entry.t
@@ -250,7 +251,7 @@ type tt = Tt.t
 
 module Result = struct
   type t = {
-    pv       : Position.legal list;
+    pv       : Legal.t list;
     score    : Uci.Send.Info.score;
     nodes    : int;
     depth    : int;
@@ -283,14 +284,16 @@ module State = struct
     history                    : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
-    killer1                    : Position.legal Oa.t;
-    killer2                    : Position.legal Oa.t;
+    killer1                    : Legal.t Oa.t;
+    killer2                    : Legal.t Oa.t;
     move_history               : int array;
     mutable move_history_max_w : int;
     mutable move_history_max_b : int;
     mutable stopped            : bool;
     mutable seldepth           : int;
     mutable nodes              : int;
+    mutable root_depth         : int;
+    mutable excluded           : Legal.t Uopt.t;
     evals                      : int array;
     iter                       : Result.t -> unit;
     ponder                     : unit future option;
@@ -318,6 +321,8 @@ module State = struct
       stopped = false;
       seldepth = 1;
       nodes = 0;
+      root_depth = 1;
+      excluded = Uopt.none;
       evals = Array.create ~len:eval_size 0;
       iter;
       ponder;
@@ -329,7 +334,8 @@ module State = struct
   (* Start a new iteration. *)
   let new_iter st =
     st.stopped <- false;
-    st.seldepth <- 1
+    st.seldepth <- 1;
+    st.root_depth <- st.root_depth + 1
 
   (* Increment the number of nodes we've evaluated. *)
   let inc_nodes st = st.nodes <- st.nodes + 1
@@ -403,6 +409,12 @@ module State = struct
   let pondering st = match st.ponder with
     | Some p -> not @@ Future.is_decided p
     | None -> false
+
+  let has_excluded st = Uopt.is_some st.excluded
+
+  let is_excluded st m =
+    Uopt.is_some st.excluded &&
+    Legal.same m @@ Uopt.unsafe_value st.excluded
 end
 
 type state = State.state
@@ -415,7 +427,7 @@ module Iterator = struct
   type t = {
     mutable i : int;
     length    : int;
-    moves     : (Position.legal * int) array;
+    moves     : (Legal.t * int) array;
   }
 
   let empty = {
@@ -481,7 +493,7 @@ module Order = struct
 
   (* Check if a particular move has been evaluated already. *)
   let is_hash ttentry = match ttentry with
-    | Some Tt.Entry.{best; _} -> Legal.same best
+    | Some entry -> Tt.Entry.same entry
     | None -> fun _ -> false
 
   let promote_by_value m =
@@ -583,7 +595,7 @@ end
 module Search = struct
   (* The results for a single ply. *)
   type t = {
-    mutable best  : Position.legal;
+    mutable best  : Legal.t;
     mutable alpha : int;
     mutable node  : node;
   }
@@ -770,8 +782,7 @@ module Quiescence = struct
       end
     end
 
-  and should_skip order evasion =
-    if evasion then order < Order.bad_capture_offset else order < 0
+  and should_skip order evasion = not evasion && order < 0
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -835,9 +846,11 @@ module Main = struct
       let it, best = Order.score st moves ~ply ~pos ~ttentry in
       let t = Search.create ~alpha ~best () in
       let finish _ = t.alpha in
-      let f = child st t ~eval ~beta ~depth ~ply ~check ~node ~improving in
+      let f = child st t pos ~eval ~beta ~depth
+          ~ply ~check ~node ~improving ~ttentry in
       let score = Iterator.fold_until it ~init:0 ~finish ~f in
-      Search.store st t pos ~depth ~ply ~score;
+      if not @@ State.has_excluded st then
+        Search.store st t pos ~depth ~ply ~score;
       score
 
   (* There are a number of pruning heuristics we can use before we even try
@@ -864,23 +877,25 @@ module Main = struct
           | None -> probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
 
   (* Search a child of the current node. *)
-  and child st t ~eval ~beta ~depth ~ply
-      ~check ~node ~improving = fun i (m, order) ->
+  and child st t pos ~eval ~beta ~depth ~ply
+      ~check ~node ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
     let[@inline] next () = Continue (i + 1) in
-    if should_skip t m ~eval ~beta ~depth ~check ~node ~order then next ()
-    else begin
-      (* Explore the child node. *)
-      let pos = Legal.child m in
-      State.inc_nodes st;
-      let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
-      let score = pvs st t pos ~i ~r ~beta ~ply ~depth ~node in
-      if Search.cutoff st t m ~score ~beta ~ply ~depth then Stop beta
-      else begin
-        Search.better t m ~score;
-        if st.stopped then Stop t.alpha else next ()
-      end
-    end
+    if should_skip st t m ~eval ~beta ~depth ~check ~node ~order then next ()
+    else match sext st pos m ~depth ~ply ~beta ~check ~ttentry with
+      | First score -> Stop score
+      | Second _ when st.stopped -> Stop t.alpha
+      | Second ext ->
+        let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
+        (* Explore the child node *)
+        let pos = Legal.child m in
+        State.inc_nodes st;
+        let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~node in
+        if Search.cutoff st t m ~score ~beta ~ply ~depth then Stop beta
+        else begin
+          Search.better t m ~score;
+          if st.stopped then Stop t.alpha else next ()
+        end
 
   (* These pruning heuristics depend on conditions that change as we continue
      to search all children of the current node.
@@ -889,9 +904,10 @@ module Main = struct
      position at this point, then we should just skip searching the current
      move.
   *)
-  and should_skip t m ~eval ~beta ~depth ~check ~node ~order =
+  and should_skip st t m ~eval ~beta ~depth ~check ~node ~order =
     futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node ||
-    see m ~order ~depth
+    see m ~order ~depth ||
+    State.is_excluded st m
 
   (* Futility pruning.
 
@@ -1006,34 +1022,36 @@ module Main = struct
 
   and probcut_child st pos ~depth ~ply ~beta_cut = fun () (m, _) ->
     let open Continue_or_stop in
-    let alpha = -beta_cut and beta = -beta_cut + 1 in
-    let child = Legal.child m in
-    State.inc_nodes st;
-    State.push_history child st;
-    (* Confirm with quiescence search first. *)
-    let score = Int.neg @@ Quiescence.go st child
-        ~alpha ~beta ~ply:(ply + 1) ~node:Cut in
-    let score =
+    if not @@ State.is_excluded st m then
+      let alpha = -beta_cut and beta = -beta_cut + 1 in
+      let child = Legal.child m in
+      State.inc_nodes st;
+      State.push_history child st;
+      (* Confirm with quiescence search first. *)
+      let score = Int.neg @@ Quiescence.go st child
+          ~alpha ~beta ~ply:(ply + 1) ~node:Cut in
+      let score =
+        if score >= beta_cut then
+          (* Do the full search. *)
+          let depth = depth - (probcut_min_depth - 1) in
+          Int.neg @@ go st child ~alpha ~beta ~depth
+            ~ply:(ply + 1) ~node:Cut
+        else score in
+      State.pop_history child st;
       if score >= beta_cut then
-        (* Do the full search. *)
-        let depth = depth - probcut_min_depth + 1 in
-        Int.neg @@ go st child ~alpha ~beta ~depth
-          ~ply:(ply + 1) ~node:Cut
-      else score in
-    State.pop_history child st;
-    if score >= beta_cut then
-      (* Save this cutoff in the TT. *)
-      let depth = depth - probcut_min_depth + 2 in
-      Tt.store st.tt pos ~ply ~depth ~score ~best:m ~node:Cut;
-      Stop (Some score)
-    else if st.stopped then Stop None
+        (* Save this cutoff in the TT. *)
+        let depth = depth - probcut_min_depth + 2 in
+        Tt.store st.tt pos ~ply ~depth ~score ~best:m ~node:Cut;
+        Stop (Some score)
+      else if st.stopped then Stop None
+      else Continue ()
     else Continue ()
 
   (* If the evaluation was cached then make sure that it doesn't refute
      our hypothesis. *)
   and probcut_tt ~depth ~beta_cut ~ttentry = match ttentry with
     | Some (entry : Tt.entry) ->
-      entry.depth < depth - probcut_min_depth + 2 ||
+      entry.depth < depth - (probcut_min_depth - 2) ||
       entry.score >= beta_cut
     | None -> true
 
@@ -1043,6 +1061,41 @@ module Main = struct
     (n / 2) - ((p / 2) * b2i improving)
 
   and probcut_min_depth = 5
+
+  (* Singular extensions.
+
+     If it is likely that we only have one good move, then extend the search.
+     If it turns out that this is not the only move to fail high, then we
+     produce a cutoff.
+  *)
+  and sext st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
+    | None -> Second 0
+    | Some entry ->
+      if not check
+      && ply > 0
+      && ply < st.root_depth * 2
+      && equal_node Cut @@ Tt.Entry.node entry
+      && depth >= sext_min_depth
+      && not (State.has_excluded st)
+      && Tt.Entry.same entry m
+      && Tt.Entry.depth entry >= sext_min_ttdepth depth
+      then
+        let ttscore = Tt.Entry.score entry in
+        let beta_cut = min beta (ttscore - depth * 2) in
+        let depth = (depth - 1) / 2 in
+        st.excluded <- Uopt.some m;
+        let score = go st pos ~depth ~ply
+            ~alpha:(beta_cut - 1)
+            ~beta:beta_cut
+            ~node:Cut in
+        st.excluded <- Uopt.none;
+        if score < beta_cut then Second 1
+        else if score >= beta then First score
+        else Second 0
+      else Second 0
+
+  and sext_min_depth = 4
+  and sext_min_ttdepth depth = depth - (sext_min_depth - 1)
 
   (* Late move reduction.
 
@@ -1131,7 +1184,8 @@ module Main = struct
       let it, best = Order.score st moves ~ply ~pos ~ttentry in
       let t = Search.create ~alpha ~best () in
       let finish _ = t.alpha in
-      let f = child st t ~eval ~beta ~depth ~ply ~check ~node ~improving in
+      let f = child st t pos ~eval ~beta ~depth
+          ~ply ~check ~node ~improving ~ttentry in
       let score = Iterator.fold_until it ~init:0 ~finish ~f in
       Search.store st t pos ~depth ~ply ~score;
       score, t.best
@@ -1182,24 +1236,26 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
         (Position.San.to_string m) ();
     Position.legal_moves @@ Legal.child m) |> ignore
 
-let extract_pv (st : state) moves ~depth ~best =
-  let pv = Tt.pv st.tt depth best in
+let extract_pv (st : state) moves ~best =
+  let pv = Tt.pv st.tt st.root_depth best in
   assert_pv pv moves;
   pv
 
-let result st ~depth ~score ~time ~pv ~mate ~mated =
-  let State.{tt; root; nodes; seldepth; iter; _} = st in
-  let score = convert_score score tt root ~pv ~mate ~mated in
-  let r = Result.Fields.create ~pv ~score ~nodes ~depth ~seldepth ~time in
-  iter r;
+let result (st : state) ~score ~time ~pv ~mate ~mated =
+  let score = convert_score score st.tt st.root ~pv ~mate ~mated in
+  let r = Result.Fields.create ~pv ~score ~time
+      ~nodes:st.nodes
+      ~depth:st.root_depth
+      ~seldepth:st.seldepth in
+  st.iter r;
   r
 
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
-let rec iterdeep ?(prev = None) ?(depth = 1) st moves =
+let rec iterdeep ?(prev = None) (st : state) moves =
   let basis = Option.value_map prev ~default:(-inf) ~f:snd in
-  let score, best = Main.aspire st moves depth basis in
+  let score, best = Main.aspire st moves st.root_depth basis in
   (* Get the elapsed time ASAP. *)
   let time = State.elapsed st in
   (* If the search was stopped, use the previous completed result, if
@@ -1208,13 +1264,13 @@ let rec iterdeep ?(prev = None) ?(depth = 1) st moves =
   let mated = is_mated score in
   if Limits.stopped st.limits then match prev with
     | Some (result, _) -> result
-    | None -> result st ~depth ~score ~time ~pv:[best] ~mate ~mated
-  else next st moves ~depth ~score ~best ~mate ~mated ~time
+    | None -> result st ~score ~time ~pv:[best] ~mate ~mated
+  else next st moves ~score ~best ~mate ~mated ~time
 
 (* Decide whether to continue iterating. *)
-and next st moves ~depth ~score ~best ~mate ~mated ~time =
-  let pv = extract_pv st moves ~depth ~best in
-  let result = result st ~depth ~score ~time ~pv ~mate ~mated in
+and next st moves ~score ~best ~mate ~mated ~time =
+  let pv = extract_pv st moves ~best in
+  let result = result st ~score ~time ~pv ~mate ~mated in
   let no_ponder = not @@ State.pondering st in
   (* If movetime was specified, check if we've reached the limit. *)
   let movetime_done =
@@ -1231,7 +1287,7 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
   (* Stop searching once we've reached the depth limit. *)
   let max_depth =
     Limits.depth st.limits |>
-    Option.value_map ~default:false ~f:(fun n -> depth >= n) in
+    Option.value_map ~default:false ~f:(fun n -> st.root_depth >= n) in
   (* Stop searching once we've reached the node limit. *)
   let max_nodes =
     no_ponder &&
@@ -1246,8 +1302,8 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
   (* Don't continue if there's a mating sequence within the
      current depth limit. *)
   let mate_inevitable = no_ponder && begin
-      (mate && mate_score - score <= depth) ||
-      (mated && mate_score + score <= depth)
+      (mate && mate_score - score <= st.root_depth) ||
+      (mated && mate_score + score <= st.root_depth)
     end in
   (* Continue iterating? *)
   if movetime_done
@@ -1258,7 +1314,7 @@ and next st moves ~depth ~score ~best ~mate ~mated ~time =
   || mate_inevitable then result else begin
     State.new_iter st;
     let prev = Some (result, score) in
-    iterdeep st moves ~depth:(depth + 1) ~prev
+    iterdeep st moves ~prev
   end
 
 (* Either checkmate or stalemate. *)
