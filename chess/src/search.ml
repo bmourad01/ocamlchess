@@ -1040,7 +1040,7 @@ module Main = struct
       State.pop_history child st;
       if score >= beta_cut then
         (* Save this cutoff in the TT. *)
-        let depth = depth - probcut_min_depth + 2 in
+        let depth = depth - (probcut_min_depth - 2) in
         Tt.store st.tt pos ~ply ~depth ~score ~best:m ~node:Cut;
         Stop (Some score)
       else if st.stopped then Stop None
