@@ -755,7 +755,7 @@ module Quiescence = struct
   (* Search a child of the current node. *)
   and child st t ~qe ~beta ~eval ~ply ~node ~evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if should_skip m qe order evasion then Stop t.alpha
+    if should_skip m qe order evasion then Continue ()
     else begin
       let pos = Legal.child m in
       State.push_history pos st;
