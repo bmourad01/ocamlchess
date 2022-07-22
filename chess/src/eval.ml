@@ -3,8 +3,6 @@ open Core_kernel
 module Bb = Bitboard
 module Pre = Precalculated
 
-let material_weight = 100
-
 let[@inline] add2 (w, x) (y, z) = w + y, x + z
 let[@inline] sub2 (w, x) (y, z) = w - y, x - z
 let[@inline] scale2 (x, y) z = x * z, y * z
@@ -52,12 +50,23 @@ let[@specialise] perspective c neg x = match c with
   | Piece.Black -> neg x
 
 module Material = struct
+  let pawn_mg = 100
+  let pawn_eg = 140
+  let knight_mg = 300
+  let knight_eg = 320
+  let bishop_mg = 300
+  let bishop_eg = 330
+  let rook_mg = 500
+  let rook_eg = 500
+  let queen_mg = 900
+  let queen_eg = 900
+
   let weights = Piece.[|
-      Pawn,   (100, 140);
-      Knight, (300, 320);
-      Bishop, (300, 330);
-      Rook,   (500, 500);
-      Queen,  (900, 900);
+      Pawn,   (pawn_mg, pawn_eg);
+      Knight, (knight_mg, knight_eg);
+      Bishop, (bishop_mg, bishop_eg);
+      Rook,   (rook_mg, rook_eg);
+      Queen,  (queen_mg, queen_eg);
     |]
 
   (* Count the material on the board. *)

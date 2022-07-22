@@ -404,12 +404,13 @@ module State = struct
     | Some p -> not @@ Future.is_decided p
     | None -> false
 
+  let excluded st ~ply = Oa.unsafe_get st.excluded ply
   let has_excluded st ~ply = Oa.unsafe_is_some st.excluded ply
   let set_excluded st m ~ply = Oa.unsafe_set_some st.excluded ply m
   let clear_excluded st ~ply = Oa.unsafe_set_none st.excluded ply
 
   let is_excluded st m ~ply =
-    Oa.unsafe_get st.excluded ply |> Option.exists ~f:(Legal.same m)
+    excluded st ~ply |> Option.exists ~f:(Legal.same m)
 end
 
 type state = State.state
@@ -663,18 +664,13 @@ module Search = struct
 
      If we've already found a shorter path to checkmate than our current
      distance from the root, then just cut off the search here.
-
-     It's important to leave alpha and beta unchanged if they are set to
-     the default window (-inf/inf).
   *)
   let mdp ~alpha ~beta ~ply =
-    let alpha =
-      if alpha = -inf then alpha
-      else max alpha (-mate_score + ply) in
-    let beta =
-      if beta = inf then beta
-      else min beta (mate_score - ply) in
-    if alpha >= beta then First alpha else Second (alpha, beta)
+    if ply > 0 then
+      let alpha = max alpha @@ mated ply in
+      let beta = min beta @@ mating ply in
+      if alpha >= beta then First alpha else Second (alpha, beta)
+    else Second (alpha, beta)
 end
 
 let b2i = Bool.to_int
@@ -686,13 +682,13 @@ let b2in = Fn.compose b2i not
 module Quiescence = struct
   (* Delta pruning. *)
   let delta =
-    let margin = Piece.Kind.value Queen * Eval.material_weight in
+    let margin = Eval.Material.knight_eg in
     fun pos eval alpha -> eval + margin <= alpha && not (Eval.is_endgame pos)
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
      function. *)
   let eval st pos ~alpha ~beta ~ply ~check ~ttentry =
-    if not check then begin
+    if not check then
       let eval = Eval.go pos in
       let score = match (ttentry : Tt.entry option) with
         | Some {score; node = Cut; _}
@@ -700,10 +696,10 @@ module Quiescence = struct
         | Some {score; node = All; _}
           when Tt.to_score score ply <= eval -> score
         | None | Some _ -> eval in
-      if score >= beta then First beta
-      else if delta pos score alpha then First alpha
+      if score >= beta then First score
+      else if delta pos score alpha then First score
       else Second (max score alpha)
-    end else Second alpha
+    else Second alpha
 
   (* TT entries for quiescence search have a depth of either 0 or -1,
      depending on whether this is the first ply or we're in check. *)
@@ -751,15 +747,15 @@ module Quiescence = struct
         | Some (it, best, evasion) ->
           let t = Search.create ~alpha ~best () in
           let finish () = t.alpha in
-          let f = child st t ~beta ~eval ~ply ~node ~evasion in
+          let f = child st t ~qe:(ref 0) ~beta ~eval ~ply ~node ~evasion in
           let score = Iterator.fold_until it ~init:() ~finish ~f in
           Search.store st t pos ~depth ~ply ~score;
           score
 
   (* Search a child of the current node. *)
-  and child st t ~beta ~eval ~ply ~node ~evasion = fun () (m, order) ->
+  and child st t ~qe ~beta ~eval ~ply ~node ~evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if should_skip order evasion then Stop t.alpha
+    if should_skip m qe order evasion then Stop t.alpha
     else begin
       let pos = Legal.child m in
       State.push_history pos st;
@@ -777,7 +773,13 @@ module Quiescence = struct
       end
     end
 
-  and should_skip order evasion = not evasion && order < 0
+  and should_skip m qe order evasion =
+    if evasion then
+      not (Legal.is_capture m) &&
+      let result = !qe > 1 in
+      incr qe;
+      result
+    else order < 0
 end
 
 (* The main search of the game tree. The core of it is the negamax algorithm
@@ -861,14 +863,12 @@ module Main = struct
     | None -> None
     | Some _ when equal_node node Pv || null -> None
     | Some eval ->
-      match razor st pos moves ~eval ~alpha ~beta ~ply ~depth ~node with
+      match razor st pos moves ~eval ~alpha ~ply ~depth ~node with
       | Some _ as score -> score
       | None ->
-        let their_threats =
-          Threats.(count @@ get pos @@ Position.inactive pos) in
-        match rfp ~depth ~eval ~beta ~their_threats ~improving with
+        match rfp ~depth ~eval ~beta ~improving with
         | Some _ as score -> score
-        | None -> match nmp st pos ~eval ~beta ~ply ~depth ~their_threats with
+        | None -> match nmp st pos ~eval ~beta ~ply ~depth with
           | Some _ as score -> score
           | None -> probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
 
@@ -921,7 +921,7 @@ module Main = struct
       ~f:(fun eval -> eval + futile_margin depth <= alpha)
 
   and futile_margin depth =
-    let m = Piece.Kind.value Pawn * Eval.material_weight in
+    let m = Eval.Material.pawn_mg in
     m + m * depth
 
   and futile_max_depth = 6
@@ -944,13 +944,14 @@ module Main = struct
      If our score is within a margin above beta, then it is likely too
      good, and should cause a cutoff.
   *)
-  and rfp ~depth ~eval ~beta ~their_threats ~improving =
-    let e = eval - rfp_margin depth their_threats improving in
+  and rfp ~depth ~eval ~beta ~improving =
+    let e = eval - rfp_margin depth improving in
     Option.some_if (depth <= rfp_max_depth && e >= beta) eval
 
-  and rfp_margin depth their_threats improving =
-    let r = b2i (improving && their_threats <= 0) in
-    Piece.Kind.value Pawn * Eval.material_weight * (depth - r)
+  and rfp_margin depth improving =
+    let m = Eval.Material.pawn_mg in
+    let r = b2i improving in
+    m * (depth - r)
 
   and rfp_max_depth = 8
 
@@ -960,11 +961,11 @@ module Main = struct
      response still produces a beta cutoff, then we know this position
      is unlikely.
   *)
-  and nmp st pos ~eval ~beta ~ply ~depth ~their_threats =
-    if their_threats <= 0
-    && eval >= beta
+  and nmp st pos ~eval ~beta ~ply ~depth =
+    if eval >= beta
     && depth >= nmp_min_depth
-    && not @@ Eval.is_endgame pos then
+    && not (Eval.is_endgame pos)
+    && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
       let r = if depth <= 6 then 2 else 3 in
       let score =
         Position.null_move_unsafe pos |> go st
@@ -982,20 +983,24 @@ module Main = struct
   (* Razoring.
 
      When approaching the horizon, if our evaluation is significantly
-     lower than alpha, then drop down to quiescence search.
+     lower than alpha, then drop down to quiescence search to see if
+     the position can be improved.
   *)
-  and razor st pos moves ~eval ~alpha ~beta ~ply ~depth ~node =
-    if depth <= razor_max_depth && eval + razor_margin <= alpha then
-      Option.some @@ Quiescence.with_moves st pos moves
-        ~ply ~node ~alpha ~beta ~check:false
+  and razor st pos moves ~eval ~alpha ~ply ~depth ~node =
+    if depth <= razor_max_depth && eval + razor_margin depth < alpha then
+      let score = Quiescence.with_moves st pos moves ~ply ~node
+          ~check:false ~alpha:(alpha - 1) ~beta:alpha in
+      Option.some_if (score < alpha) score
     else None
 
-  and razor_max_depth = 1
+  and razor_max_depth = 7
 
   and razor_margin =
-    let p = Piece.Kind.value Pawn * Eval.material_weight in
-    let n = Piece.Kind.value Knight * Eval.material_weight in
-    n + (p / 2)
+    let p = Eval.Material.pawn_mg in
+    let n = Eval.Material.knight_mg in
+    let base = n + (p / 2) in
+    let mult = n - (p / 2) in
+    fun depth -> base + mult * depth * depth
 
   (* ProbCut
 
@@ -1050,8 +1055,8 @@ module Main = struct
     | None -> true
 
   and probcut_margin improving =
-    let n = Piece.Kind.value Knight * Eval.material_weight in
-    let p = Piece.Kind.value Pawn * Eval.material_weight in
+    let p = Eval.Material.pawn_mg in
+    let n = Eval.Material.knight_mg in
     (n / 2) - ((p / 2) * b2i improving)
 
   and probcut_min_depth = 5

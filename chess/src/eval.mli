@@ -1,14 +1,20 @@
 (** This module implements the algorithm for statically evaluating Chess
     positions. *)
 
-(** Given the standard valuations of pieces in chess:
-
-    https://en.wikipedia.org/wiki/Chess_piece_relative_value#Standard_valuations
-
-    [material_weight] is the weight given to these valuations relative to the
-    entire score of the position.
-*)
-val material_weight : int
+(** This submodule exposes weights used in material evaluations, for both
+    middle and endgame positions. *)
+module Material : sig
+  val pawn_mg : int
+  val pawn_eg : int
+  val knight_mg : int
+  val knight_eg : int
+  val bishop_mg : int
+  val bishop_eg : int
+  val rook_mg : int
+  val rook_eg : int
+  val queen_mg : int
+  val queen_eg : int
+end
 
 (** Returns true if the position has approached endgame. *)
 val is_endgame : Position.t -> bool
