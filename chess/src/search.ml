@@ -883,7 +883,7 @@ module Main = struct
       | First score -> Stop score
       | Second _ when st.stopped -> Stop t.alpha
       | Second ext ->
-        let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~order ~improving in
+        let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~improving in
         (* Explore the child node *)
         let pos = Legal.child m in
         State.inc_nodes st;
@@ -1099,23 +1099,21 @@ module Main = struct
   (* Late move reduction.
 
      For moves that are likely to fail low, reduce the depth of the search.
-     However, to avoid losing precision, we have to exclude the following
-     kinds of moves:
+     However, to avoid losing precision, we have to skip under the following
+     conditions:
 
-     - Any PV node in a PVS search
-     - Any response to us being in check
-     - Moves with a negative SEE value
+     - Any time we're in check
+     - Any time we're searching PV node in a PVS search
+     - Capture moves
      - Moves that give check
-     - Moves that introduce new threats
      - Killer moves
   *)
-  and lmr st m ~i ~beta ~ply ~depth ~check ~node ~order ~improving =
+  and lmr st m ~i ~beta ~ply ~depth ~check ~node ~improving =
     if not check
     && not (equal_node node Pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && Order.(order > bad_capture_offset)
-    && not (Legal.gives_check m)
+    && is_quiet m
     && not @@ State.is_killer m ply st then
       let t = Bb.count @@ Legal.new_threats m in
       max 0 (1 + b2in improving - t)
