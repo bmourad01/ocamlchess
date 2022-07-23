@@ -34,9 +34,21 @@ module State = struct
     {st with pos}
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
-  let set_stop stop = update @@ fun st -> {st with stop}
-  let set_ponder ponder = update @@ fun st -> {st with ponder}
   let set_debug debug = update @@ fun st -> {st with debug}
+
+  let new_stop () =
+    let f, p = Future.create () in
+    begin update @@ fun st ->
+      {st with stop = Some p}
+    end >>| fun () -> f
+
+  let new_ponder_if c =
+    if c then
+      let f, p = Future.create () in
+      begin update @@ fun st ->
+        {st with ponder = Some p}
+      end >>| fun () -> Some f
+    else return None
 end
 
 open State.Syntax
@@ -307,84 +319,98 @@ let book () =
     | Error _ -> false
   else return false
 
-let go g =
-  check_thread >>= book >>= function
-  | true -> cont ()
-  | false ->
-    (* Parse the search limits. *)
-    let infinite = ref false in
-    let nodes = ref None in
-    let mate = ref None in
-    let depth = ref None in
-    let movetime = ref None in
-    let wtime = ref None in
-    let btime = ref None in
-    let winc = ref None in
-    let binc = ref None in
-    let movestogo = ref None in
-    let ponder = ref false in
-    let moves = ref [] in
-    let opt r v s = match !r with
-      | Some _ -> failwithf "Error in go command: option '%s' already exists" s ()
-      | None -> r := Some v in
-    let lst l v s = match !l with
-      | _ :: _ -> failwithf "Error in go command: option '%s' already exists" s ()
-      | [] -> l := v in
+module Go = struct
+  type t = {
+    mutable infinite  : bool;
+    mutable nodes     : int option;
+    mutable mate      : int option;
+    mutable depth     : int option;
+    mutable movetime  : int option;
+    mutable wtime     : int option;
+    mutable btime     : int option;
+    mutable winc      : int option;
+    mutable binc      : int option;
+    mutable movestogo : int option;
+    mutable ponder    : bool;
+    mutable moves     : Move.t list;
+  } [@@deriving fields]
+
+  let create () =
+    Fields.create
+      ~infinite:false
+      ~nodes:None
+      ~mate:None
+      ~depth:None
+      ~movetime:None
+      ~wtime:None
+      ~btime:None
+      ~winc:None
+      ~binc:None
+      ~movestogo:None
+      ~ponder:false
+      ~moves:[]
+
+  let opt t v name ~f ~g = match g t with
+    | Some _ -> failwithf "Error in go command: duplicate option '%s'" name ()
+    | None -> f t @@ Some v
+
+  let lst t v name ~f ~g = match g t with
+    | _ :: _ -> failwithf "Error in go command: duplicate option '%s'" name ()
+    | [] -> f t v
+
+  let new_limits t active stop =
+    Search.Limits.create () ~active ~stop
+      ~nodes:t.nodes
+      ~mate:t.mate
+      ~depth:t.depth
+      ~movetime:t.movetime
+      ~movestogo:t.movestogo
+      ~wtime:t.wtime
+      ~btime:t.btime
+      ~binc:t.binc
+      ~infinite:t.infinite
+      ~moves:t.moves
+
+  let parse (g : Uci.Recv.Go.t list) =
+    let t = create () in
     (* As a hack, ponder mode will initially be set up as an infinite search.
        Then, when the ponderhit command is sent, the search can continue with
        the normal limits. *)
-    let pondering () = ponder := true; infinite := true in
+    let pondering () = t.ponder <- true; t.infinite <- true in
     (* If no parameters were given, then assume an infinite search. This is how
        Stockfish behaves. To be fair, the UCI protocol is very underspecified
        and underdocumented. It begs the question as to why it's still so widely
        supported. *)
-    if List.is_empty g then infinite := true
-    else List.iter g ~f:(fun go ->
-        let open Uci.Recv.Go in
-        match go with
-        | Infinite      -> infinite := true
-        | Nodes n       -> opt nodes n "nodes"
-        | Mate n        -> opt mate n "mate"
-        | Depth n       -> opt depth n "depth"
-        | Movetime t    -> opt movetime t "movetime"
-        | Wtime t       -> opt wtime t "wtime"
-        | Btime t       -> opt btime t "btime"
-        | Winc n        -> opt winc n "winc"
-        | Binc n        -> opt binc n "binc"
-        | Movestogo n   -> opt movestogo n "movestogo"
-        | Ponder        -> pondering ()
-        | Searchmoves l -> lst moves l "searchmoves");
-    (* Construct the search limits. *)
-    State.(gets pos) >>= fun root ->
-    let active = Position.active root in
-    let stop, stop_promise = Future.create () in
-    let ponder, ponder_promise =
-      if !ponder then
-        let f, p = Future.create () in
-        Some f, Some p
-      else None, None in
-    let limits = Search.Limits.create
-        ~nodes:!nodes
-        ~mate:!mate
-        ~depth:!depth
-        ~movetime:!movetime
-        ~movestogo:!movestogo
-        ~wtime:!wtime
-        ~winc:!winc
-        ~btime:!btime
-        ~binc:!binc
-        ~infinite:!infinite
-        ~moves:!moves
-        ~active
-        ~stop
-        () in
-    (* Start the search. *)
-    State.(gets history) >>= fun history ->
-    State.(gets tt) >>= fun tt ->
-    State.set_stop (Some stop_promise) >>= fun () ->
-    State.set_ponder ponder_promise >>= fun () ->
-    new_thread ~root ~limits ~history ~tt ~stop ~ponder;
-    cont ()
+    if not @@ List.is_empty g then List.iter g ~f:(function
+        | Nodes n       -> opt t n "nodes"       ~f:set_nodes     ~g:nodes
+        | Mate n        -> opt t n "mate"        ~f:set_mate      ~g:mate
+        | Depth n       -> opt t n "depth"       ~f:set_depth     ~g:depth
+        | Movetime n    -> opt t n "movetime"    ~f:set_movetime  ~g:movetime
+        | Wtime n       -> opt t n "wtime"       ~f:set_wtime     ~g:wtime
+        | Btime n       -> opt t n "btime"       ~f:set_btime     ~g:btime
+        | Winc n        -> opt t n "winc"        ~f:set_winc      ~g:winc
+        | Binc n        -> opt t n "binc"        ~f:set_binc      ~g:binc
+        | Movestogo n   -> opt t n "movestogo"   ~f:set_movestogo ~g:movestogo
+        | Searchmoves l -> lst t l "searchmoves" ~f:set_moves     ~g:moves
+        | Infinite      -> t.infinite <- true
+        | Ponder        -> pondering ())
+    else t.infinite <- true; t
+
+  let run g = check_thread >>= book >>= function
+    | true -> cont ()
+    | false ->
+      (* Parse the arguments to the command *)
+      let t = parse g in
+      State.(gets pos) >>= fun root ->
+      State.new_stop () >>= fun stop ->
+      let limits = new_limits t (Position.active root) stop in
+      (* Start the search. *)
+      State.new_ponder_if t.ponder >>= fun ponder ->
+      State.(gets history) >>= fun history ->
+      State.(gets tt) >>= fun tt ->
+      new_thread ~root ~limits ~history ~tt ~stop ~ponder;
+      cont ()
+end
 
 let stop = State.update @@ function
   | {stop = Some stop; _} as st ->
@@ -408,16 +434,14 @@ let ponderhit = State.update @@ function
 let register _ = cont ()
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
-let recv cmd =
-  let open Uci.Recv in
-  match cmd with
+let recv cmd = match (cmd : Uci.Recv.t) with
   | Uci -> cont @@ uci ()
   | Isready -> cont @@ isready ()
   | Setoption opt -> setoption opt
   | Ucinewgame -> ucinewgame >>= cont
   | Position (`fen pos, moves) -> position pos moves
   | Position (`startpos, moves) -> position Position.start moves
-  | Go g -> go g
+  | Go g -> Go.run g
   | Stop -> stop >>= cont
   | Quit -> finish ()
   | Ponderhit -> ponderhit >>= cont
