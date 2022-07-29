@@ -155,9 +155,6 @@ module Tt = struct
       best  : Legal.t option;
       bound : bound;
     } [@@deriving fields]
-
-    let same entry m =
-      Option.exists entry.best ~f:(Legal.same m)
   end
 
   type entry = Entry.t
@@ -477,10 +474,9 @@ module Order = struct
   let history_offset = -90
   let history_scale = 180
 
-  (* Check if a particular move has been evaluated already. *)
-  let is_hash ttentry = match ttentry with
-    | Some entry -> Tt.Entry.same entry
-    | None -> fun _ -> false
+  let is_hash ttentry = match (ttentry : Tt.entry option) with
+    | None | Some {best = None; _} -> fun _ -> false
+    | Some {best = Some best; _} -> fun m -> Legal.same best m
 
   let promote_by_value m =
     Legal.move m |> Move.promote |>
@@ -1074,17 +1070,17 @@ module Main = struct
   *)
   and semc st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
     | None -> Second 0
-    | Some entry ->
-      let ttscore = Tt.(to_score (Entry.score entry) ply) in
+    | Some (entry : Tt.entry) ->
+      let ttscore = Tt.(to_score entry.score ply) in
       if not check
       && ply > 0
       && ply < st.root_depth * 2
-      && not Tt.(equal_bound Upper @@ Entry.bound entry)
+      && not (Tt.equal_bound entry.bound Upper)
       && not (is_mate ttscore || is_mated ttscore)
-      && depth >= sext_min_depth
+      && depth >= se_min_depth
       && not (State.has_excluded st ~ply)
-      && Tt.Entry.same entry m
-      && Tt.Entry.depth entry >= sext_min_ttdepth depth then
+      && Option.exists entry.best ~f:(Legal.same m)
+      && entry.depth >= se_min_ttdepth depth then
         let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
         State.set_excluded st m ~ply;
@@ -1098,8 +1094,8 @@ module Main = struct
         else Second 0
       else Second 0
 
-  and sext_min_depth = 4
-  and sext_min_ttdepth depth = depth - (sext_min_depth - 1)
+  and se_min_depth = 4
+  and se_min_ttdepth depth = depth - (se_min_depth - 1)
 
   (* Late move reduction.
 
