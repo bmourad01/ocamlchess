@@ -1,6 +1,6 @@
 # Overview
 
-This project aims to create an efficient, UCI-compatible chess engine (and library) in OCaml that is *functional first*.
+This project aims to create an efficient, UCI-compatible chess engine (and library) in OCaml.
 
 # Requirements
 
