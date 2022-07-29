@@ -759,10 +759,8 @@ module Quiescence = struct
         match order st moves pos ~ply ~check ~init ~ttentry with
         | None -> Option.value_exn score
         | Some (it, best, evasion) ->
-          (* XXX: Why do we get seemingly better results starting at -inf
-             rather than the static evaluation? Maybe the evaluation function
-             needs improvements. *)
-          let t = Search.create ~alpha ~best () in
+          let score = Option.value score ~default:(-inf) in
+          let t = Search.create ~alpha ~score ~best () in
           let finish () = t.score in
           let f = child st t ~qe:(ref 0) ~beta ~eval ~ply ~node ~evasion in
           let score = Iterator.fold_until it ~init:() ~finish ~f in
