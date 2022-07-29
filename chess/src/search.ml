@@ -135,8 +135,8 @@ let max_ply = 64
 
 (* Mate scores should be relative to the distance from the root position.
    Shorter distances are to be preferred. *)
-let is_mate score = score >= mate_score - max_ply
-let is_mated score = score <= (-mate_score) + max_ply
+let is_mate score = score >= mate_score - max_ply && score <= mate_score
+let is_mated score = score >= -mate_score && score <= (-mate_score) + max_ply
 
 (* When we return a mate score during search, it's from the perspective
    of the player that is being mated. *)
@@ -914,9 +914,12 @@ module Main = struct
      move.
   *)
   and should_skip st t m ~eval ~beta ~depth ~ply ~check ~node ~order =
-    futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node ||
-    see m ~order ~depth ||
-    State.is_excluded st m ~ply
+    State.is_excluded st m ~ply || begin
+      t.score > mated max_ply && begin
+        futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~node ||
+        see m ~order ~depth
+      end
+    end
 
   (* Futility pruning.
 
