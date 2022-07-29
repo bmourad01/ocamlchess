@@ -601,14 +601,14 @@ module Search = struct
     end; result
 
   (* Alpha may have improved. *)
-  let better st t m ~score ~ply ~pv =
+  let better ?(q = false) st t m ~score ~ply ~pv =
     if score > t.score then begin
       t.score <- score;
       if score > t.alpha then begin
         t.best <- Some m;
         t.alpha <- score;
         if pv then begin
-          t.bound <- Exact;
+          if not q then t.bound <- Exact;
           State.update_pv st m ~ply;
         end
       end
@@ -764,7 +764,7 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
       State.pop_history pos st;
-      Search.better st t m ~score ~ply ~pv;
+      Search.better st t m ~score ~ply ~pv ~q:true;
       if Search.cutoff st t m ~score ~beta ~ply ~depth:0
       || st.stopped then Stop t.score
       else Continue ()
