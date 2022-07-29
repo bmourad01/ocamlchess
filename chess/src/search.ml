@@ -152,12 +152,12 @@ module Tt = struct
       ply   : int;
       depth : int;
       score : int;
-      best  : Legal.t;
+      best  : Legal.t option;
       bound : bound;
     } [@@deriving fields]
 
-    let position {best; _} = Legal.parent best
-    let same {best; _} m = Legal.same best m
+    let same entry m =
+      Option.exists entry.best ~f:(Legal.same m)
   end
 
   type entry = Entry.t
@@ -513,16 +513,7 @@ module Order = struct
   (* Score each move according to `eval`. Note that `moves` is assumed to be
      non-empty. *)
   let score_aux moves ~eval =
-    let best_score = ref (-inf) in
-    let best_move = ref @@ List.hd_exn moves in
-    let moves = array_of_list_map moves ~f:(fun m ->
-        let score = eval m in
-        if score > !best_score then begin
-          best_score := score;
-          best_move := m;
-        end;
-        m, score) in
-    Iterator.create moves, !best_move
+    Iterator.create @@ array_of_list_map moves ~f:(fun m -> m, eval m)
 
   (* Score the moves for normal search. Priority (from best to worst):
 
@@ -581,14 +572,14 @@ end
 module Search = struct
   (* The results for a single ply. *)
   type t = {
-    mutable best  : Legal.t;
+    mutable best  : Legal.t option;
     mutable alpha : int;
     mutable score : int;
     mutable bound : Tt.bound;
   }
 
-  let create ?(alpha = -inf) ?score ~best () = {
-    best;
+  let create ?(alpha = -inf) ?score () = {
+    best = None;
     alpha;
     score = Option.value score ~default:(-inf);
     bound = Upper;
@@ -605,7 +596,7 @@ module Search = struct
     let result = score >= beta in
     if result then begin
       update_history_and_killer st m ~ply ~depth;
-      t.best <- m;
+      t.best <- Some m;
       t.bound <- Lower;
     end; result
 
@@ -614,7 +605,7 @@ module Search = struct
     if score > t.score then begin
       t.score <- score;
       if score > t.alpha then begin
-        t.best <- m;
+        t.best <- Some m;
         t.alpha <- score;
         if pv then begin
           t.bound <- Exact;
@@ -717,13 +708,13 @@ module Quiescence = struct
   (* To avoid state explosion, only generate quiet checks at the root. *)
   let order st moves pos ~ply ~check ~init ~ttentry =
     match Order.qscore moves ~check:init ~ttentry with
-    | Some (it, best) -> Some (it, best, false)
+    | Some it -> Some (it, false)
     | None when not check -> None
     | None ->
       (* We're in check, but our only responses are quiet moves, so just
          generate all evasions. *)
-      let it, best = Order.score st moves ~ply ~pos ~ttentry in
-      Some (it, best, true)
+      let it = Order.score st moves ~ply ~pos ~ttentry in
+      Some (it, true)
 
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~pv =
@@ -750,8 +741,8 @@ module Quiescence = struct
       | Second (alpha, score) ->
         match order st moves pos ~ply ~check ~init ~ttentry with
         | None -> Option.value_exn score
-        | Some (it, best, evasion) ->
-          let t = Search.create ~alpha ?score ~best () in
+        | Some (it, evasion) ->
+          let t = Search.create ~alpha ?score () in
           let finish () = t.score in
           let f = child st t ~qe:(ref 0) ~beta ~eval ~ply ~pv ~evasion in
           let score = Iterator.fold_until it ~init:() ~finish ~f in
@@ -845,8 +836,8 @@ module Main = struct
               ~null ~pv ~improving ~ttentry with
       | Some score -> score
       | None ->
-        let it, best = Order.score st moves ~ply ~pos ~ttentry in
-        let t = Search.create ~alpha ~best () in
+        let it = Order.score st moves ~ply ~pos ~ttentry in
+        let t = Search.create ~alpha () in
         let finish _ = t.score in
         let f = child st t pos ~eval ~beta ~depth
             ~ply ~check ~pv ~improving ~ttentry in
@@ -1021,7 +1012,7 @@ module Main = struct
       let finish () = None in
       let f = probcut_child st pos ~depth ~ply ~beta_cut in
       match Order.qscore moves ~ttentry ~check:true with
-      | Some (it, _) -> Iterator.fold_until it ~init:() ~finish ~f
+      | Some it -> Iterator.fold_until it ~init:() ~finish ~f
       | None -> None
     else None
 
@@ -1046,7 +1037,7 @@ module Main = struct
       if score >= beta_cut then
         (* Save this cutoff in the TT. *)
         let depth = depth - (probcut_min_depth - 2) in
-        Tt.store st.tt pos ~ply ~depth ~score ~best:m ~bound:Lower;
+        Tt.store st.tt pos ~ply ~depth ~score ~best:(Some m) ~bound:Lower;
         Stop (Some score)
       else if st.stopped then Stop None
       else Continue ()

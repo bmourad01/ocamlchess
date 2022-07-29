@@ -111,13 +111,10 @@ module Tt : sig
     val score : t -> int
 
     (** The best move for the position. *)
-    val best : t -> Position.legal
+    val best : t -> Position.legal option
 
     (** The bound for the position's score. *)
     val bound : t -> bound
-
-    (** The position that this entry corresponds to. *)
-    val position : t -> Position.t
   end
 
   type entry = Entry.t
