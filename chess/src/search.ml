@@ -413,12 +413,11 @@ module State = struct
     let child_pv = Array.unsafe_get st.pv (ply + 1) in
     Oa.unsafe_set_some pv 0 m;
     let rec aux i = match Oa.unsafe_get child_pv (i - 1) with
-      | None -> i
+      | None -> Oa.unsafe_set_none pv i
       | Some m ->
         Oa.unsafe_set_some pv i m;
         aux (i + 1) in
-    let i = aux 1 in
-    Oa.unsafe_set_none pv i
+    aux 1
 end
 
 type state = State.t
