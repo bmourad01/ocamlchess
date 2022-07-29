@@ -891,8 +891,8 @@ module Main = struct
   and should_skip st t m ~eval ~beta ~depth ~ply ~check ~pv ~order =
     State.is_excluded st m ~ply || begin
       t.score > mated max_ply && begin
-        futile m ~eval ~alpha:t.alpha ~beta ~depth ~check ~pv ||
-        see m ~order ~depth
+        see m ~order ~depth ||
+        futile t m ~eval ~beta ~depth ~check ~pv
       end
     end
 
@@ -903,12 +903,12 @@ module Main = struct
 
      Note that `eval` should be `None` if we are in check.
   *)
-  and futile m ~eval ~alpha ~beta ~depth ~check ~pv =
+  and futile t m ~eval ~beta ~depth ~check ~pv =
     not pv &&
-    is_quiet m &&
     depth <= futile_max_depth &&
+    is_quiet m &&
     Option.value_map eval ~default:false
-      ~f:(fun eval -> eval + futile_margin depth <= alpha)
+      ~f:(fun eval -> eval + futile_margin depth <= t.alpha)
 
   and futile_margin depth =
     let m = Eval.Material.pawn_mg in
@@ -923,7 +923,6 @@ module Main = struct
      of the search, then just skip the move.
   *)
   and see m ~order ~depth =
-    Option.is_some @@ Legal.capture m &&
     order <= Order.bad_capture_offset &&
     order - Order.bad_capture_offset < depth * see_margin
 
