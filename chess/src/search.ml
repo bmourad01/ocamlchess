@@ -230,15 +230,6 @@ module Tt = struct
       | Cut when score >= beta -> First score
       | All when score <= alpha -> First score
       | _ -> Second (Some entry)
-
-  (* Extract the principal variation from the table. *)
-  let pv tt n m =
-    let rec aux i acc pos = match find tt pos with
-      | None -> List.rev acc
-      | Some Entry.{best; _} when n > i ->
-        aux (i + 1) (best :: acc) @@ Legal.child best
-      | _ -> List.rev acc in
-    aux 1 [m] @@ Legal.child m
 end
 
 type tt = Tt.t
@@ -275,9 +266,11 @@ module State = struct
   type t = {
     limits                     : limits;
     root                       : Position.t;
+    check                      : bool;
     history                    : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
+    pv                         : Legal.t Oa.t array;
     excluded                   : Legal.t Oa.t;
     killer1                    : Legal.t Oa.t;
     killer2                    : Legal.t Oa.t;
@@ -293,6 +286,7 @@ module State = struct
     ponder                     : unit future option;
   }
 
+  let pv_size = max_ply + 2
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
   let eval_size = Piece.Color.count * max_ply
@@ -304,9 +298,11 @@ module State = struct
         | Some n -> n | None -> 1); {
       limits;
       root;
+      check = Position.in_check root;
       history;
       tt;
       start_time = Time.now ();
+      pv = Array.init pv_size ~f:(fun _ -> Oa.create ~len:pv_size);
       excluded = Oa.create ~len:max_ply;
       killer1 = Oa.create ~len:killer_size;
       killer2 = Oa.create ~len:killer_size;
@@ -411,6 +407,18 @@ module State = struct
 
   let is_excluded st m ~ply =
     excluded st ~ply |> Option.exists ~f:(Legal.same m)
+
+  let update_pv st m ~ply =
+    let pv = Array.unsafe_get st.pv ply in
+    let child_pv = Array.unsafe_get st.pv (ply + 1) in
+    Oa.unsafe_set_some pv 0 m;
+    let rec aux i = match Oa.unsafe_get child_pv (i - 1) with
+      | None -> i
+      | Some m ->
+        Oa.unsafe_set_some pv i m;
+        aux (i + 1) in
+    let i = aux 1 in
+    Oa.unsafe_set_none pv i
 end
 
 type state = State.t
@@ -620,13 +628,14 @@ module Search = struct
     end; result
 
   (* Alpha may have improved. *)
-  let better t m ~score =
+  let better st t m ~score ~ply ~pv =
     if score > t.score then begin
       t.score <- score;
       if score > t.alpha then begin
         t.best <- m;
         t.alpha <- score;
         t.node <- Pv;
+        if pv then State.update_pv st m ~ply;
       end
     end
 
@@ -780,7 +789,7 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
       State.pop_history pos st;
-      Search.better t m ~score;
+      Search.better st t m ~score ~ply ~pv;
       if Search.cutoff st t m ~score ~beta ~ply ~depth:0
       || st.stopped then Stop t.score
       else Continue ()
@@ -899,7 +908,7 @@ module Main = struct
         let pos = Legal.child m in
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
-        Search.better t m ~score;
+        Search.better st t m ~score ~ply ~pv;
         if Search.cutoff st t m ~score ~beta ~ply ~depth
         || st.stopped then Stop t.score
         else Continue (i + 1)
@@ -1170,27 +1179,6 @@ module Main = struct
       if score > t.alpha && (r > 0 || score < beta)
       then go fw ~pv:false else score
 
-  (* Search from the root position.
-
-     Note that a TT lookup should never cut the search short in the root
-     node. We always want to continue with a full search.
-  *)
-  let root (st : state) moves ~alpha ~beta ~depth =
-    let ply = 0 and pos = st.root and pv = true in
-    match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
-    | First _ -> assert false
-    | Second ttentry ->
-      let check = Position.in_check pos in
-      let eval, improving = eval st pos ~ply ~check ~ttentry in
-      let it, best = Order.score st moves ~ply ~pos ~ttentry in
-      let t = Search.create ~alpha ~best () in
-      let finish _ = t.score in
-      let f = child st t pos ~eval ~beta ~depth
-          ~ply ~check ~pv ~improving ~ttentry in
-      let score = Iterator.fold_until it ~init:0 ~finish ~f in
-      Search.store st t pos ~depth ~ply ~score;
-      score, t.best
-
   (* Aspiration window.
 
      The idea is that if we have the best score from a shallower search,
@@ -1200,9 +1188,10 @@ module Main = struct
   *)
   let rec aspire ?(low = 250) ?(high = 250) st moves depth basis =
     let alpha, beta = window basis depth low high in
-    let score, best = root st moves ~alpha ~beta ~depth in
+    let score = with_moves st st.root moves
+        ~alpha ~beta ~depth ~check:st.check ~ply:0 ~pv:true in
     (* Search was stopped, or we landed inside the window. *)
-    if st.stopped || (score > alpha && score < beta) then score, best
+    if st.stopped || (score > alpha && score < beta) then score
     else (* Result was outside the window, so we need to widen a bit. *)
       let low, high = widen score beta low high in
       aspire st moves depth basis ~low ~high
@@ -1237,8 +1226,14 @@ let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
         (Position.San.to_string m) ();
     Position.legal_moves @@ Legal.child m) |> ignore
 
-let extract_pv (st : state) moves ~best =
-  let pv = Tt.pv st.tt st.root_depth best in
+let extract_pv (st : state) moves =
+  let a = Array.unsafe_get st.pv 0 in
+  let rec aux acc i =
+    if i >= st.root_depth then List.rev acc
+    else match State.Oa.get a i with
+      | None -> List.rev acc
+      | Some m -> aux (m :: acc) (i + 1) in
+  let pv = aux [] 0 in
   assert_pv pv moves;
   pv
 
@@ -1256,21 +1251,21 @@ let result (st : state) ~score ~time ~pv ~mate ~mated =
    which makes pruning more effective. *)
 let rec iterdeep ?(prev = None) (st : state) moves =
   let basis = Option.value_map prev ~default:(-inf) ~f:snd in
-  let score, best = Main.aspire st moves st.root_depth basis in
+  let score = Main.aspire st moves st.root_depth basis in
   (* Get the elapsed time ASAP. *)
   let time = State.elapsed st in
   (* If the search was stopped, use the previous completed result, if
      available. *)
   let mate = is_mate score in
   let mated = is_mated score in
+  let pv = extract_pv st moves in
   if Limits.stopped st.limits then match prev with
     | Some (result, _) -> result
-    | None -> result st ~score ~time ~pv:[best] ~mate ~mated
-  else next st moves ~score ~best ~mate ~mated ~time
+    | None -> result st ~score ~time ~pv ~mate ~mated
+  else next st moves ~score ~pv ~mate ~mated ~time
 
 (* Decide whether to continue iterating. *)
-and next st moves ~score ~best ~mate ~mated ~time =
-  let pv = extract_pv st moves ~best in
+and next st moves ~score ~pv ~mate ~mated ~time =
   let result = result st ~score ~time ~pv ~mate ~mated in
   let no_ponder = not @@ State.pondering st in
   (* If movetime was specified, check if we've reached the limit. *)
