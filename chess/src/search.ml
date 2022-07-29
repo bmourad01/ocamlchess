@@ -934,8 +934,10 @@ module Main = struct
      good, and should cause a cutoff.
   *)
   and rfp ~depth ~eval ~beta ~improving =
-    let e = eval - rfp_margin depth improving in
-    Option.some_if (depth <= rfp_max_depth && e >= beta) eval
+    Option.some_if begin
+      depth <= rfp_max_depth &&
+      eval - rfp_margin depth improving >= beta
+    end eval
 
   and rfp_margin depth improving =
     let m = Eval.Material.pawn_mg in
@@ -964,7 +966,7 @@ module Main = struct
           ~depth:(depth - r - 1)
           ~null:true
           ~pv:false |> Int.neg in
-      Option.some_if (score >= beta) beta
+      Option.some_if (score >= beta) score
     else None
 
   and nmp_min_depth = 3
