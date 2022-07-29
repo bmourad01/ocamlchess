@@ -229,9 +229,9 @@ let search_thread = Atomic.make None
 (* Condition variable for `infinite` and `ponder`. *)
 let cv, cvm = Condition.create (), Mutex.create ()
 
-let kill stop =
+let kill ps =
   Mutex.lock cvm;
-  Option.iter stop ~f:(fun stop -> Promise.fulfill stop ());
+  List.iter ps ~f:(Option.iter ~f:(fun p -> Promise.fulfill p ()));
   Condition.signal cv;
   Mutex.unlock cvm
 
@@ -275,9 +275,10 @@ let search ~root ~limits ~history ~tt ~stop ~ponder =
 
 (* Abort if there's already a thread running. *)
 let check_thread =
-  State.(gets stop) >>| fun stop ->
+  State.(gets stop) >>= fun stop ->
+  State.(gets ponder) >>| fun ponder ->
   Atomic.get search_thread |> Option.iter ~f:(fun t ->
-      kill stop;
+      kill [stop; ponder];
       Thread.join t;
       failwith
         "Error: tried to start a new search while the previous one is \
@@ -413,21 +414,13 @@ module Go = struct
 end
 
 let stop = State.update @@ function
-  | {stop = Some stop; _} as st ->
-    Mutex.lock cvm;
-    Promise.fulfill stop ();
-    Condition.signal cv;
-    Mutex.unlock cvm;
-    {st with stop = None}
+  | {stop = (Some _ as p); _} as st ->
+    kill [p]; {st with stop = None}
   | st -> st
 
 let ponderhit = State.update @@ function
-  | {ponder = Some ponder; _} as st ->
-    Mutex.lock cvm;
-    Promise.fulfill ponder ();
-    Condition.signal cv;
-    Mutex.unlock cvm;
-    {st with ponder = None}
+  | {ponder = (Some _ as p); _} as st ->
+    kill [p]; {st with ponder = None}
   | st -> st
 
 (* This is free software, so no need to register! *)
@@ -465,23 +458,24 @@ let history = Hashtbl.of_alist_exn (module Int64) [
   ]
 
 let exec () =
-  State.stop @@
-  Monad.State.exec (loop ()) @@
-  State.Fields.create
-    ~pos:Position.start
-    ~history
-    ~tt:(Search.Tt.create ())
-    ~stop:None
-    ~ponder:None
-    ~debug:false
-    ~book:None
+  let st =
+    Monad.State.exec (loop ()) @@
+    State.Fields.create
+      ~pos:Position.start
+      ~history
+      ~tt:(Search.Tt.create ())
+      ~stop:None
+      ~ponder:None
+      ~debug:false
+      ~book:None in
+  State.[stop st; ponder st]
 
 (* Entry point. *)
 let run () =
   (* Run the main interpreter loop. *)
-  let stop = try exec () with Failure msg ->
+  let ps = try exec () with Failure msg ->
     Format.eprintf "%s\n%!" msg;
     Err.exit () in
   (* Stop the search thread. *)
   Atomic.get search_thread |>
-  Option.iter ~f:(fun t -> kill stop; Thread.join t);
+  Option.iter ~f:(fun t -> kill ps; Thread.join t);
