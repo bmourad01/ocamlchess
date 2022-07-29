@@ -602,17 +602,20 @@ module Search = struct
 
   (* Alpha may have improved. *)
   let better ?(q = false) st t m ~score ~ply ~pv =
+    let result = ref false in
     if score > t.score then begin
       t.score <- score;
       if score > t.alpha then begin
         t.best <- Some m;
         t.alpha <- score;
+        result := true;
         if pv then begin
           if not q then t.bound <- Exact;
           State.update_pv st m ~ply;
         end
       end
-    end
+    end;
+    !result
 
   (* Find a cached evaluation of the position. *)
   let lookup (st : state) pos ~depth ~ply ~alpha ~beta ~pv =
@@ -764,8 +767,8 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
       State.pop_history pos st;
-      Search.better st t m ~score ~ply ~pv ~q:true;
-      if Search.cutoff st t m ~score ~beta ~ply ~depth:0
+      let better = Search.better st t m ~score ~ply ~pv ~q:true in
+      if (better && Search.cutoff st t m ~score ~beta ~ply ~depth:0)
       || st.stopped then Stop t.score
       else Continue ()
     end
@@ -883,8 +886,8 @@ module Main = struct
         let pos = Legal.child m in
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
-        Search.better st t m ~score ~ply ~pv;
-        if Search.cutoff st t m ~score ~beta ~ply ~depth
+        let better = Search.better st t m ~score ~ply ~pv in
+        if (better && Search.cutoff st t m ~score ~beta ~ply ~depth)
         || st.stopped then Stop t.score
         else Continue (i + 1)
 
