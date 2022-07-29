@@ -616,8 +616,10 @@ module Search = struct
       if score > t.alpha then begin
         t.best <- m;
         t.alpha <- score;
-        t.bound <- Exact;
-        if pv then State.update_pv st m ~ply;
+        if pv then begin
+          t.bound <- Exact;
+          State.update_pv st m ~ply;
+        end
       end
     end
 
