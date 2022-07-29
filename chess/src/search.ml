@@ -143,34 +143,17 @@ let is_mated score = score >= -mate_score && score <= (-mate_score) + max_ply
 let mating ply = mate_score - ply
 let mated ply = -mate_score + ply
 
-(* There are three main types of nodes, given a score `s`:
-
-   1. `Pv` nodes are those where `alpha > s` and `s < beta` hold. Since this
-      node's score is inside of our window, we will consider it as part of
-      the principal variation.
-
-   2. `Cut` nodes are those where `s >= beta` holds, meaning this node is
-      expected to produce a beta cutoff.
-
-   3. `All` nodes are those where `s <= alpha` holds, meaning we do not
-      expect this node to improve alpha.
-*)
-type node = Pv | Cut | All [@@deriving equal]
-
-let pp_node ppf = function
-  | Pv -> Format.fprintf ppf "PV%!"
-  | Cut -> Format.fprintf ppf "CUT%!"
-  | All -> Format.fprintf ppf "ALL%!"
-
 (* Transposition table for caching search results. *)
 module Tt = struct
+  type bound = Exact | Lower | Upper [@@deriving equal]
+
   module Entry = struct
     type t = {
       ply   : int;
       depth : int;
       score : int;
       best  : Legal.t;
-      node  : node;
+      bound : bound;
     } [@@deriving fields]
 
     let position {best; _} = Legal.parent best
@@ -195,12 +178,12 @@ module Tt = struct
      replace it if the new entry's depth is greater or equal to that of
      the old entry.
   *)
-  let store tt pos ~ply ~depth ~score ~best ~node =
+  let store tt pos ~ply ~depth ~score ~best ~bound =
     Position.hash pos |> Hashtbl.update tt ~f:(function
         | Some entry when Entry.depth entry > depth -> entry
         | None | Some _ ->
           let score = of_score score ply in
-          Entry.Fields.create ~ply ~depth ~score ~best ~node)
+          Entry.Fields.create ~ply ~depth ~score ~best ~bound)
 
   let to_score score ply =
     if is_mate score then score - ply
@@ -225,10 +208,10 @@ module Tt = struct
       Second (Some entry)
     | Some entry ->
       let score = to_score entry.score ply in
-      match entry.node with
-      | Pv -> First score
-      | Cut when score >= beta -> First score
-      | All when score <= alpha -> First score
+      match entry.bound with
+      | Exact -> First score
+      | Lower when score >= beta -> First score
+      | Upper when score <= alpha -> First score
       | _ -> Second (Some entry)
 end
 
@@ -601,14 +584,14 @@ module Search = struct
     mutable best  : Legal.t;
     mutable alpha : int;
     mutable score : int;
-    mutable node  : node;
+    mutable bound : Tt.bound;
   }
 
   let create ?(alpha = -inf) ?score ~best () = {
     best;
     alpha;
     score = Option.value score ~default:(-inf);
-    node = All
+    bound = Upper;
   }
 
   let update_history_and_killer st m ~ply ~depth =
@@ -623,7 +606,7 @@ module Search = struct
     if result then begin
       update_history_and_killer st m ~ply ~depth;
       t.best <- m;
-      t.node <- Cut;
+      t.bound <- Lower;
     end; result
 
   (* Alpha may have improved. *)
@@ -633,7 +616,7 @@ module Search = struct
       if score > t.alpha then begin
         t.best <- m;
         t.alpha <- score;
-        t.node <- Pv;
+        t.bound <- Exact;
         if pv then State.update_pv st m ~ply;
       end
     end
@@ -644,7 +627,7 @@ module Search = struct
 
   (* Cache an evaluation. *)
   let store (st : state) t pos ~depth ~ply ~score =
-    Tt.store st.tt pos ~ply ~depth ~score ~best:t.best ~node:t.node
+    Tt.store st.tt pos ~ply ~depth ~score ~best:t.best ~bound:t.bound
 
   let has_reached_limits st =
     let elapsed = State.elapsed st in
@@ -715,9 +698,9 @@ module Quiescence = struct
     if not check then
       let eval = Eval.go pos in
       let score = match (ttentry : Tt.entry option) with
-        | Some {score; node = Cut; _}
+        | Some {score; bound = Lower; _}
           when Tt.to_score score ply > eval -> score
-        | Some {score; node = All; _}
+        | Some {score; bound = Upper; _}
           when Tt.to_score score ply <= eval -> score
         | None | Some _ -> eval in
       if score >= beta then First score
@@ -813,9 +796,9 @@ module Main = struct
     if not check then
       let eval = Eval.go pos in
       let score = match (ttentry : Tt.entry option) with
-        | Some {score; node = Cut; _}
+        | Some {score; bound = Lower; _}
           when Tt.to_score score ply > eval -> score
-        | Some {score; node = All; _}
+        | Some {score; bound = Upper; _}
           when Tt.to_score score ply <= eval -> score
         | None | Some _ -> eval in
       let improving = State.update_eval pos ply score st in
@@ -1061,7 +1044,7 @@ module Main = struct
       if score >= beta_cut then
         (* Save this cutoff in the TT. *)
         let depth = depth - (probcut_min_depth - 2) in
-        Tt.store st.tt pos ~ply ~depth ~score ~best:m ~node:Cut;
+        Tt.store st.tt pos ~ply ~depth ~score ~best:m ~bound:Lower;
         Stop (Some score)
       else if st.stopped then Stop None
       else Continue ()
@@ -1100,7 +1083,7 @@ module Main = struct
       if not check
       && ply > 0
       && ply < st.root_depth * 2
-      && not (equal_node All @@ Tt.Entry.node entry)
+      && not Tt.(equal_bound Upper @@ Entry.bound entry)
       && not (is_mate ttscore || is_mated ttscore)
       && depth >= sext_min_depth
       && not (State.has_excluded st ~ply)
@@ -1214,9 +1197,9 @@ let convert_score score tt root ~pv ~mate ~mated =
   if mate then Mate (ply_to_moves (mate_score - score))
   else if mated then Mate (-(ply_to_moves (mate_score + score)))
   else match Tt.find tt root with
-    | None | Some Tt.Entry.{node = Pv; _} -> Cp (score, None)
-    | Some Tt.Entry.{node = Cut; _} -> Cp (score, Some `lower)
-    | Some Tt.Entry.{node = All; _} -> Cp (score, Some `upper)
+    | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
+    | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
+    | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper)
 
 (* For debugging, make sure that the PV is a legal sequence of moves. *)
 let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->

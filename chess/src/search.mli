@@ -80,14 +80,21 @@ end
 (** The search limits. *)
 type limits = Limits.t
 
-(** The types of nodes that are traversed in an alpha-beta search. *)
-type node = Pv | Cut | All [@@deriving equal]
-
-(** Pretty-prints the node type. *)
-val pp_node : Format.formatter -> node -> unit
-
 (** The transposition table. *)
 module Tt : sig
+  (** [Exact] indicates that the best response to the position
+      was within the search window.
+
+      [Lower] indicates that at least one response to the position
+      was "too good", so the assigned score is a lower bound on the
+      true evaluation of the position.
+
+      [Upper] indicates that there were no responses that could
+      improve the position, given other choices for the player.
+      Hence, the score is an upper bound.
+  *)
+  type bound = Exact | Lower | Upper [@@deriving equal]
+
   type t
 
   (** An entry in the table. *)
@@ -106,8 +113,8 @@ module Tt : sig
     (** The best move for the position. *)
     val best : t -> Position.legal
 
-    (** The node type. *)
-    val node : t -> node
+    (** The bound for the position's score. *)
+    val bound : t -> bound
 
     (** The position that this entry corresponds to. *)
     val position : t -> Position.t
