@@ -188,17 +188,8 @@ module Tt = struct
     else score
 
   (* Check for a previous evaluation of the position at a comparable depth.
-
-     - Pv: the score is an exact evaluation for this position.
-
-     - Cut: the score is a lower bound, so only return it if it causes a
-            beta cutoff, which would prune the rest of the branch being
-            searched.
-
-     - All: the score is an upper bound, so if it doesn't improve alpha
-            we can use that score to prune the rest of the branch being
-            searched.
-  *)
+     For non-PV nodes, we can cut off the search early based on the bounds
+     of the score for the entry. *)
   let lookup tt ~pos ~depth ~ply ~alpha ~beta ~pv = match find tt pos with
     | None -> Second None
     | Some entry when pv || ply <= 0 || Entry.depth entry < depth ->
@@ -388,6 +379,9 @@ module State = struct
   let is_excluded st m ~ply =
     excluded st ~ply |> Option.exists ~f:(Legal.same m)
 
+  (* We use a triangular PV table. Each row represents the PV for
+     a given ply. We update the table in such a way that each child
+     PV is a suffix of the current PV. *)
   let update_pv st m ~ply =
     let pv = Array.unsafe_get st.pv ply in
     let child_pv = Array.unsafe_get st.pv (ply + 1) in
