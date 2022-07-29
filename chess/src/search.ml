@@ -890,9 +890,9 @@ module Main = struct
   *)
   and should_skip st t m ~eval ~beta ~depth ~ply ~check ~pv ~order =
     State.is_excluded st m ~ply || begin
-      t.score > mated max_ply && begin
+      not check && t.score > mated max_ply && begin
         see m ~order ~depth ||
-        futile t m ~eval ~beta ~depth ~check ~pv
+        futile t m ~eval ~beta ~depth ~pv
       end
     end
 
@@ -903,7 +903,7 @@ module Main = struct
 
      Note that `eval` should be `None` if we are in check.
   *)
-  and futile t m ~eval ~beta ~depth ~check ~pv =
+  and futile t m ~eval ~beta ~depth ~pv =
     not pv &&
     depth <= futile_max_depth &&
     is_quiet m &&
