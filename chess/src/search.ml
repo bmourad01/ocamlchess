@@ -1178,14 +1178,11 @@ let ply_to_moves ply = (ply + (ply land 1)) / 2
 
 (* We'll use the UCI datatype, which is either a numerical score in centipawns,
    or our distance from checkmate. *)
-let convert_score score tt root ~pv ~mate ~mated =
+let convert_score score ~mate ~mated =
   let open Uci.Send.Info in
   if mate then Mate (ply_to_moves (mate_score - score))
   else if mated then Mate (-(ply_to_moves (mate_score + score)))
-  else match Tt.find tt root with
-    | None | Some Tt.Entry.{bound = Exact; _} -> Cp (score, None)
-    | Some Tt.Entry.{bound = Lower; _} -> Cp (score, Some `lower)
-    | Some Tt.Entry.{bound = Upper; _} -> Cp (score, Some `upper)
+  else Cp (score, None)
 
 (* For debugging, make sure that the PV is a legal sequence of moves. *)
 let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
@@ -1206,7 +1203,7 @@ let extract_pv (st : state) moves =
   pv
 
 let result (st : state) ~score ~time ~pv ~mate ~mated =
-  let score = convert_score score st.tt st.root ~pv ~mate ~mated in
+  let score = convert_score score ~mate ~mated in
   let r = Result.Fields.create ~pv ~score ~time
       ~nodes:st.nodes
       ~depth:st.root_depth
