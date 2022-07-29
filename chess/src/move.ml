@@ -62,6 +62,9 @@ let[@inline] dst m =
 let[@inline] promote m = Promote.of_int @@ m lsr (Square.bits * 2)
 let[@inline] decomp m = src m, dst m, promote m
 
+let[@inline] is_promote m =
+  (m lsr (Square.bits * 2)) land Promote.nmask = 0
+
 let[@inline] with_src m src =
   (m land lnot square_mask) lor Square.to_int src
 

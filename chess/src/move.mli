@@ -60,6 +60,9 @@ val promote : t -> promote option
     promotion of move [m], in that order. *)
 val decomp : t -> Square.t * Square.t * promote option
 
+(** [is_promote m] returns [true] if [m] is a promotion. *)
+val is_promote : t -> bool
+
 (** [with_src m src] sets the source square of [m] to [src]. *)
 val with_src : t -> Square.t -> t
 

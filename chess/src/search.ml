@@ -272,7 +272,7 @@ let is_quiet ?(check = true) = Fn.non @@ is_noisy ~check
 module State = struct
   module Oa = Option_array
 
-  type state = {
+  type t = {
     limits                     : limits;
     root                       : Position.t;
     history                    : (Zobrist.key, int) Hashtbl.t;
@@ -413,7 +413,7 @@ module State = struct
     excluded st ~ply |> Option.exists ~f:(Legal.same m)
 end
 
-type state = State.state
+type state = State.t
 
 (* We use an iterator object that incrementally applies selection sort to
    the array. In the context of alpha-beta pruning, we may not actually
@@ -593,10 +593,16 @@ module Search = struct
   type t = {
     mutable best  : Legal.t;
     mutable alpha : int;
+    mutable score : int;
     mutable node  : node;
   }
 
-  let create ?(alpha = -inf) ~best () = {best; alpha; node = All}
+  let create ?(alpha = -inf) ?(score = -inf) ~best () = {
+    best;
+    alpha;
+    score;
+    node = All
+  }
 
   let update_history_and_killer st m ~ply ~depth =
     if is_quiet m then begin
@@ -615,10 +621,13 @@ module Search = struct
 
   (* Alpha may have improved. *)
   let better t m ~score =
-    if score > t.alpha then begin
-      t.best <- m;
-      t.alpha <- score;
-      t.node <- Pv;
+    if score > t.score then begin
+      t.score <- score;
+      if score > t.alpha then begin
+        t.best <- m;
+        t.alpha <- score;
+        t.node <- Pv;
+      end
     end
 
   (* Find a cached evaluation of the position. *)
@@ -671,6 +680,10 @@ module Search = struct
       let beta = min beta @@ mating ply in
       if alpha >= beta then First alpha else Second (alpha, beta)
     else Second (alpha, beta)
+
+  (* Evaluations aren't useful for positions that are in check, so just
+     assume that if we've made it this far from the root then it's a draw *)
+  let end_of_line pos ~check = if check then 0 else Eval.go pos
 end
 
 let b2i = Bool.to_int
@@ -680,13 +693,17 @@ let b2in = Fn.compose b2i not
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
 module Quiescence = struct
-  (* Delta pruning. *)
+  (* Delta pruning.
+
+     Skip searching this position if we're not in endgame and the static
+     evaluation is significantly lower than alpha.
+  *)
   let delta =
-    let margin = Eval.Material.knight_eg in
-    fun pos eval alpha -> eval + margin <= alpha && not (Eval.is_endgame pos)
+    let margin = Eval.Material.knight_mg in
+    fun pos eval alpha -> eval + margin < alpha && not (Eval.is_endgame pos)
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
-     function. *)
+     function (or neither, if we're in check). *)
   let eval st pos ~alpha ~beta ~ply ~check ~ttentry =
     if not check then
       let eval = Eval.go pos in
@@ -698,8 +715,8 @@ module Quiescence = struct
         | None | Some _ -> eval in
       if score >= beta then First score
       else if delta pos score alpha then First score
-      else Second (max score alpha)
-    else Second alpha
+      else Second (max score alpha, Some score)
+    else Second (alpha, None)
 
   (* TT entries for quiescence search have a depth of either 0 or -1,
      depending on whether this is the first ply or we're in check. *)
@@ -720,11 +737,8 @@ module Quiescence = struct
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~node =
     let check = Position.in_check pos in
     if Search.drawn st pos then 0
-    else if ply >= max_ply || Search.check_limits st then
-      (* Evaluations aren't useful for positions that are in check, so just
-         assume that if we've made it this far down the tree then this line
-         ends with a draw. *)
-      if check then 0 else Eval.go pos
+    else if ply >= max_ply || Search.check_limits st
+    then Search.end_of_line pos ~check
     else Position.legal_moves pos |> function
       | [] -> if check then mated ply else 0
       | moves -> match Search.mdp ~alpha ~beta ~ply with
@@ -741,12 +755,15 @@ module Quiescence = struct
     | Second ttentry ->
       match eval st pos ~alpha ~beta ~ply ~check ~ttentry with
       | First score -> score
-      | Second alpha ->
+      | Second (alpha, score) ->
         match order st moves pos ~ply ~check ~init ~ttentry with
-        | None -> alpha
+        | None -> Option.value_exn score
         | Some (it, best, evasion) ->
+          (* XXX: Why do we get seemingly better results starting at -inf
+             rather than the static evaluation? Maybe the evaluation function
+             needs improvements. *)
           let t = Search.create ~alpha ~best () in
-          let finish () = t.alpha in
+          let finish () = t.score in
           let f = child st t ~qe:(ref 0) ~beta ~eval ~ply ~node ~evasion in
           let score = Iterator.fold_until it ~init:() ~finish ~f in
           Search.store st t pos ~depth ~ply ~score;
@@ -755,25 +772,26 @@ module Quiescence = struct
   (* Search a child of the current node. *)
   and child st t ~qe ~beta ~eval ~ply ~node ~evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if should_skip m qe order evasion then Continue ()
+    if should_skip t m ~qe ~order ~evasion
+    then Continue ()
     else begin
       let pos = Legal.child m in
       State.push_history pos st;
       State.inc_nodes st;
-      let score = go st pos ~node
+      let score = Int.neg @@ go st pos ~node
           ~init:false
           ~ply:(ply + 1)
           ~alpha:(-beta)
-          ~beta:(-t.alpha) |> Int.neg in
+          ~beta:(-t.alpha) in
       State.pop_history pos st;
-      if Search.cutoff st t m ~score ~beta ~ply ~depth:0 then Stop beta
-      else begin
-        Search.better t m ~score;
-        if st.stopped then Stop t.alpha else Continue ()
-      end
+      Search.better t m ~score;
+      if Search.cutoff st t m ~score ~beta ~ply ~depth:0
+      || st.stopped then Stop t.score
+      else Continue ()
     end
 
-  and should_skip m qe order evasion =
+  and should_skip t m ~qe ~order ~evasion =
+    t.score > mated max_ply &&
     if evasion then
       not (Legal.is_capture m) &&
       let result = !qe > 1 in
@@ -809,8 +827,8 @@ module Main = struct
     let check = Position.in_check pos in
     update_seldepth st ply node;
     if Search.drawn st pos then 0
-    else if ply >= max_ply || Search.check_limits st then
-      if check then 0 else Eval.go pos
+    else if ply >= max_ply || Search.check_limits st
+    then Search.end_of_line pos ~check
     else match Position.legal_moves pos with
       | [] -> if check then mated ply else 0
       | moves ->
@@ -823,32 +841,31 @@ module Main = struct
           (* Depth exhausted, drop down to quiescence search. *)
           Quiescence.with_moves st pos moves ~alpha ~beta ~ply ~check ~node
         | Second (alpha, beta) ->
-          (* Find a cached evaluation of the position. *)
-          match Search.lookup st pos ~depth ~ply ~alpha ~beta ~node with
-          | First score -> score
-          | Second ttentry ->
-            (* Search the available moves. *)
-            with_moves st pos moves ~alpha ~beta ~ply
-              ~depth ~check ~node ~null ~ttentry
+          (* Search the available moves. *)
+          with_moves st pos moves ~alpha ~beta ~ply ~depth ~check ~node ~null
 
   (* Search the available moves for the given position. *)
   and with_moves ?(null = false) st pos moves
-      ~alpha ~beta ~ply ~depth ~check ~ttentry ~node =
-    let eval, improving = eval st pos ~ply ~check ~ttentry in
-    match try_pruning_before_child st pos moves
-            ~eval ~alpha ~beta ~ply ~depth ~check
-            ~null ~node ~improving ~ttentry with
-    | Some score -> score
-    | None ->
-      let it, best = Order.score st moves ~ply ~pos ~ttentry in
-      let t = Search.create ~alpha ~best () in
-      let finish _ = t.alpha in
-      let f = child st t pos ~eval ~beta ~depth
-          ~ply ~check ~node ~improving ~ttentry in
-      let score = Iterator.fold_until it ~init:0 ~finish ~f in
-      if not @@ State.has_excluded st ~ply then
-        Search.store st t pos ~depth ~ply ~score;
-      score
+      ~alpha ~beta ~ply ~depth ~check ~node =
+    (* Find a cached evaluation of the position. *)
+    match Search.lookup st pos ~depth ~ply ~alpha ~beta ~node with
+    | First score -> score
+    | Second ttentry ->
+      let eval, improving = eval st pos ~ply ~check ~ttentry in
+      match try_pruning_before_child st pos moves
+              ~eval ~alpha ~beta ~ply ~depth ~check
+              ~null ~node ~improving ~ttentry with
+      | Some score -> score
+      | None ->
+        let it, best = Order.score st moves ~ply ~pos ~ttentry in
+        let t = Search.create ~alpha ~best () in
+        let finish _ = t.score in
+        let f = child st t pos ~eval ~beta ~depth
+            ~ply ~check ~node ~improving ~ttentry in
+        let score = Iterator.fold_until it ~init:0 ~finish ~f in
+        if not @@ State.has_excluded st ~ply then
+          Search.store st t pos ~depth ~ply ~score;
+        score
 
   (* There are a number of pruning heuristics we can use before we even try
      to search the child nodes of this position. This shouldn't be done if
@@ -876,23 +893,21 @@ module Main = struct
   and child st t pos ~eval ~beta ~depth ~ply
       ~check ~node ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
-    let[@inline] next () = Continue (i + 1) in
     if should_skip st t m ~eval ~beta ~depth ~ply ~check ~node ~order
-    then next ()
-    else match sext st pos m ~depth ~ply ~beta ~check ~ttentry with
+    then Continue (i + 1)
+    else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
       | First score -> Stop score
-      | Second _ when st.stopped -> Stop t.alpha
+      | Second _ when st.stopped -> Stop t.score
       | Second ext ->
         let r = lmr st m ~i ~beta ~ply ~depth ~check ~node ~improving in
         (* Explore the child node *)
         let pos = Legal.child m in
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~node in
-        if Search.cutoff st t m ~score ~beta ~ply ~depth then Stop beta
-        else begin
-          Search.better t m ~score;
-          if st.stopped then Stop t.alpha else next ()
-        end
+        Search.better t m ~score;
+        if Search.cutoff st t m ~score ~beta ~ply ~depth
+        || st.stopped then Stop t.score
+        else Continue (i + 1)
 
   (* These pruning heuristics depend on conditions that change as we continue
      to search all children of the current node.
@@ -1063,11 +1078,16 @@ module Main = struct
 
   (* Singular extensions + multi-cut.
 
-     If it is likely that we only have one good move, then extend the search.
-     However, if it turns out that this is not the only move to fail high,
-     then we produce a cutoff.
+     If we have a TT entry with the best move, then try a reduced search of
+     the position where we search every move except this one. If the result
+     is within a margin below the score for this TT entry, then we say that
+     this move is "singularly" good, and thus we should extend the search
+     depth.
+
+     On the other hand, if this entry has a score within a margin above beta,
+     then it probably isn't singular and we can cut off the search early.
   *)
-  and sext st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
+  and semc st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
     | None -> Second 0
     | Some entry ->
       let ttscore = Tt.(to_score (Entry.score entry) ply) in
@@ -1180,7 +1200,7 @@ module Main = struct
       let eval, improving = eval st pos ~ply ~check ~ttentry in
       let it, best = Order.score st moves ~ply ~pos ~ttentry in
       let t = Search.create ~alpha ~best () in
-      let finish _ = t.alpha in
+      let finish _ = t.score in
       let f = child st t pos ~eval ~beta ~depth
           ~ply ~check ~node ~improving ~ttentry in
       let score = Iterator.fold_until it ~init:0 ~finish ~f in
