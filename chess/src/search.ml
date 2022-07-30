@@ -379,19 +379,26 @@ module State = struct
   let is_excluded st m ~ply =
     excluded st ~ply |> Option.exists ~f:(Legal.same m)
 
-  (* We use a triangular PV table. Each row represents the PV for
-     a given ply. We update the table in such a way that each child
-     PV is a suffix of the current PV. *)
   let update_pv st m ~ply =
     let pv = Array.unsafe_get st.pv ply in
     let child_pv = Array.unsafe_get st.pv (ply + 1) in
     Oa.unsafe_set_some pv 0 m;
-    let rec aux i = match Oa.unsafe_get child_pv (i - 1) with
+    let[@inline] rec append_child i =
+      match Oa.unsafe_get child_pv (i - 1) with
       | None -> Oa.unsafe_set_none pv i
       | Some m ->
         Oa.unsafe_set_some pv i m;
-        aux (i + 1) in
-    aux 1
+        append_child (i + 1) in
+    append_child 1
+
+  let extract_pv st ~ply ~depth =
+    let pv = Array.unsafe_get st.pv ply in
+    let[@inline] rec extract acc i =
+      if i >= depth then List.rev acc
+      else match Oa.unsafe_get pv i with
+        | None -> List.rev acc
+        | Some m -> extract (m :: acc) (i + 1) in
+    extract [] 0
 end
 
 type state = State.t
@@ -1185,24 +1192,6 @@ let convert_score score ~mate ~mated =
   else if mated then Mate (-(ply_to_moves (mate_score + score)))
   else Cp (score, None)
 
-(* For debugging, make sure that the PV is a legal sequence of moves. *)
-let assert_pv pv moves = List.fold pv ~init:moves ~f:(fun moves m ->
-    if not @@ List.exists moves ~f:(Legal.same m) then
-      failwithf "Found an invalid move %s in the PV"
-        (Position.San.to_string m) ();
-    Position.legal_moves @@ Legal.child m) |> ignore
-
-let extract_pv (st : state) moves =
-  let a = Array.unsafe_get st.pv 0 in
-  let rec aux acc i =
-    if i >= st.root_depth then List.rev acc
-    else match State.Oa.get a i with
-      | None -> List.rev acc
-      | Some m -> aux (m :: acc) (i + 1) in
-  let pv = aux [] 0 in
-  assert_pv pv moves;
-  pv
-
 let result (st : state) ~score ~time ~pv ~mate ~mated =
   let score = convert_score score ~mate ~mated in
   let r = Result.Fields.create ~pv ~score ~time
@@ -1215,7 +1204,7 @@ let result (st : state) ~score ~time ~pv ~mate ~mated =
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
-let rec iterdeep ?(prev = None) (st : state) moves =
+let rec iterdeep ?(prev = None) st moves =
   let basis = Option.value_map prev ~default:(-inf) ~f:snd in
   let score = Main.aspire st moves st.root_depth basis in
   (* Get the elapsed time ASAP. *)
@@ -1224,7 +1213,7 @@ let rec iterdeep ?(prev = None) (st : state) moves =
      available. *)
   let mate = is_mate score in
   let mated = is_mated score in
-  let pv = extract_pv st moves in
+  let pv = State.extract_pv st ~ply:0 ~depth:st.root_depth in
   if Limits.stopped st.limits then match prev with
     | Some (result, _) -> result
     | None -> result st ~score ~time ~pv ~mate ~mated
