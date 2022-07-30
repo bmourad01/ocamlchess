@@ -40,7 +40,7 @@ type error = Error.t
 
     If [random] is [true] (default), then the response is chosen at random,
     modulo the weights assigned to certain moves (as described in the Polyglot
-    format).
+    format). Otherwise, the highest-weighted move is picked.
 *)
 val lookup :
   ?skip_illegal:bool ->
