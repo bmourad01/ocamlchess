@@ -18,6 +18,24 @@ module State = struct
     } [@@deriving fields]
   end
 
+  (* Condition variable for `infinite` and `ponder`. *)
+  let cv, cvm = Condition.create (), Mutex.create ()
+
+  let fulfill ps =
+    Mutex.lock cvm;
+    List.iter ps ~f:(Option.iter ~f:(fun p -> Promise.fulfill p ()));
+    Condition.signal cv;
+    Mutex.unlock cvm
+
+  let wait stop ponder =
+    let open Future in
+    let cond = match ponder with
+      | Some ponder -> fun () -> is_decided stop || is_decided ponder
+      | None        -> fun () -> is_decided stop in
+    Mutex.lock cvm;
+    while not @@ cond () do Condition.wait cv cvm done;
+    Mutex.unlock cvm
+
   include T
   include Monad.State.Make(T)(Monad.Ident)
   include Monad.State.T1(T)(Monad.Ident)
@@ -32,6 +50,14 @@ module State = struct
     Position.hash pos |> Hashtbl.update st.history ~f:(function
         | None -> 1 | Some n -> n + 1);
     {st with pos}
+
+  let play_move m =
+    gets pos >>= fun pos ->
+    match Position.make_move pos m with
+    | exception _ ->
+      failwithf "Received illegal move %s for position %s\n%!"
+        (Move.to_string m) (Position.Fen.to_string pos) ()
+    | m -> set_position @@ Legal.child m
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
   let set_debug debug = update @@ fun st -> {st with debug}
@@ -157,6 +183,46 @@ module Options = struct
     | _ -> assert false
 end
 
+let info_str s = Format.printf "%a\n%!" Uci.Send.pp @@ Info [String s]
+
+module Book = struct
+  (* Just compare the file paths. We could have a stronger notion of equivalence
+     such as the md5sums of either file. *)
+  let same_book b path = String.(path = Book.filename b)
+
+  let load_book () =
+    if Options.check_value "OwnBook" then
+      let path = Options.string_value "BookPath" in
+      State.(gets book) >>= function
+      | Some b when same_book b path -> return @@ Some b
+      | Some _ | None ->
+        info_str "Loading Book";
+        match Book.create path with
+        | exception exn ->
+          failwithf "Error loading book: %s" (Exn.to_string exn) ()
+        | b -> State.(update @@ fun st -> {
+            st with book = Some b
+          }) >>| fun () ->
+          info_str "Book Loaded";
+          Some b
+    else return None
+
+  let book_move m =
+    let open Uci.Send in
+    let bestmove = Bestmove.{move = Legal.move m; ponder = None} in
+    Format.printf "%a\n%!" pp @@ Info [String "Book Move"];
+    Format.printf "%a\n%!" pp @@ Bestmove (Some bestmove)
+
+  let run () =
+    load_book () >>= function
+    | None -> return false
+    | Some book ->
+      State.(gets pos) >>| fun pos ->
+      match Book.lookup book pos with
+      | Ok m -> book_move m; true
+      | Error _ -> false
+end
+
 let uci =
   let open Uci.Send in
   let id = [
@@ -171,154 +237,25 @@ let uci =
         Format.printf "%a\n%!" Option.pp @@ opt name t);
     Format.printf "%a\n%!" pp Uciok
 
-let isready () = Format.printf "%a\n%!" Uci.Send.pp Readyok
+let isready () =
+  Book.load_book () >>| fun _ ->
+  Format.printf "%a\n%!" Uci.Send.pp Readyok
 
 let setoption ({name; value} : Uci.Recv.Setoption.t) =
   let open Uci.Recv.Setoption in
   match Hashtbl.find Options.tbl name with
-  | None -> cont @@ Format.printf "No such option: %s\n%!" name
-  | Some Options.(E (t, callback)) ->
-    Options.call t callback ~name ~value >>= cont
+  | None -> return @@ Format.printf "No such option: %s\n%!" name
+  | Some Options.(E (t, callback)) -> Options.call t callback ~name ~value
 
 let ucinewgame = State.set_position Position.start ~new_game:true
-
-let play_move m =
-  State.(gets pos) >>= fun pos ->
-  match Position.make_move pos m with
-  | exception _ ->
-    failwithf "Received illegal move %s for position %s\n%!"
-      (Move.to_string m) (Position.Fen.to_string pos) ()
-  | m -> State.set_position @@ Legal.child m
 
 let position pos moves = match Position.Valid.check pos with
   | Ok () ->
     State.set_position pos >>= fun () ->
-    State.List.iter moves ~f:play_move >>= cont
+    State.(List.iter moves ~f:play_move)
   | Error err ->
     failwithf "Received invalid position %s: %s\n%!"
       (Position.Fen.to_string pos) (Position.Valid.Error.to_string err) ()
-
-(* For each iteration in the search, send a UCI `info` command about the
-   search. *)
-let info_of_result root tt result =
-  let depth = Search.Result.depth result in
-  let score = Search.Result.score result in
-  let info = match Search.Result.pv result with
-    | [] -> Uci.Send.Info.[Depth depth; Score score]
-    | pv ->
-      let seldepth = Search.Result.seldepth result in
-      let nodes = Search.Result.nodes result in
-      (* Avoid division by zero here (the search may terminate in under a
-         millisecond). *)
-      let time = max 1 @@ Search.Result.time result in
-      let nps = (nodes * 1000) / time in
-      Uci.Send.Info.[
-        Depth depth;
-        Seldepth seldepth;
-        Score score;
-        Nodes nodes;
-        Nps nps;
-        Time time;
-        Pv (List.map pv ~f:Legal.move);
-      ] in
-  Format.printf "%a\n%!" Uci.Send.pp @@ Info info
-
-(* Current search thread. *)
-let search_thread = Atomic.make None
-
-(* Condition variable for `infinite` and `ponder`. *)
-let cv, cvm = Condition.create (), Mutex.create ()
-
-let kill ps =
-  Mutex.lock cvm;
-  List.iter ps ~f:(Option.iter ~f:(fun p -> Promise.fulfill p ()));
-  Condition.signal cv;
-  Mutex.unlock cvm
-
-let wait_for_stop stop ponder =
-  let open Future in
-  let cond = match ponder with
-    | Some ponder -> fun () -> is_decided ponder || is_decided stop
-    | None        -> fun () -> is_decided stop in
-  Mutex.lock cvm;
-  while not @@ cond () do Condition.wait cv cvm done;
-  Mutex.unlock cvm
-
-let bestmove result =
-  let make ?p m =
-    let move = Legal.move m in
-    let ponder = Option.map p ~f:Legal.move in
-    Uci.Send.Bestmove.{move; ponder} in
-  let bestmove = match Search.Result.pv result with
-    | [] -> None
-    | [m] -> Some (make m)
-    | m :: p :: _ -> Some (make m ~p) in
-  Format.printf "%a\n%!" Uci.Send.pp @@ Bestmove bestmove
-
-(* The main search routine, should be run in a separate thread. *)
-let search ~root ~limits ~history ~tt ~stop ~ponder =
-  let result = try
-      Search.go () ~root ~limits ~history ~tt ~ponder
-        ~iter:(info_of_result root tt)
-    with exn ->
-      Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
-      Err.exit () in
-  (* The UCI protocol says that `infinite` and `ponder` searches must
-     wait for a corresponding `stop` or `ponderhit` command before
-     sending `bestmove`. *)
-  if Search.Limits.infinite limits then
-    wait_for_stop stop ponder;
-  (* Output the result. *)
-  bestmove result;
-  (* Thread completed. *)
-  Atomic.set search_thread None
-
-(* Abort if there's already a thread running. *)
-let check_thread =
-  State.(gets stop) >>= fun stop ->
-  State.(gets ponder) >>| fun ponder ->
-  Atomic.get search_thread |> Option.iter ~f:(fun t ->
-      kill [stop; ponder];
-      Thread.join t;
-      failwith
-        "Error: tried to start a new search while the previous one is \
-         still running")
-
-let new_thread ~root ~limits ~history ~tt ~stop ~ponder =
-  Atomic.set search_thread @@ Option.return @@
-  Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop ~ponder) ()
-
-(* Just compare the file paths. We could have a stronger notion of equivalence
-   such as the md5sums of either file. *)
-let same_book b path = String.(path = Book.filename b)
-
-let load_book () =
-  let path = Options.string_value "BookPath" in
-  State.(gets book) >>= function
-  | Some b when same_book b path -> return b
-  | Some _ | None ->
-    Format.printf "%a\n%!" Uci.Send.pp @@ Info [String "Loading Book"];
-    match Book.create path with
-    | exception exn ->
-      failwithf "Error loading book: %s" (Exn.to_string exn) ()
-    | b -> State.(update @@ fun st -> {
-        st with book = Some b
-      }) >>| fun () -> b
-
-let book_move m =
-  let open Uci.Send in
-  let bestmove = Bestmove.{move = Legal.move m; ponder = None} in
-  Format.printf "%a\n%!" pp @@ Info [String "Book Move"];
-  Format.printf "%a\n%!" pp @@ Bestmove (Some bestmove)
-
-let book () =
-  if Options.check_value "OwnBook" then
-    load_book () >>= fun book ->
-    State.(gets pos) >>| fun pos ->
-    match Book.lookup book pos with
-    | Ok m -> book_move m; true
-    | Error _ -> false
-  else return false
 
 module Go = struct
   type t = {
@@ -397,8 +334,79 @@ module Go = struct
         | Ponder        -> pondering ())
     else t.infinite <- true; t
 
-  let run g = check_thread >>= book >>= function
-    | true -> cont ()
+  (* For each iteration in the search, send a UCI `info` command about the
+     search. *)
+  let info_of_result root tt result =
+    let depth = Search.Result.depth result in
+    let score = Search.Result.score result in
+    let info = match Search.Result.pv result with
+      | [] -> Uci.Send.Info.[Depth depth; Score score]
+      | pv ->
+        let seldepth = Search.Result.seldepth result in
+        let nodes = Search.Result.nodes result in
+        (* Avoid division by zero here (the search may terminate in under a
+           millisecond). *)
+        let time = max 1 @@ Search.Result.time result in
+        let nps = (nodes * 1000) / time in
+        Uci.Send.Info.[
+          Depth depth;
+          Seldepth seldepth;
+          Score score;
+          Nodes nodes;
+          Nps nps;
+          Time time;
+          Pv (List.map pv ~f:Legal.move);
+        ] in
+    Format.printf "%a\n%!" Uci.Send.pp @@ Info info
+
+  let bestmove result =
+    let make ?p m =
+      let move = Legal.move m in
+      let ponder = Option.map p ~f:Legal.move in
+      Uci.Send.Bestmove.{move; ponder} in
+    let bestmove = match Search.Result.pv result with
+      | [] -> None
+      | [m] -> Some (make m)
+      | m :: p :: _ -> Some (make m ~p) in
+    Format.printf "%a\n%!" Uci.Send.pp @@ Bestmove bestmove
+
+  (* Current search thread. *)
+  let search_thread = Atomic.make None
+
+  (* The main search routine, should be run in a separate thread. *)
+  let search ~root ~limits ~history ~tt ~stop ~ponder =
+    let result = try
+        Search.go () ~root ~limits ~history ~tt ~ponder
+          ~iter:(info_of_result root tt)
+      with exn ->
+        Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
+        Err.exit () in
+    (* The UCI protocol says that `infinite` and `ponder` searches must
+       wait for a corresponding `stop` or `ponderhit` command before
+       sending `bestmove`. *)
+    if Search.Limits.infinite limits then State.wait stop ponder;
+    (* Output the result. *)
+    bestmove result;
+    (* Thread completed. *)
+    Atomic.set search_thread None
+
+  let new_thread ~root ~limits ~history ~tt ~stop ~ponder =
+    Atomic.set search_thread @@ Option.return @@
+    Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop ~ponder) ()
+
+  (* Abort if there's already a thread running. *)
+  let check_thread =
+    State.(gets stop) >>= fun stop ->
+    State.(gets ponder) >>| fun ponder ->
+    Atomic.get search_thread |> Option.iter ~f:(fun t ->
+        State.fulfill [stop; ponder];
+        Thread.join t;
+        failwith
+          "Error: tried to start a new search while the previous one is \
+           still running")
+
+  let run g = check_thread >>= Book.run >>= function
+    | true -> return ()
     | false ->
       (* Parse the arguments to the command *)
       let t = parse g in
@@ -408,46 +416,45 @@ module Go = struct
       (* Start the search. *)
       State.new_ponder_if t.ponder >>= fun ponder ->
       State.(gets history) >>= fun history ->
-      State.(gets tt) >>= fun tt ->
-      new_thread ~root ~limits ~history ~tt ~stop ~ponder;
-      cont ()
+      State.(gets tt) >>| fun tt ->
+      new_thread ~root ~limits ~history ~tt ~stop ~ponder
 end
 
 let stop = State.update @@ function
   | {stop = (Some _ as p); _} as st ->
-    kill [p]; {st with stop = None}
+    State.fulfill [p]; {st with stop = None}
   | st -> st
 
 let ponderhit = State.update @@ function
   | {ponder = (Some _ as p); _} as st ->
-    kill [p]; {st with ponder = None}
+    State.fulfill [p]; {st with ponder = None}
   | st -> st
 
 (* This is free software, so no need to register! *)
-let register _ = cont ()
+let register _ = return ()
 
 (* Interprets a command. Returns true if the main UCI loop shall continue. *)
 let recv cmd = match (cmd : Uci.Recv.t) with
   | Uci -> cont @@ uci ()
-  | Isready -> cont @@ isready ()
-  | Setoption opt -> setoption opt
+  | Isready -> isready () >>= cont
+  | Setoption opt -> setoption opt >>= cont
   | Ucinewgame -> ucinewgame >>= cont
-  | Position (`fen pos, moves) -> position pos moves
-  | Position (`startpos, moves) -> position Position.start moves
-  | Go g -> Go.run g
+  | Position (`fen pos, moves) -> position pos moves >>= cont
+  | Position (`startpos, moves) -> position Position.start moves >>= cont
+  | Go g -> Go.run g >>= cont
   | Stop -> stop >>= cont
   | Quit -> finish ()
   | Ponderhit -> ponderhit >>= cont
   | Debug `off -> State.set_debug false >>= cont
   | Debug `on -> State.set_debug true >>= cont
-  | Register r -> register r
+  | Register r -> register r >>= cont
 
 (* Main loop. *)
 let rec loop () = match In_channel.(input_line stdin) with
   | None -> return ()
   | Some "" -> loop ()
   | Some line -> match Uci.Recv.of_string line with
-    | None -> loop @@ Format.printf "what?\n%!"
+    | None -> loop @@ Format.printf "Invalid command: %s\n%!" line
     | Some cmd -> recv cmd >>= function
       | false -> return ()
       | true -> loop ()
@@ -477,5 +484,5 @@ let run () =
     Format.eprintf "%s\n%!" msg;
     Err.exit () in
   (* Stop the search thread. *)
-  Atomic.get search_thread |>
-  Option.iter ~f:(fun t -> kill ps; Thread.join t);
+  Atomic.get Go.search_thread |>
+  Option.iter ~f:(fun t -> State.fulfill ps; Thread.join t);
