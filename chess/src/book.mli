@@ -29,13 +29,22 @@ end
 (** Errors that may be raised during lookup. *)
 type error = Error.t
 
-(** [lookup book pos] attempts to find an entry for [pos] in [book].
+(** [lookup book pos ~skip_illegal ~random] attempts to find an entry for
+    [pos] in [book].
 
-    Returns [Ok legal] if a valid entry is found, where [legal] is
-    the legal move to be played in such a position, and [Error err]
-    therwise.
+    Returns [Ok legal] if a valid entry is found, where [legal] is the legal
+    move to be played in such a position, and [Error err] otherwise.
 
-    The response is chosen at random, modulo the weights assigned
-    to certain moves (as described in the Polyglot format).
+    If [skip_illegal] is [false] (default), then an error is returned when an
+    illegal move is found. Otherwise, such moves are ignored.
+
+    If [random] is [true] (default), then the response is chosen at random,
+    modulo the weights assigned to certain moves (as described in the Polyglot
+    format).
 *)
-val lookup : t -> Position.t -> (Position.legal, error) result
+val lookup :
+  ?skip_illegal:bool ->
+  ?random:bool ->
+  t ->
+  Position.t ->
+  (Position.legal, error) result

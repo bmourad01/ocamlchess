@@ -154,7 +154,8 @@ let make_move pos move =
     | _ -> move in
   Position.make_move pos move
 
-let lookup book pos = let open Error in
+let lookup ?(skip_illegal = false) ?(random = true) book pos =
+  let open Error in
   match Hashtbl.find book.table @@ Position.hash pos with
   | None | Some [] -> Error (Position_not_found pos)
   | Some entries ->
@@ -166,7 +167,8 @@ let lookup book pos = let open Error in
       | [] -> Error (No_moves pos)
       | {move; weight; _} :: rest ->
         let sum = sum - weight in
-        if sum <= target then match make_move pos move with
+        if not random || sum <= target then match make_move pos move with
+          | exception _ when skip_illegal -> find sum rest
           | exception _ -> Error (Illegal_move (move, pos))
           | legal -> Ok legal
         else find sum rest in
