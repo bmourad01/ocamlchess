@@ -95,7 +95,7 @@ let read file =
       let move = decode_move @@ i16_be buf 8 in
       let weight = i16_be buf 10 in
       let depth = i16_be buf 12 in
-      let score = i16_be buf 12 in
+      let score = i16_be buf 14 in
       Hashtbl.add_multi book ~key ~data:{move; weight; depth; score};
       read ()
     | 0 -> book
@@ -155,21 +155,20 @@ let make_move pos move =
   Position.make_move pos move
 
 let lookup ?(skip_illegal = false) ?(random = true) book pos =
-  let open Error in
   match Hashtbl.find book.table @@ Position.hash pos with
-  | None | Some [] -> Error (Position_not_found pos)
+  | None | Some [] -> Error (Error.Position_not_found pos)
   | Some entries ->
     let sum =
       List.fold entries ~init:0 ~f:(fun acc {weight; _} ->
           acc + weight) in
     let target = Random.int_incl 0 sum in
     let rec find sum = function
-      | [] -> Error (No_moves pos)
+      | [] -> Error (Error.No_moves pos)
       | {move; weight; _} :: rest ->
         let sum = sum - weight in
         if not random || sum <= target then match make_move pos move with
           | exception _ when skip_illegal -> find sum rest
-          | exception _ -> Error (Illegal_move (move, pos))
+          | exception _ -> Error (Error.Illegal_move (move, pos))
           | legal -> Ok legal
         else find sum rest in
     find sum entries
