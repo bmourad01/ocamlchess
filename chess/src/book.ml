@@ -16,7 +16,7 @@ type t = {
 
 let filename book = book.filename
 
-let i8 b i o = Char.to_int @@ Bytes.get b (i + o)
+let i8 b i o = Char.to_int @@ Bytes.unsafe_get b (i + o)
 
 let i64_be b o =
   let open Int64 in
