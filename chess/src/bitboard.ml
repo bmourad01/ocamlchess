@@ -197,10 +197,10 @@ let first_set_rev b =
 
 let to_list b =
   let[@inline] rec aux acc b =
-    if b = empty then acc
-    else
+    if b <> empty then
       let sq = next_square_rev b in
-      aux (sq :: acc) @@ clear b sq in
+      aux (sq :: acc) @@ clear b sq
+    else acc in
   aux [] b
 
 let to_list_rev b =

@@ -1,4 +1,9 @@
-(** This module implements support for the bitboard representation. *)
+(** This module implements support for the bitboard representation.
+
+    For higher order functions which iterate over the bitboard, the [_rev]
+    operations are generally slower than their regular counterparts, unless
+    otherwise noted.
+*)
 
 (** Representation of the board as a 64-bit number. Each set bit represents
     an occupied square. The LSB represents the a1 square, while the MSB
@@ -197,7 +202,7 @@ val find_rev : t -> f:(Square.t -> bool) -> Square.t option
 val to_list : t -> Square.t list
 
 (** [to_list_rev b] returns the list of squares set in [b], in descending
-    order. *)
+    order. This operation is generally faster than [to_list]. *)
 val to_list_rev : t -> Square.t list
 
 (** [first_set_exn b] returns the first square [sq] of [b], starting from a1,
