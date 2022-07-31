@@ -21,6 +21,7 @@ module Uopt = struct
     if is_none x then default else f @@ unsafe_value x
 
   let[@inline] iter x ~f = if not @@ is_none x then f @@ unsafe_value x
+  let[@inline] exists x ~f = not (is_none x) && f (unsafe_value x)
 end
 
 module Pre = Precalculated
@@ -101,7 +102,7 @@ let[@inline] board_of_piece pos p =
 
 (* En passant *)
 
-let[@inline] is_en_passant pos sq =
+let[@inline] is_en_passant_square pos sq =
   Uopt.is_some pos.en_passant &&
   Square.(sq = Uopt.unsafe_value pos.en_passant) 
 
@@ -421,11 +422,11 @@ module Analysis = struct
      pinned. *)
   let[@inline] pinners ~active_board ~king_sq ~inactive_sliders ~occupied =
     let open Bb in
-    let bishop  = Pre.bishop king_sq occupied in
-    let rook    = Pre.rook   king_sq occupied in
-    let queen   = Pre.queen  king_sq occupied in
-    let mask    = active_board -- king_sq in
-    let init    = Map.empty (module Square) in
+    let bishop = Pre.bishop king_sq occupied in
+    let rook   = Pre.rook   king_sq occupied in
+    let queen  = Pre.queen  king_sq occupied in
+    let mask   = active_board -- king_sq in
+    let init   = Map.empty (module Square) in
     List.fold inactive_sliders ~init ~f:(fun pinners (sq, k) ->
         let checker, king = match k with
           | Piece.Bishop -> Pre.bishop sq occupied, bishop
@@ -1450,7 +1451,7 @@ module Movegen = struct
     (* All captures that are not en passant. *)
     let direct_capture = piece_at_square_uopt pos dst in
     (* Are we capturing on the en passant square? *)
-    let is_en_passant = Piece.is_pawn piece && is_en_passant pos dst in
+    let is_en_passant = Piece.is_pawn piece && is_en_passant_square pos dst in
     (* The en passant square, which we only care about if a threat is
        possible. *)
     let en_passant =
@@ -1482,8 +1483,15 @@ module Movegen = struct
     | Piece.White -> Bb.((b & rank_8) = b)
     | Piece.Black -> Bb.((b & rank_1) = b)
 
-  (* Get the list of moves from the bitboard of squares we can move to. *)
-  let[@inline] bb_to_moves src k b ~init ~a:{pos; en_passant_pawn; _} =
+  let[@inline] bb_to_moves src k ~init ~a b = match k with
+    | Piece.Pawn when is_promote_rank b a.pos.active ->
+      (Bb.fold [@specialised]) b ~init
+        ~f:(fun acc dst -> Pieces.Pawn.promote src dst @ acc)
+    | _ ->
+      (Bb.fold [@specialised]) b ~init
+        ~f:(fun acc dst -> Move.create src dst :: acc)
+
+  let[@inline] bb_to_legals src k ~init ~a:{pos; en_passant_pawn; _} b =
     let active = pos.active in
     let piece = Piece.create active k in
     let f = accum_makemove ~parent:pos ~en_passant_pawn ~piece in
@@ -1505,21 +1513,36 @@ module Movegen = struct
     | Piece.Queen  -> Pieces.queen  sq a
     | Piece.King   -> Pieces.king   sq a
 
-  let[@inline] go ({pos; king_sq; num_checkers; _} as a) =
+  let[@inline][@specialise] go f ({pos; king_sq; num_checkers; _} as a) =
     (* If the king has more than one attacker, then it is the only piece
        we can move. *)
-    if num_checkers > 1
-    then Pieces.king king_sq a |> bb_to_moves king_sq King ~init:[] ~a
-    else (List.fold [@speciailised]) ~init:[] ~f:(fun init (sq, k) ->
-        bb_of_kind sq k a |> bb_to_moves sq k ~init ~a) @@ collect_active pos
+    if num_checkers <= 1 then
+      (List.fold [@speciailised]) ~init:[] ~f:(fun init (sq, k) ->
+          bb_of_kind sq k a |> f sq k ~init ~a) @@ collect_active pos
+    else Pieces.king king_sq a |> f king_sq Piece.King ~init:[] ~a
 end
 
-let legal_moves pos = Movegen.go @@ Analysis.create pos
+let legal_moves pos = Movegen.(go bb_to_legals) @@ Analysis.create pos
+let legal_moves_unsafe pos = Movegen.(go bb_to_moves) @@ Analysis.create pos
 
 let make_move pos move =
-  match legal_moves pos |> List.find ~f:(Fn.flip Legal.is_move move) with
+  legal_moves pos |> List.find ~f:(Fn.flip Legal.is_move move)
+
+let make_move_exn pos move = match make_move pos move with
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
   | Some legal -> legal
+
+let make_move_unsafe parent move =
+  let src, dst, promote = Move.decomp move in
+  let piece = piece_at_square_exn parent src in
+  let en_passant_pawn = Uopt.bind parent.en_passant ~f:(fun ep ->
+      if has_pawn_threat parent ep
+      then Uopt.some @@ en_passant_pawn_aux parent.active ep
+      else Uopt.none) in
+  let child, capture, is_en_passant, castle_side =
+    Movegen.run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
+  Legal.Fields.create
+    ~move ~parent ~child ~capture ~is_en_passant ~castle_side
 
 let null_move_unsafe pos =
   let pos = copy pos in
@@ -1529,10 +1552,37 @@ let null_move_unsafe pos =
   set_halfmove pos 0;
   pos
 
-let null_move pos =
+let null_move_exn pos =
   if in_check pos
   then invalid_argf "Illegal null move on position %s" (Fen.to_string pos) ()
   else null_move_unsafe pos
+
+let is_en_passant_unsafe pos m =
+  let src = Move.src m in
+  let dst = Move.dst m in
+  is_en_passant_square pos dst &&
+  piece_at_square_uopt pos src |> Uopt.exists ~f:(fun p ->
+      Piece.is_pawn p && Piece.(Color.equal (color p) pos.active))
+
+let is_capture_unsafe pos m =
+  let open Bb.Syntax in
+  let src = Move.src m in
+  let dst = Move.dst m in
+  is_en_passant_unsafe pos m || begin
+    src @ active_board pos &&
+    dst @ inactive_board pos
+  end
+
+let is_castle_unsafe pos m =
+  let src = Move.src m in
+  let dst = Move.dst m in
+  piece_at_square_uopt pos src |>
+  Uopt.value_map ~default:false ~f:(fun p ->
+      let c, k = Piece.decomp p in
+      Piece.Color.(c = pos.active) && match c, k with
+      | White, King -> Square.(src = e1 && (dst = g1 || dst = c1))
+      | Black, King -> Square.(src = e8 && (dst = g8 || dst = c8))
+      | _ -> false)
 
 (* Standard Algebraic Notation (SAN). *)
 

@@ -167,8 +167,8 @@ let lookup ?(skip_illegal = false) ?(random = true) book pos =
       | {move; weight; _} :: rest ->
         let sum = sum - weight in
         if not random || sum <= target then match make_move pos move with
-          | exception _ when skip_illegal -> find sum rest
-          | exception _ -> Error (Error.Illegal_move (move, pos))
-          | legal -> Ok legal
+          | None when skip_illegal -> find sum rest
+          | None -> Error (Error.Illegal_move (move, pos))
+          | Some legal -> Ok legal
         else find sum rest in
     find sum entries

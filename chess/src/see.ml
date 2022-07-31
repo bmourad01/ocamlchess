@@ -44,7 +44,7 @@ type state = {
 (* Maximum number of pieces in a legal position. *)
 let swap_len = 32
 
-let[@inline] init legal from dst pos victim =
+let[@inline] init is_en_passant from dst pos victim =
   let depth = 1 in
   let attacker = Piece.kind @@ Position.piece_at_square_exn pos from in
   let target_val = Piece.Kind.value attacker in
@@ -57,7 +57,7 @@ let[@inline] init legal from dst pos victim =
      As the evaluation continues, less squares will be available since
      the pieces at these squares will be exchanged. *)
   let occupation =
-    if Legal.is_en_passant legal then
+    if is_en_passant then
       let sq = Option.value_exn (Position.en_passant_pawn pos) in
       Bb.(full -- sq)
     else Bb.full in
@@ -82,12 +82,10 @@ let[@inline] rec evaluate swap depth =
     evaluate swap depth
   else swap.(0)
 
-let[@inline] see legal victim =
-  let m = Legal.move legal in
+let[@inline] see m pos is_en_passant victim =
   let src = Move.src m in
   let dst = Move.dst m in
-  let pos = Legal.parent legal in
-  let st, swap = init legal src dst pos victim in
+  let st, swap = init is_en_passant src dst pos victim in
   let all = Position.all_board pos in
   (* The order from least to most valuable attacker. *)
   let lva_order = [
@@ -135,4 +133,21 @@ let[@inline] see legal victim =
   (* Evaluate the material gains/losses. *)
   evaluate swap st.depth
 
-let go legal = Legal.capture legal |> Option.map ~f:(see legal)
+let go legal =
+  Legal.capture legal |>
+  Option.map ~f:(fun victim ->
+      let m = Legal.move legal in
+      let pos = Legal.parent legal in
+      let is_en_passant = Legal.is_en_passant legal in
+      see m pos is_en_passant victim)
+
+let go_unsafe pos m =
+  let dst = Move.dst m in
+  let them = Position.inactive_board pos in
+  let is_en_passant = Position.is_en_passant_unsafe pos m in
+  if Position.is_en_passant_unsafe pos m || Bb.(dst @ them) then
+    let victim =
+      if is_en_passant then Piece.Pawn
+      else Piece.kind @@ Position.piece_at_square_exn pos dst in
+    Some (see m pos is_en_passant victim)
+  else None

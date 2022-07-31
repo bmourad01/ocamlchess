@@ -94,9 +94,9 @@ val board_of_kind : t -> Piece.kind -> Bitboard.t
     [pos]. *)
 val board_of_piece : t -> Piece.t -> Bitboard.t
 
-(** [is_en_passant pos sq] returns [true] if an en passant square exists
+(** [is_en_passant_square pos sq] returns [true] if an en passant square exists
     in [pos] and it is equal to [sq]. *)
-val is_en_passant : t -> Square.t -> bool
+val is_en_passant_square : t -> Square.t -> bool
 
 (** [en_passant_pawn pos] returns the square of the pawn that just made a
     double push, if any. *)
@@ -391,12 +391,19 @@ end
     is guaranteed for the resulting list. *)
 val legal_moves : t -> legal list
 
+(** Like [legal_moves], but returns the more lightweight data structure for
+    representing the moves. *)
+val legal_moves_unsafe : t -> Move.t list
+
 (** [make_move pos m] applies move [m] to position [pos]. If [m] is not a
-    legal move, then [Invalid_argument] is raised. Additionally, if [pos]
-    is an illegal position, then either the result is undefined, or an
-    exception is raised. The return value is the legal move, which contains
-    the new position. *)
-val make_move : t -> Move.t -> legal
+    legal move, or if [pos] is an illegal position, then [None] is returned.
+    Otherwise, the result is the legal move, which contains the new
+    position. *)
+val make_move : t -> Move.t -> legal option
+
+(** Like [make_move], but raises [Invalid_argument] for illegal moves or
+    positions. *)
+val make_move_exn : t -> Move.t -> legal
 
 (** [null_move_unsafe pos] switches the active player of [pos], pretending that
     no move was played.
@@ -408,7 +415,22 @@ val null_move_unsafe : t -> t
 
 (** Same as [null_move_unsafe], but will raise [Invalid_argument] if the
     position is in check. *)
-val null_move : t -> t
+val null_move_exn : t -> t
+
+(** [is_en_passant_unsafe pos m] returns [true] if move [m] is an en-passant
+    capture, given position [pos]. It is unsafe because the move [m] is not
+    checked for legality. *)
+val is_en_passant_unsafe : t -> Move.t -> bool
+
+(** [is_capture_unsafe pos m] returns [true] if move [m] is a capture, given
+    position [pos]. It is unsafe because the move [m] is not checked for
+    legality. *)
+val is_capture_unsafe : t -> Move.t -> bool
+
+(** [is_castle_unsafe pos m] returns [true] if move [m] is a castling move,
+    given position [pos]. It is unsafe because the move [m] is not checked
+    for legality. *)
+val is_castle_unsafe : t -> Move.t -> bool
 
 (** Implements SAN (Standard Algebraic Notation). *)
 module San : sig

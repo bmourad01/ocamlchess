@@ -19,3 +19,6 @@
     disadvantage. If no advantage is gained by either side, then
     the score is 0. *)
 val go : Position.legal -> int option
+
+(** Same as [go], but for unchecked moves. *)
+val go_unsafe : Position.t -> Move.t -> int option

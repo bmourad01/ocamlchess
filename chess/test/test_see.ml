@@ -11,7 +11,7 @@ let q = Piece.Kind.value Queen
 let test fen move expected =
   let pos = Position.Fen.of_string_exn fen in
   let move = Move.of_string_exn move in
-  let m = Position.make_move pos move in
+  let m = Position.make_move_exn pos move in
   let see = Option.value_exn (See.go m) in
   assert_equal see expected
     ~cmp:(=) ~msg:(sprintf "Got %d, expected %d" see expected)

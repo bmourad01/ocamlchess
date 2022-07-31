@@ -61,7 +61,7 @@ let test_position_6 () =
     "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
 
 let test_move m pos =
-  Position.make_move pos m |> Legal.child |> test_single_aux m
+  Position.make_move_exn pos m |> Legal.child |> test_single_aux m
 
 let test_7 () =
   let m = Move.of_string_exn "h7h6" in

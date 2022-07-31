@@ -33,13 +33,12 @@ module State = struct
         | None -> 1 | Some n -> n + 1);
     {st with pos}
 
-  let play_move m =
-    gets pos >>= fun pos ->
+  let play_move m = gets pos >>= fun pos ->
     match Position.make_move pos m with
-    | exception _ ->
+    | Some m -> set_position @@ Legal.child m
+    | None ->
       failwithf "Received illegal move %s for position %s\n%!"
         (Move.to_string m) (Position.Fen.to_string pos) ()
-    | m -> set_position @@ Legal.child m
 
   let clear_tt = gets @@ fun {tt; _} -> Search.Tt.clear tt
   let set_debug debug = update @@ fun st -> {st with debug}
@@ -50,13 +49,13 @@ module State = struct
       {st with stop = Some p}
     end >>| fun () -> f
 
-  let new_ponder_if c =
-    if c then
+  let new_ponder_when = function
+    | false -> return None
+    | true ->
       let f, p = Future.create () in
       begin update @@ fun st ->
         {st with ponder = Some p}
       end >>| fun () -> Some f
-    else return None
 end
 
 open State.Syntax
@@ -416,7 +415,7 @@ module Go = struct
       State.new_stop () >>= fun stop ->
       let limits = new_limits t (Position.active root) stop in
       (* Start the search. *)
-      State.new_ponder_if t.ponder >>= fun ponder ->
+      State.new_ponder_when t.ponder >>= fun ponder ->
       State.(gets history) >>= fun history ->
       State.(gets tt) >>| fun tt ->
       Search_thread.start ~root ~limits ~history ~tt ~stop ~ponder
