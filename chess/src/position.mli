@@ -416,6 +416,10 @@ val null_move_exn : t -> t
     for the legality of the inputs.
 *)
 module Unsafe : sig
+  (** [make_move pos m] applies move [m] to position [pos]. No checks for
+      legality are performed. *)
+  val make_move : t -> Move.t -> child
+
   (** [null_move pos] switches the active player of [pos], pretending that
       no move was played.
 

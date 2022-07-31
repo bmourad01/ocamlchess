@@ -1532,19 +1532,24 @@ let make_move_exn pos move = match make_move pos move with
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
   | Some child -> child
 
-let make_move_unsafe parent move =
-  let src, dst, promote = Move.decomp move in
-  let piece = piece_at_square_exn parent src in
-  let en_passant_pawn = Uopt.bind parent.en_passant ~f:(fun ep ->
-      if has_pawn_threat parent ep
-      then Uopt.some @@ en_passant_pawn_aux parent.active ep
-      else Uopt.none) in
-  let self, capture, is_en_passant, castle_side =
-    Movegen.run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
-  Child.Fields.create
-    ~move ~parent ~self ~capture ~is_en_passant ~castle_side
-
 module Unsafe = struct
+  let make_move parent move =
+    let src, dst, promote = Move.decomp move in
+    let self, capture, is_en_passant, castle_side =
+      let piece = piece_at_square_uopt parent src in
+      if Uopt.is_none piece then
+        copy parent, Uopt.none, false, Uopt.none
+      else
+        let piece = Uopt.unsafe_value piece in
+        let en_passant_pawn = Uopt.bind parent.en_passant ~f:(fun ep ->
+            if has_pawn_threat parent ep
+            then Uopt.some @@ en_passant_pawn_aux parent.active ep
+            else Uopt.none) in
+        Movegen.run_makemove parent
+          ~src ~dst ~promote ~piece ~en_passant_pawn in
+    Child.Fields.create
+      ~move ~parent ~self ~capture ~is_en_passant ~castle_side
+
   let null_move pos =
     let pos = copy pos in
     Makemove.flip_active pos;
