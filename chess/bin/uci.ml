@@ -209,9 +209,11 @@ module Book = struct
 
   let book_move m =
     let open Uci.Send in
-    let bestmove = Bestmove.{move = Legal.move m; ponder = None} in
-    Format.printf "%a\n%!" pp @@ Info [String "Book Move"];
-    Format.printf "%a\n%!" pp @@ Bestmove (Some bestmove)
+    info_str "Book Move";
+    Format.printf "%a\n%!" pp @@ Bestmove (Some Bestmove.{
+        move = Legal.move m;
+        ponder = None
+      })
 
   let run () =
     load_book () >>= function
