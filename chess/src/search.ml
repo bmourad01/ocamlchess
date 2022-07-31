@@ -660,7 +660,7 @@ module Search = struct
   let mdp ~alpha ~beta ~ply =
     if ply > 0 then
       let alpha = max alpha @@ mated ply in
-      let beta = min beta @@ mating ply in
+      let beta = min beta @@ mating (ply + 1) in
       if alpha >= beta then First alpha else Second (alpha, beta)
     else Second (alpha, beta)
 
@@ -696,7 +696,7 @@ module Quiescence = struct
         | Some {score; bound = Upper; _}
           when Tt.to_score score ply <= eval -> score
         | None | Some _ -> eval in
-      if score >= beta then First score
+      if score >= beta then First beta
       else if delta pos score alpha then First score
       else Second (max score alpha, Some score)
     else Second (alpha, None)
@@ -764,9 +764,9 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
       State.pop_history pos st;
-      let better = Search.better st t m ~score ~ply ~pv ~q:true in
-      if (better && Search.cutoff st t m ~score ~beta ~ply ~depth:0)
-      || st.stopped then Stop t.score
+      if Search.better st t m ~score ~ply ~pv ~q:true
+      && Search.cutoff st t m ~score ~beta ~ply ~depth:0 then Stop beta
+      else if st.stopped then Stop t.score
       else Continue ()
     end
 
@@ -798,13 +798,10 @@ module Main = struct
       Some score, improving
     else None, false
 
-  let update_seldepth (st : state) ply pv =
-    if pv then st.seldepth <- max st.seldepth ply
-
   (* Search from a new position. *)
   let rec go ?(null = false) (st : state) pos ~alpha ~beta ~ply ~depth ~pv =
     let check = Position.in_check pos in
-    update_seldepth st ply pv;
+    if pv then st.seldepth <- max st.seldepth ply;
     if Search.drawn st pos then 0
     else if ply >= max_ply || Search.check_limits st
     then Search.end_of_line pos ~check
@@ -883,9 +880,9 @@ module Main = struct
         let pos = Child.self m in
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
-        let better = Search.better st t m ~score ~ply ~pv in
-        if (better && Search.cutoff st t m ~score ~beta ~ply ~depth)
-        || st.stopped then Stop t.score
+        if Search.better st t m ~score ~ply ~pv
+        && Search.cutoff st t m ~score ~beta ~ply ~depth then Stop beta
+        else if st.stopped then Stop t.score
         else Continue (i + 1)
 
   (* These pruning heuristics depend on conditions that change as we continue
@@ -944,7 +941,7 @@ module Main = struct
     Option.some_if begin
       depth <= rfp_max_depth &&
       eval - rfp_margin depth improving >= beta
-    end eval
+    end beta
 
   and rfp_margin depth improving =
     let m = Eval.Material.pawn_mg in
@@ -973,7 +970,7 @@ module Main = struct
           ~depth:(depth - r - 1)
           ~null:true
           ~pv:false |> Int.neg in
-      Option.some_if (score >= beta) score
+      Option.some_if (score >= beta) beta
     else None
 
   and nmp_min_depth = 3
@@ -1008,6 +1005,7 @@ module Main = struct
   and probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving =
     let beta_cut = beta + probcut_margin improving in
     if depth >= probcut_min_depth
+    && abs beta <= mating (-max_ply)
     && probcut_tt ~depth ~beta_cut ~ttentry
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = None in
@@ -1020,7 +1018,8 @@ module Main = struct
   and probcut_child st pos ~depth ~ply ~beta_cut = fun () (m, _) ->
     let open Continue_or_stop in
     if not @@ State.is_excluded st m ~ply then
-      let alpha = -beta_cut and beta = -beta_cut + 1 in
+      let alpha = -beta_cut in
+      let beta = -beta_cut + 1 in
       let child = Child.self m in
       State.inc_nodes st;
       State.push_history child st;
