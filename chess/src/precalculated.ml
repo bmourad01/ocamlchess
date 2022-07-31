@@ -282,7 +282,7 @@ let castle_tbl =
           if mem x c s then b + b' else b))
 
 let[@inline] castle cr c s =
-  Cr.(to_int @@ inter cr @@ singleton_unsafe c s) |> Array.unsafe_get castle_tbl
+  Cr.(to_int @@ inter cr @@ singleton c s) |> Array.unsafe_get castle_tbl
 
 let between_tbl =
   let tbl = Array.create Bb.empty ~len:Square.(count * count) in
@@ -321,7 +321,7 @@ let[@inline] between sq1 sq2 =
   let j = Square.to_int sq2 in
   Array.unsafe_get between_tbl (i + j * Square.count)
 
-let mvv_lva =
+let mvv_lva_tbl =
   let victims = Piece.[Pawn; Knight; Bishop; Rook; Queen; King] in
   let attackers = List.rev victims in
   let n = Piece.Kind.count in
@@ -333,7 +333,9 @@ let mvv_lva =
           let j = Piece.Kind.to_int attacker in
           tbl.(i + j * n) <- value;
           value + 1)) |> ignore;
-  fun victim attacker ->
-    let i = Piece.Kind.to_int victim in
-    let j = Piece.Kind.to_int attacker in
-    Array.unsafe_get tbl (i + j * n)
+  tbl
+
+let[@inline] mvv_lva victim attacker =
+  let i = Piece.Kind.to_int victim in
+  let j = Piece.Kind.to_int attacker in
+  Array.unsafe_get mvv_lva_tbl (i + j * Piece.Kind.count)

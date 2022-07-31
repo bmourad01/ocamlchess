@@ -66,13 +66,7 @@ let all       = white lor black
 
 (* Constructor *)
 
-let[@inline] singleton c s = match c, s with
-  | Piece.White, Kingside  -> white_kingside
-  | Piece.White, Queenside -> white_queenside
-  | Piece.Black, Kingside  -> black_kingside
-  | Piece.Black, Queenside -> black_queenside
-
-let[@inline] singleton_unsafe c s =
+let[@inline] singleton c s =
   let c = (Obj.magic c : int) in
   let s = (Obj.magic s : int) in
   (succ s) lsl (c * succ c)

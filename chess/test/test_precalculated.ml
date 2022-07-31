@@ -5,9 +5,15 @@ open Chess
 let cmp_bitboard = Bitboard.equal
 
 let test_bitboard expected result =
-  assert_equal result expected ~cmp:cmp_bitboard ~msg:begin
+  assert_equal expected result ~cmp:cmp_bitboard ~msg:begin
     sprintf "Got 0x%LX, expected 0x%LX"
       (Bitboard.to_int64 result) (Bitboard.to_int64 expected)
+  end
+
+let test_mvv_lva expected result x y =
+  assert_equal expected result ~cmp:Bool.equal ~msg:begin
+    sprintf "Got %b for MVV-LVA compare of %d and %d, expected %b"
+      result x y expected
   end
 
 let test_queen_empty_a1 () =
@@ -82,6 +88,13 @@ let test_rook_start_h8 () =
   let result = Precalculated.rook Square.h8 occupied in
   test_bitboard expected result
 
+let test_mvv_lva_1 () =
+  let x = Precalculated.mvv_lva Queen Pawn in
+  let y = Precalculated.mvv_lva Pawn Queen in
+  let result = x > y in
+  let expected = true in
+  test_mvv_lva expected result x y
+
 let suite = "Test precalculated" >::: [
     ("Queen empty a1" >:: fun _ -> test_queen_empty_a1 ());
     ("Queen empty a8" >:: fun _ -> test_queen_empty_a8 ());
@@ -95,6 +108,7 @@ let suite = "Test precalculated" >::: [
     ("Rook start h1" >:: fun _ -> test_rook_start_h1 ());
     ("Rook start a8" >:: fun _ -> test_rook_start_a8 ());
     ("Rook start a8" >:: fun _ -> test_rook_start_h8 ());
+    ("PxQ vs Qxp" >:: fun _ -> test_mvv_lva_1 ());
   ]
 
 let () = run_test_tt_main suite
