@@ -32,7 +32,7 @@ type error = Error.t
 (** [lookup book pos ~skip_illegal ~random] attempts to find an entry for
     [pos] in [book].
 
-    Returns [Ok legal] if a valid entry is found, where [legal] is the legal
+    Returns [Ok child] if a valid entry is found, where [child] is the legal
     move to be played in such a position, and [Error err] otherwise.
 
     If [skip_illegal] is [false] (default), then an error is returned when an
@@ -47,4 +47,4 @@ val lookup :
   ?random:bool ->
   t ->
   Position.t ->
-  (Position.legal, error) result
+  (Position.child, error) result

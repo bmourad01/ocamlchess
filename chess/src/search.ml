@@ -4,7 +4,7 @@ open Bap_future.Std
 
 module Bb = Bitboard
 module Pre = Precalculated
-module Legal = Position.Legal
+module Child = Position.Child
 module Threats = Position.Threats
 
 module Limits = struct
@@ -152,7 +152,7 @@ module Tt = struct
       ply   : int;
       depth : int;
       score : int;
-      best  : Legal.t option;
+      best  : Child.t option;
       bound : bound;
     } [@@deriving fields]
   end
@@ -207,7 +207,7 @@ type tt = Tt.t
 
 module Result = struct
   type t = {
-    pv       : Legal.t list;
+    pv       : Child.t list;
     score    : Uci.Send.Info.score;
     nodes    : int;
     depth    : int;
@@ -224,9 +224,9 @@ type result = Result.t
 (* The `check` parameter is for deciding when to generate quiet checks in
    quiescence search. *)
 let is_noisy ?(check = true) m =
-  Legal.is_capture m ||
-  Move.is_promote @@ Legal.move m ||
-  (check && Legal.gives_check m)
+  Child.is_capture m ||
+  Move.is_promote @@ Child.move m ||
+  (check && Child.gives_check m)
 
 let is_quiet ?(check = true) = Fn.non @@ is_noisy ~check
 
@@ -241,10 +241,10 @@ module State = struct
     history                    : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
-    pv                         : Legal.t Oa.t array;
-    excluded                   : Legal.t Oa.t;
-    killer1                    : Legal.t Oa.t;
-    killer2                    : Legal.t Oa.t;
+    pv                         : Child.t Oa.t array;
+    excluded                   : Child.t Oa.t;
+    killer1                    : Child.t Oa.t;
+    killer2                    : Child.t Oa.t;
     move_history               : int array;
     mutable move_history_max_w : int;
     mutable move_history_max_b : int;
@@ -309,9 +309,9 @@ module State = struct
 
   (* Is `m` a killer move? *)
   let is_killer m ply st = match killer1 ply st with
-    | Some m' when Legal.same m m' -> true
+    | Some m' when Child.same m m' -> true
     | _ -> match killer2 ply st with
-      | Some m' -> Legal.same m m'
+      | Some m' -> Child.same m m'
       | None -> false
 
   (* Update the killer move for a particular ply. *)
@@ -321,8 +321,8 @@ module State = struct
     Oa.set_some st.killer1 ply m
 
   let history_idx m =
-    let c = Piece.Color.to_int @@ Position.active @@ Legal.parent m in
-    let m = Legal.move m in
+    let c = Piece.Color.to_int @@ Position.active @@ Child.parent m in
+    let m = Child.move m in
     let src = Square.to_int @@ Move.src m in
     let dst = Square.to_int @@ Move.dst m in
     ((src lsl 1) lor c) * Square.count + dst
@@ -333,7 +333,7 @@ module State = struct
       let i = history_idx m in
       let d = Array.unsafe_get st.move_history i + (depth * depth) in
       Array.unsafe_set st.move_history i d;
-      match Position.active @@ Legal.parent m with
+      match Position.active @@ Child.parent m with
       | White ->
         st.move_history_max_w <- max d st.move_history_max_w
       | Black ->
@@ -377,7 +377,7 @@ module State = struct
   let clear_excluded st ~ply = Oa.unsafe_set_none st.excluded ply
 
   let is_excluded st m ~ply =
-    excluded st ~ply |> Option.exists ~f:(Legal.same m)
+    excluded st ~ply |> Option.exists ~f:(Child.same m)
 
   let update_pv st m ~ply =
     let pv = Array.unsafe_get st.pv ply in
@@ -411,7 +411,7 @@ module Iterator = struct
   type t = {
     mutable i : int;
     length    : int;
-    moves     : (Legal.t * int) array;
+    moves     : (Child.t * int) array;
   }
 
   let empty = {
@@ -477,16 +477,16 @@ module Order = struct
 
   let is_hash ttentry = match (ttentry : Tt.entry option) with
     | None | Some {best = None; _} -> fun _ -> false
-    | Some {best = Some best; _} -> fun m -> Legal.same best m
+    | Some {best = Some best; _} -> fun m -> Child.same best m
 
   let promote_by_value m =
-    Legal.move m |> Move.promote |>
+    Child.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(fun k ->
         Piece.Kind.value @@ Move.Promote.to_piece_kind k)
 
   let promote_by_offset m =
     let open Move.Promote in
-    Legal.move m |> Move.promote |>
+    Child.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(function
         | Queen -> promote_offset + 3
         | Rook -> promote_offset + 2
@@ -528,8 +528,8 @@ module Order = struct
     let move_history_max = State.move_history_max pos st in
     let is_hash = is_hash ttentry in
     let killer m = match killer1, killer2 with
-      | Some k, _ when Legal.same m k -> killer1_offset
-      | _, Some k when Legal.same m k -> killer2_offset
+      | Some k, _ when Child.same m k -> killer1_offset
+      | _, Some k when Child.same m k -> killer2_offset
       | _ -> 0 in
     let move_history m =
       let i = State.history_idx m in
@@ -546,7 +546,7 @@ module Order = struct
             else
               let killer = killer m in
               if killer <> 0 then killer
-              else match Legal.castle_side m with
+              else match Child.castle_side m with
                 | Some _ -> castle_offset
                 | None -> move_history m + history_offset)
 
@@ -569,7 +569,7 @@ end
 module Search = struct
   (* The results for a single ply. *)
   type t = {
-    mutable best  : Legal.t option;
+    mutable best  : Child.t option;
     mutable alpha : int;
     mutable score : int;
     mutable bound : Tt.bound;
@@ -722,7 +722,7 @@ module Quiescence = struct
     if Search.drawn st pos then 0
     else if ply >= max_ply || Search.check_limits st
     then Search.end_of_line pos ~check
-    else Position.legal_moves pos |> function
+    else Position.children pos |> function
       | [] -> if check then mated ply else 0
       | moves -> match Search.mdp ~alpha ~beta ~ply with
         | First alpha -> alpha
@@ -755,7 +755,7 @@ module Quiescence = struct
     if should_skip t m ~qe ~order ~evasion
     then Continue ()
     else begin
-      let pos = Legal.child m in
+      let pos = Child.self m in
       State.push_history pos st;
       State.inc_nodes st;
       let score = Int.neg @@ go st pos ~pv
@@ -773,7 +773,7 @@ module Quiescence = struct
   and should_skip t m ~qe ~order ~evasion =
     t.score > mated max_ply &&
     if evasion then
-      not (Legal.is_capture m) &&
+      not (Child.is_capture m) &&
       let result = !qe > 1 in
       incr qe;
       result
@@ -808,7 +808,7 @@ module Main = struct
     if Search.drawn st pos then 0
     else if ply >= max_ply || Search.check_limits st
     then Search.end_of_line pos ~check
-    else match Position.legal_moves pos with
+    else match Position.children pos with
       | [] -> if check then mated ply else 0
       | moves ->
         (* Check + single reply extension. *)
@@ -880,7 +880,7 @@ module Main = struct
       | Second ext ->
         let r = lmr st m ~i ~beta ~ply ~depth ~check ~pv ~improving in
         (* Explore the child node *)
-        let pos = Legal.child m in
+        let pos = Child.self m in
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
         let better = Search.better st t m ~score ~ply ~pv in
@@ -966,7 +966,7 @@ module Main = struct
     && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
       let r = if depth <= 6 then 2 else 3 in
       let score =
-        Position.null_move_unsafe pos |> go st
+        Position.Unsafe.null_move pos |> go st
           ~alpha:(-beta)
           ~beta:(-beta + 1)
           ~ply:(ply + 1)
@@ -1021,7 +1021,7 @@ module Main = struct
     let open Continue_or_stop in
     if not @@ State.is_excluded st m ~ply then
       let alpha = -beta_cut and beta = -beta_cut + 1 in
-      let child = Legal.child m in
+      let child = Child.self m in
       State.inc_nodes st;
       State.push_history child st;
       (* Confirm with quiescence search first. *)
@@ -1081,7 +1081,7 @@ module Main = struct
       && not (is_mate ttscore || is_mated ttscore)
       && depth >= se_min_depth
       && not (State.has_excluded st ~ply)
-      && Option.exists entry.best ~f:(Legal.same m)
+      && Option.exists entry.best ~f:(Child.same m)
       && entry.depth >= se_min_ttdepth depth then
         let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
@@ -1117,7 +1117,7 @@ module Main = struct
     && depth >= lmr_min_depth
     && is_quiet m
     && not @@ State.is_killer m ply st then
-      let t = Bb.count @@ Legal.new_threats m in
+      let t = Bb.count @@ Child.new_threats m in
       max 0 (1 + b2in improving - t)
     else 0
 
@@ -1279,12 +1279,12 @@ let no_moves root iter =
   r
 
 let moves pos limits =
-  let moves = Position.legal_moves pos in
+  let moves = Position.children pos in
   match Limits.moves limits with
   | [] -> moves
   | searchmoves ->
     List.filter moves ~f:(fun m ->
-        List.exists searchmoves ~f:(Legal.is_move m))
+        List.exists searchmoves ~f:(Child.is_move m))
 
 let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~history ~tt () =
   match moves root limits with

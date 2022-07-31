@@ -5,7 +5,7 @@ exception No_moves
 
 (** Raised when a move is chosen that is not withing the set
     of legal moves for a given position. *)
-exception Invalid_move of Chess.Position.t * Chess.Position.legal
+exception Invalid_move of Chess.Position.t * Chess.Position.child
 
 (** The player whose internal state is of type ['a]. *)
 type 'a t
@@ -24,7 +24,7 @@ type e = T : 'a t -> e
     move in the list is derived from the same parent position.
 *)
 type 'a choice =
-  'a -> Chess.Position.legal list -> Chess.Position.legal * 'a
+  'a -> Chess.Position.child list -> Chess.Position.child * 'a
 
 (** Creates a new player.
 
@@ -50,7 +50,7 @@ val create :
     If the move chosen is not within the set of legal moves for [pos],
     then [Invalid_move] is raised.
 *)
-val choose : 'a t -> Chess.Position.t -> Chess.Position.legal * 'a
+val choose : 'a t -> Chess.Position.t -> Chess.Position.child * 'a
 
 (** Returns the name of the player. *)
 val name : 'a t -> string

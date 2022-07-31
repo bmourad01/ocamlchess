@@ -111,7 +111,7 @@ module Tt : sig
     val score : t -> int
 
     (** The best move for the position. *)
-    val best : t -> Position.legal option
+    val best : t -> Position.child option
 
     (** The bound for the position's score. *)
     val bound : t -> bound
@@ -138,15 +138,15 @@ module Result : sig
   type t
 
   (** The best move to play, if any. *)
-  val best : t -> Position.legal option
+  val best : t -> Position.child option
 
   (** The best move to play. Raises if the PV is empty. *)
-  val best_exn : t -> Position.legal
+  val best_exn : t -> Position.child
 
   (** The principal variation. If this is not a mating sequence, then it
       is guaranteed to have a length that is at most the depth that was
       searched. *)
-  val pv : t -> Position.legal list
+  val pv : t -> Position.child list
 
   (** The score that was given to the best move. *)
   val score : t -> Uci.Send.Info.score

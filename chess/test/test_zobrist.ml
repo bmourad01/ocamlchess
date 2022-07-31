@@ -3,7 +3,7 @@ open OUnit2
 open Chess
 
 module Fen = Position.Fen
-module Legal = Position.Legal
+module Child = Position.Child
 
 let expected_hash pos =
   Fen.to_string pos |>
@@ -31,12 +31,12 @@ let test_single_aux m pos =
              was expected to have pawn hash %016LX"
             Position.pp pos hash Move.pp m expected)
 
-let test_single legal =
-  let m = Legal.move legal in
-  let pos = Legal.child legal in
+let test_single child =
+  let m = Child.move child in
+  let pos = Child.self child in
   test_single_aux m pos
 
-let test pos = Position.legal_moves pos |> List.iter ~f:test_single
+let test pos = Position.children pos |> List.iter ~f:test_single
 
 let test_starting () = test Position.start
 
@@ -61,7 +61,7 @@ let test_position_6 () =
     "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
 
 let test_move m pos =
-  Position.make_move_exn pos m |> Legal.child |> test_single_aux m
+  Position.make_move_exn pos m |> Child.self |> test_single_aux m
 
 let test_7 () =
   let m = Move.of_string_exn "h7h6" in

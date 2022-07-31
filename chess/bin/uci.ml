@@ -3,7 +3,7 @@ open Chess
 open Bap_future.Std
 open Monads.Std
 
-module Legal = Position.Legal
+module Child = Position.Child
 
 module State = struct
   module T = struct
@@ -35,7 +35,7 @@ module State = struct
 
   let play_move m = gets pos >>= fun pos ->
     match Position.make_move pos m with
-    | Some m -> set_position @@ Legal.child m
+    | Some m -> set_position @@ Child.self m
     | None ->
       failwithf "Received illegal move %s for position %s\n%!"
         (Move.to_string m) (Position.Fen.to_string pos) ()
@@ -192,7 +192,7 @@ module Book = struct
     let open Uci.Send in
     info_str "Book Move";
     Format.printf "%a\n%!" pp @@ Bestmove (Some Bestmove.{
-        move = Legal.move m;
+        move = Child.move m;
         ponder = None
       })
 
@@ -281,14 +281,14 @@ module Search_thread = struct
           Nodes nodes;
           Nps nps;
           Time time;
-          Pv (List.map pv ~f:Legal.move);
+          Pv (List.map pv ~f:Child.move);
         ] in
     Format.printf "%a\n%!" Uci.Send.pp @@ Info info
 
   let bestmove result =
     let make ?p m =
-      let move = Legal.move m in
-      let ponder = Option.map p ~f:Legal.move in
+      let move = Child.move m in
+      let ponder = Option.map p ~f:Child.move in
       Uci.Send.Bestmove.{move; ponder} in
     let bestmove = match Search.Result.pv result with
       | [] -> None

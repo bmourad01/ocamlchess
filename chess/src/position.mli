@@ -329,118 +329,123 @@ val in_check : t -> bool
     checkmate. *)
 val is_insufficient_material : t -> bool
 
-(** A legal move. *)
-type legal [@@deriving compare, equal, sexp]
+(** A position resulting from a legal move. *)
+type child [@@deriving compare, equal, sexp]
 
-module Legal : sig
+module Child : sig
   (** [same x y] returns [true] if [x] and [y] refer to the same move.
       This is determined by comparing the hashes of both the [parent] and 
       [new_position] for [x] and [y], respectively. *)
-  val same : legal -> legal -> bool
+  val same : child -> child -> bool
 
   (** The actual move that was made. *)
-  val move : legal -> Move.t
+  val move : child -> Move.t
 
-  (** [is_move legal m] returns [true] if [m] is the move that was made for
-      [legal] *)
-  val is_move : legal -> Move.t -> bool
+  (** [is_move child m] returns [true] if [m] is the move that was made for
+      [child] *)
+  val is_move : child -> Move.t -> bool
 
   (** The parent position that this move was applied to. *)
-  val parent : legal -> t
+  val parent : child -> t
 
   (** The resulting position. *)
-  val child : legal -> t
+  val self : child -> t
 
   (** Returns [true] if the move was a capture. *)
-  val is_capture : legal -> bool
+  val is_capture : child -> bool
 
   (** Returns [true] if the move was a castle. *)
-  val is_castle : legal -> bool
+  val is_castle : child -> bool
 
   (** Returns [true] if the move was an en passant capture. *)
-  val is_en_passant : legal -> bool
+  val is_en_passant : child -> bool
 
   (** The kind of piece that was captured, if any. *)
-  val capture : legal -> Piece.kind option
+  val capture : child -> Piece.kind option
 
   (** The square of the piece that was captured, if any. Covers the case of
       en passant captures, where the destination square is not the square
       of the captured piece. *)
-  val capture_square : legal -> Square.t option
+  val capture_square : child -> Square.t option
 
   (** If the move was a castle, then returns the side that the castling was
       performed on. Otherwise, returns [None]. *)
-  val castle_side : legal -> Castling_rights.side option
+  val castle_side : child -> Castling_rights.side option
 
   (** Returns [true] id the move gives check to the opponent, *)
-  val gives_check : legal -> bool
+  val gives_check : child -> bool
 
   (** Returns the bitboard of enemy pieces (relative to the parent position)
       that are under threat as a result of the move. *)
-  val new_threats : legal -> Bitboard.t
+  val new_threats : child -> Bitboard.t
 
-  (** A legal move. *)
-  type t = legal [@@deriving compare, equal, sexp]
+  type t = child [@@deriving compare, equal, sexp]
 
   include Base.Comparable.S with type t := t
 end
 
-(** [legal_moves pos] returns a list of legal moves for the active color of
-    position [pos]. It is assumed that [pos] is reachable from the starting 
-    position. May raise if this assumption is violated. No particular order
-    is guaranteed for the resulting list. *)
-val legal_moves : t -> legal list
+(** Returns the list of legal moves without applying them to the
+    position. No particular order is guaranteed. *)
+val legal_moves : t -> Move.t list
 
-(** Like [legal_moves], but returns the more lightweight data structure for
-    representing the moves. *)
-val legal_moves_unsafe : t -> Move.t list
+(** [children pos] returns the result of applying all legal moves of
+    position [pos].
+
+    It is assumed that [pos] is reachable from the starting  position.
+    May raise if this assumption is violated. No particular order is
+    guaranteed for the resulting list.
+*)
+val children : t -> child list
 
 (** [make_move pos m] applies move [m] to position [pos]. If [m] is not a
     legal move, or if [pos] is an illegal position, then [None] is returned.
     Otherwise, the result is the legal move, which contains the new
     position. *)
-val make_move : t -> Move.t -> legal option
+val make_move : t -> Move.t -> child option
 
 (** Like [make_move], but raises [Invalid_argument] for illegal moves or
     positions. *)
-val make_move_exn : t -> Move.t -> legal
+val make_move_exn : t -> Move.t -> child
 
-(** [null_move_unsafe pos] switches the active player of [pos], pretending that
-    no move was played.
-
-    If the active player of [pos] is in check, then the resulting 
-    position is illegal, and any behavior thereafter is undefined.
-*)
-val null_move_unsafe : t -> t
-
-(** Same as [null_move_unsafe], but will raise [Invalid_argument] if the
+(** Same as [Unsafe.null_move], but will raise [Invalid_argument] if the
     position is in check. *)
 val null_move_exn : t -> t
 
-(** [is_en_passant_unsafe pos m] returns [true] if move [m] is an en-passant
-    capture, given position [pos]. It is unsafe because the move [m] is not
-    checked for legality. *)
-val is_en_passant_unsafe : t -> Move.t -> bool
+(** This submodule exposes some unsafe functionality for manipulating or
+    querying the position. They are unsafe because no checks are performed
+    for the legality of the inputs.
+*)
+module Unsafe : sig
+  (** [null_move pos] switches the active player of [pos], pretending that
+      no move was played.
 
-(** [is_capture_unsafe pos m] returns [true] if move [m] is a capture, given
-    position [pos]. It is unsafe because the move [m] is not checked for
-    legality. *)
-val is_capture_unsafe : t -> Move.t -> bool
+      If the active player of [pos] is in check, then the resulting 
+      position is illegal, and any behavior thereafter is undefined.
+  *)
+  val null_move : t -> t
 
-(** [is_castle_unsafe pos m] returns [true] if move [m] is a castling move,
-    given position [pos]. It is unsafe because the move [m] is not checked
-    for legality. *)
-val is_castle_unsafe : t -> Move.t -> bool
+  (** [is_en_passant pos m] returns [true] if move [m] is an en-passant
+      capture, given position [pos]. *)
+  val is_en_passant : t -> Move.t -> bool
+
+  (** [is_capture pos m] returns [true] if move [m] is a capture, given
+      position [pos]. *)
+  val is_capture : t -> Move.t -> bool
+
+  (** [is_castle pos m] returns [true] if move [m] is a castling move,
+      given position [pos]. *)
+  val is_castle : t -> Move.t -> bool
+end
 
 (** Implements SAN (Standard Algebraic Notation). *)
 module San : sig
-  (** [pp ppf legal] pretty-prints the [legal] move in SAN to formatter [ppf]. *)
-  val pp : Format.formatter -> legal -> unit
+  (** [pp ppf legal] pretty-prints the [child] in SAN to formatter [ppf]. *)
+  val pp : Format.formatter -> child -> unit
 
   (** [to_string legal] returns a string representing the [legal] move in SAN. *)
-  val to_string : legal -> string
+  val to_string : child -> string
 
   (** [of_string s pos] returns the legal move of string [s] given the
       position [pos], if it exists. *)
-  val of_string : string -> t -> legal option
+  val of_string : string -> t -> child option
 end

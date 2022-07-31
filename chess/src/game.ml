@@ -1,6 +1,6 @@
 open Core_kernel
 
-module Legal = Position.Legal
+module Child = Position.Child
 
 type declared_draw = [
   | `Mutual_agreement
@@ -68,7 +68,7 @@ module T = struct
     black   : string option;
     result  : result;
     start   : Position.t;
-    moves   : Position.legal list;
+    moves   : Position.child list;
     history : int Int64.Map.t;
   } [@@deriving compare, equal, sexp, fields]
 end
@@ -78,7 +78,7 @@ include T
 let moves game = List.rev game.moves
 
 let position game = match game.moves with
-  | prev :: _ -> Legal.child prev
+  | prev :: _ -> Child.self prev
   | [] -> game.start
 
 let is_over game = match game.result with
@@ -88,7 +88,7 @@ let is_over game = match game.result with
 let result_of pos history =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
-  let no_moves = List.is_empty @@ Position.legal_moves pos in
+  let no_moves = List.is_empty @@ Position.children pos in
   let hash = Position.hash pos in
   if in_check && no_moves then
     Checkmate c
@@ -121,16 +121,16 @@ exception Invalid_parent
 exception Invalid_threefold
 exception Invalid_fifty_move
 
-let add_move ?(resigned = None) ?(declared_draw = None) game legal =
+let add_move ?(resigned = None) ?(declared_draw = None) game child =
   if not @@ is_over game then
     let moves =
       let prev = position game in
-      let parent = Legal.parent legal in
+      let parent = Child.parent child in
       (* We do hard comparison instead of checking the hashes because we also
          care about the halfmove and fullmove clocks. *)
       if Position.(prev <> parent) then raise Invalid_parent
-      else legal :: game.moves in
-    let pos = Legal.child legal in
+      else child :: game.moves in
+    let pos = Child.self child in
     let hash = Position.hash pos in
     let history =
       Map.update game.history hash ~f:(function
@@ -179,8 +179,8 @@ let pp ppf game =
   if Position.(game.start <> start) then
     Format.fprintf ppf "[FEN \"%a\"]\n%!" Position.pp game.start;
   Format.fprintf ppf "\n%!";
-  moves game |> List.fold ~init:true ~f:(fun full legal ->
-      let parent = Legal.parent legal in
+  moves game |> List.fold ~init:true ~f:(fun full child ->
+      let parent = Child.parent child in
       if full then
         Format.fprintf ppf "%d.%!" @@ Position.fullmove parent;
       let full =
@@ -190,7 +190,7 @@ let pp ppf game =
         if full && Piece.Color.(active = Black) then begin
           Format.fprintf ppf "..%!"; full
         end else not full in
-      Format.fprintf ppf "%a %!" Position.San.pp legal;
+      Format.fprintf ppf "%a %!" Position.San.pp child;
       full) |> ignore;
   Format.fprintf ppf "%a\n%!" Result.pp game.result
 

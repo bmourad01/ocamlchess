@@ -40,7 +40,7 @@ let try_book in_book root history =
       match Book.lookup book root with
       | Ok m ->
         Format.printf "Book move: %a\n\n%!" Position.San.pp m;
-        let new_pos = Position.Legal.child m in
+        let new_pos = Position.Child.self m in
         update_history history new_pos;
         Some m
       | Error err ->
@@ -48,7 +48,7 @@ let try_book in_book root history =
         None)
 
 let choice (history, tt, in_book) moves =
-  let root = Position.Legal.parent @@ List.hd_exn moves in
+  let root = Position.Child.parent @@ List.hd_exn moves in
   update_history history root;
   match try_book in_book root history with
   | Some m -> m, (history, tt, true)
@@ -56,7 +56,7 @@ let choice (history, tt, in_book) moves =
     let limits = Option.value_exn !limits in
     let res = Search.go ~root ~limits ~history ~tt ~iter:print_res () in
     let m = Search.Result.best_exn res in
-    let new_pos = Position.Legal.child m in
+    let new_pos = Position.Child.self m in
     update_history history new_pos;
     m, (history, tt, false)
 

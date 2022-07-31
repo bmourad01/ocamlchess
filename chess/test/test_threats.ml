@@ -3,7 +3,7 @@ open OUnit2
 open Chess
 
 module Threats = Position.Threats
-module Legal = Position.Legal
+module Child = Position.Child
 
 let test_threats fen expected =
   let pos = Position.Fen.of_string_exn fen in
@@ -15,9 +15,9 @@ let test_threats fen expected =
 let test_new_threats mstr fen expected =
   let m = Move.of_string_exn mstr in
   let pos = Position.Fen.of_string_exn fen in
-  let moves = Position.legal_moves pos in
-  let legal = List.find_exn moves ~f:(Fn.flip Legal.is_move m) in
-  let threats = Bitboard.count @@ Legal.new_threats legal in
+  let moves = Position.children pos in
+  let child = List.find_exn moves ~f:(Fn.flip Child.is_move m) in
+  let threats = Bitboard.count @@ Child.new_threats child in
   assert_equal threats expected ~cmp:(=)
     ~msg:(sprintf "New threats (%s): got %d, expected %d"
             mstr threats expected)

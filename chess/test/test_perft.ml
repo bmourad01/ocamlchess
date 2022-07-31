@@ -8,9 +8,9 @@ open Chess
 let rec perft pos depth =
   if depth <= 0 then 1L
   else
-    Position.legal_moves pos |>
+    Position.children pos |>
     List.fold ~init:0L ~f:(fun acc m ->
-        let pos = Position.Legal.child m in
+        let pos = Position.Child.self m in
         Int64.(acc + perft pos (Int.pred depth)))
 
 let expect pos depth expected =

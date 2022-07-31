@@ -77,7 +77,7 @@ val result : t -> result
 val start : t -> Position.t
 
 (** The list of moves that were played. *)
-val moves : t -> Position.legal list
+val moves : t -> Position.child list
 
 (** The map from position hashes to the number of times they have occurred in
     the game. *)
@@ -118,20 +118,20 @@ exception Invalid_threefold
     rule, when the halfmove clock has not yet reached 100. *)
 exception Invalid_fifty_move
 
-(** [add_move game legal ~resigned ~declared_draw] updates [game] with a new
-    move [legal].
+(** [add_move game child ~resigned ~declared_draw] updates [game] with a new
+    move [child].
 
     [resigned] indicates that a player resigned after the move was made.
 
     [declared_draw] optionally denotes that a player declared a draw after
     the move was made.
 
-    If the game is not automatically ended with [legal], then [resigned] is
+    If the game is not automatically ended with [child], then [resigned] is
     checked first. Otherwise, [declared_draw] is checked.
 
     Raises [Game_over] when [game] has already ended.
 
-    Raises [Invalid_parent] when [legal] was not derived from the previous
+    Raises [Invalid_parent] when [child] was not derived from the previous
     position in [game].
 
     Raises [Invalid_threefold] when [declared_draw] is [`Threefold_repetition]
@@ -144,7 +144,7 @@ val add_move :
   ?resigned:Piece.color option ->
   ?declared_draw:declared_draw option ->
   t ->
-  Position.legal ->
+  Position.child ->
   t
 
 (** Pretty-prints the PGN representation of the game. *)

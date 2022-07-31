@@ -3,7 +3,7 @@ open Chess
 open Monads.Std
 
 module Bb = Bitboard
-module Legal = Position.Legal
+module Child = Position.Child
 
 module Window = struct
   type t
@@ -32,9 +32,9 @@ module State = struct
     type t = {
       window : Window.t;
       game   : Game.t;
-      legal  : Position.legal list;
-      sel    : (Square.t * Position.legal list) option;
-      prev   : Position.legal option;
+      moves  : Position.child list;
+      sel    : (Square.t * Position.child list) option;
+      prev   : Position.child option;
       white  : Player.e option;
       black  : Player.e option;
     } [@@deriving fields]
@@ -66,11 +66,11 @@ let screen_to_sq window mx my =
   loop_y 0
 
 let find_move sq mv =
-  let m = Legal.move mv in
+  let m = Child.move mv in
   Square.(sq = Move.dst m)
 
 let find_promote sq k mv =
-  let m = Legal.move mv in
+  let m = Child.move mv in
   Square.(sq = Move.dst m) &&
   Option.exists (Move.promote m) ~f:(Move.Promote.equal k)
 
@@ -78,29 +78,28 @@ let promote_w = 320
 let promote_h = 80
 let promote_name = "Pick a promotion piece"
 
-let click mx my = State.update @@ fun ({window; game; legal; sel; _} as st) ->
+let click mx my = State.update @@ fun ({window; game; moves; sel; _} as st) ->
   match screen_to_sq window mx my with
   | None -> st
   | Some sq -> match sel with
     | Some (sq', _) when Square.(sq = sq') -> {st with sel = None}
     | None ->
-      let moves =
-        List.filter legal ~f:(fun m ->
-            Square.(sq = Move.src (Legal.move m))) in
+      let moves = List.filter moves ~f:(fun m ->
+          Square.(sq = Move.src (Child.move m))) in
       let sel = if List.is_empty moves then None else Some (sq, moves) in
       {st with sel}
     | Some (_, moves) -> match List.find moves ~f:(find_move sq) with
       | None -> st
       | Some m ->
-        let m = match Move.promote @@ Legal.move m with
+        let m = match Move.promote @@ Child.move m with
           | None -> m
           | Some _ ->
-            let c = Position.active @@ Legal.parent m in
+            let c = Position.active @@ Child.parent m in
             let k = Window.promote promote_w promote_h promote_name c in
             List.find_exn moves ~f:(find_promote sq k) in
         let game = Game.add_move game m in
-        let legal = Position.legal_moves @@ Legal.child m in
-        {st with game; legal; sel = None; prev = Some m}
+        let moves = Position.children @@ Child.self m in
+        {st with game; moves; sel = None; prev = Some m}
 
 let poll = State.(gets window) >>= fun window ->
   match Window.poll_event window with
@@ -142,12 +141,12 @@ let ai_move c player = State.(gets game) >>= fun game ->
       failwith "Tried to play AI move with no legal moves."
     | Player.Invalid_move (_, m) ->
       failwithf "Tried to play invalid move %s."
-        (Move.to_string @@ Legal.move m) () in
+        (Move.to_string @@ Child.move m) () in
   update_player_state c player st >>= fun () ->
   let game = Game.add_move game m in
-  let legal = Position.legal_moves @@ Legal.child m in
+  let moves = Position.children @@ Child.self m in
   begin State.update @@ fun st ->
-    {st with game; legal; sel = None; prev = Some m}
+    {st with game; moves; sel = None; prev = Some m}
   end >>| fun () -> print_result @@ Game.result game
 
 let human_or_ai_move c = function
@@ -200,29 +199,29 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     (* New position? *)
     State.(gets game) >>= fun game ->
     let new_pos = Game.position game in
-    State.(gets legal) >>= fun legal ->
+    State.(gets moves) >>= fun moves ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
     if not @@ Position.same_hash pos new_pos then begin
       let mv = Option.value_exn prev in
-      let m = Legal.move mv in
+      let m = Child.move mv in
       Format.printf "%a (%a): %a\n%!"
         Move.pp m Position.San.pp mv Position.pp new_pos;
       Format.printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
       Format.printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
       See.go mv |> Option.iter ~f:(fun see ->
           Format.printf "Static Exchange Evaluation: %d\n%!" see);
-      Format.printf "%d legal moves\n%!" @@ List.length legal;
+      Format.printf "%d legal moves\n%!" @@ List.length moves;
       Format.printf "\n%!";
     end;
-    let prev = Option.map prev ~f:Legal.move in
+    let prev = Option.map prev ~f:Child.move in
     (* Get the valid squares for our selected piece to move to. *)
     State.(gets sel) >>= begin function
       | None -> State.return (Bb.(to_int64 empty), None)
       | Some (sq, moves) ->
         let bb =
           List.fold moves ~init:Bb.empty ~f:(fun acc mv ->
-              let m = Legal.move mv in
+              let m = Child.move mv in
               Bb.(acc ++ Move.dst m)) in
         State.return (Bb.to_int64 bb, Some sq)
     end >>= fun (bb, sq) ->
@@ -263,7 +262,7 @@ let run pos ~white ~black ~delay =
   init_fonts piece_font text_font;
   init_named_values ();
   let window = Window.create window_size window_size "chess" in
-  let legal = Position.legal_moves pos in
+  let moves = Position.children pos in
   let white_name = match white with
     | None -> Format.printf "White is human\n%!"; "human"
     | Some Player.(T player) ->
@@ -286,12 +285,12 @@ let run pos ~white ~black ~delay =
   Format.printf "Initial position: %a\n%!" Position.pp pos;
   Format.printf "Hash: %016LX\n%!" @@ Position.hash pos;
   Format.printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
-  Format.printf "%d legal moves\n%!" @@ List.length legal;
+  Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "\n%!";
   let State.T.{game; _} =
     let sel = None in
     let prev = None in
     Monad.State.exec (start_with_game_over_check delay) @@
-    State.Fields.create ~window ~game ~legal ~sel ~prev ~white ~black in
+    State.Fields.create ~window ~game ~moves ~sel ~prev ~white ~black in
   Format.printf "PGN of game:\n\n%a\n%!" Game.pp game;
   prompt_end window

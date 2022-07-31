@@ -4,7 +4,7 @@ open Monads.Std
 
 module Bb = Bitboard
 module Cr = Castling_rights
-module Legal = Position.Legal
+module Child = Position.Child
 
 let thunk player = fun () -> Player.T player
 
@@ -35,24 +35,24 @@ end
 module Cccp = struct
   (* Try to checkmate the inactive king. *)
   let checkmate = List.filter ~f:(fun mv ->
-      let pos = Legal.child mv in
-      match Position.legal_moves pos with
+      let pos = Child.self mv in
+      match Position.children pos with
       | [] -> Position.in_check pos
       | _ -> false)
 
   (* Try to check the inactive king. *)
   let check = List.filter ~f:(fun m ->
-      Legal.child m |> Position.in_check)
+      Child.self m |> Position.in_check)
 
   (* Try to capture an inactive piece of the highest value. *)
   let capture moves = best moves ~eval:(fun m ->
-      Legal.capture m |> Option.map ~f:Piece.Kind.value)
+      Child.capture m |> Option.map ~f:Piece.Kind.value)
 
   (* Push a piece that results in the the largest number of controlled
      squares. *)
   let push moves = best moves ~eval:(fun m ->
-      let active = Position.active @@ Legal.parent m in
-      let pos = Legal.child m in
+      let active = Position.active @@ Child.parent m in
+      let pos = Child.self m in
       Some (Bb.count @@ Position.Attacks.all pos active))
 
   let choice _ moves =
@@ -79,12 +79,12 @@ module Equalizer = struct
   }
 
   let least_moved moved moves = best moves ~eval:(fun m ->
-      match Map.find moved @@ Move.src @@ Legal.move m with
+      match Map.find moved @@ Move.src @@ Child.move m with
       | Some n -> Some (-n)
       | None -> Some 0)
 
   let least_visited visited moves = best moves ~eval:(fun m ->
-      match Map.find visited @@ Move.dst @@ Legal.move m with
+      match Map.find visited @@ Move.dst @@ Child.move m with
       | Some n -> Some (-n)
       | None -> Some 0)
 
@@ -112,10 +112,10 @@ module Equalizer = struct
           Map.update visited ~f:(function
               | Some n -> n + 1
               | None -> 1) in
-        moved, visited) @@ Legal.castle_side m
+        moved, visited) @@ Child.castle_side m
 
   let update_en_passant m moved dst active = 
-    if Legal.is_en_passant m then
+    if Child.is_en_passant m then
       let rank = Square.rank dst in
       let pw = match active with
         | Piece.White -> Square.with_rank_unsafe dst @@ rank - 1
@@ -124,7 +124,7 @@ module Equalizer = struct
     else moved
 
   let choice state moves =
-    let parent = Legal.parent @@ List.hd_exn moves in
+    let parent = Child.parent @@ List.hd_exn moves in
     let active = Position.active parent in
     let visited = match active with
       | White -> state.visited_white
@@ -136,8 +136,8 @@ module Equalizer = struct
       then least_visited visited moves
       else least_moved in
     let m = List.random_element_exn moves in
-    let src = Move.dst @@ Legal.move m in
-    let dst = Move.dst @@ Legal.move m in
+    let src = Move.dst @@ Child.move m in
+    let dst = Move.dst @@ Child.move m in
     let moved = update_moved state.moved src dst in
     let visited = Map.update visited dst ~f:(function
         | Some n -> n + 1
@@ -179,9 +179,9 @@ end
 
 module Generous = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      Legal.child m |>
-      Position.legal_moves |>
-      List.fold ~init:0 ~f:(fun acc m -> match Legal.capture m with
+      Child.self m |>
+      Position.children |>
+      List.fold ~init:0 ~f:(fun acc m -> match Child.capture m with
           | Some k -> acc + Piece.Kind.value k
           | None -> acc) |>
       Option.some) |> List.random_element_exn, ()
@@ -195,8 +195,8 @@ end
 
 module Huddle = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      let active = Position.active @@ Legal.parent m in
-      let pos = Legal.child m in
+      let active = Position.active @@ Child.parent m in
+      let pos = Child.self m in
       let active_board = Position.board_of_color pos active in
       let king = Position.king pos in
       let king_sq = Bb.(first_set_exn (king & active_board)) in
@@ -213,8 +213,8 @@ end
 
 module Max_oppt_moves = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      let pos = Legal.child m in
-      Some (List.length @@ Position.legal_moves pos)) |>
+      let pos = Child.self m in
+      Some (List.length @@ Position.children pos)) |>
                        List.random_element_exn, ()
 
   let name = "max-oppt-moves"
@@ -225,8 +225,8 @@ end
 
 module Min_oppt_moves = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      let pos = Legal.child m in
-      Some (-(List.length @@ Position.legal_moves pos))) |>
+      let pos = Child.self m in
+      Some (-(List.length @@ Position.children pos))) |>
                        List.random_element_exn, ()
 
   let name = "min-oppt-moves"
@@ -240,8 +240,8 @@ module Opposite_color = struct
     not @@ Piece.Color.equal active @@ Square.color sq
 
   let choice _ moves = best moves ~eval:(fun m ->
-      let active = Position.active @@ Legal.parent m in
-      let pos = Legal.child m in
+      let active = Position.active @@ Child.parent m in
+      let pos = Child.self m in
       Option.return @@ Bb.count @@
       Bb.filter ~f:(opposite_color active) @@
       Position.board_of_color pos active) |> List.random_element_exn, ()
@@ -256,14 +256,14 @@ module Pacifist = struct
   let inf = Int.max_value
 
   let choice _ moves = best moves ~eval:(fun m ->
-      let pos = Legal.child m in
+      let pos = Child.self m in
       let in_check = Position.in_check pos in
       (* Give the highest possible penalty for checkmating the opponent.
          Give a similarly high penalty for checking the opponent's king.
          In all other cases, maximize the opponent's material advantage. 
          This works to prioritize moves where we avoid capturing any
          piece. *)
-      let score = match Position.legal_moves pos with
+      let score = match Position.children pos with
         | [] when in_check -> -inf
         | _ when in_check -> inf / -2
         | _ ->
@@ -291,8 +291,8 @@ module Same_color = struct
   let same_color active sq = Piece.Color.equal active @@ Square.color sq
 
   let choice _ moves = best moves ~eval:(fun m ->
-      let active = Position.active @@ Legal.child m in
-      let pos = Legal.child m in
+      let active = Position.active @@ Child.self m in
+      let pos = Child.self m in
       Option.return @@ Bb.count @@
       Bb.filter ~f:(same_color active) @@
       Position.board_of_color pos active) |> List.random_element_exn, ()
@@ -305,8 +305,8 @@ end
 
 module Suicide_king = struct
   let choice _ moves = best moves ~eval:(fun m ->
-      let active = Position.active @@ Legal.parent m in
-      let pos = Legal.child m in
+      let active = Position.active @@ Child.parent m in
+      let pos = Child.self m in
       let king = Position.king pos in
       let active_board = Position.board_of_color pos active in
       let inactive_board = Position.active_board pos in
@@ -322,14 +322,14 @@ end
 
 module Swarm = struct
   let choice _ moves =
-    let pos = Legal.parent @@ List.hd_exn moves in
+    let pos = Child.parent @@ List.hd_exn moves in
     let active = Position.active pos in
     let inactive = Position.inactive pos in
     let inactive_board = Position.board_of_color pos inactive in
     let king = Position.king pos in
     let king_sq = Bb.(first_set_exn (king & inactive_board)) in
     best moves ~eval:(fun m ->
-        let pos = Legal.child m in
+        let pos = Child.self m in
         Position.collect_color pos active |>
         List.fold ~init:0 ~f:(fun acc (sq, _) ->
             acc - Square.chebyshev king_sq sq) |>

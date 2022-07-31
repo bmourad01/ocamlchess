@@ -1230,12 +1230,12 @@ module Makemove = struct
     capture 
 end
 
-module Legal = struct
+module Child = struct
   module T = struct
     type t = {
       move          : Move.t;
       parent        : T.t;
-      child         : T.t;
+      self          : T.t;
       capture       : Piece.kind Uopt.t;
       is_en_passant : bool;
       castle_side   : Cr.side Uopt.t;
@@ -1247,21 +1247,21 @@ module Legal = struct
 
   let same x y =
     same_hash x.parent y.parent &&
-    same_hash x.child  y.child
+    same_hash x.self   y.self
 
-  let is_move legal m = Move.(m = legal.move)
-  let is_capture legal = Uopt.is_some legal.capture
-  let is_castle legal = Uopt.is_some legal.castle_side
-  let capture legal = Uopt.to_option legal.capture
-  let castle_side legal = Uopt.to_option legal.castle_side
-  let gives_check legal = in_check legal.child
+  let is_move child m = Move.(m = child.move)
+  let is_capture child = Uopt.is_some child.capture
+  let is_castle child = Uopt.is_some child.castle_side
+  let capture child = Uopt.to_option child.capture
+  let castle_side child = Uopt.to_option child.castle_side
+  let gives_check child = in_check child.self
 
-  let capture_square legal =
-    if Uopt.is_none legal.capture then None
+  let capture_square child =
+    if Uopt.is_none child.capture then None
     else Option.some @@
-      let dst = Move.dst legal.move in
-      if not legal.is_en_passant then dst
-      else Fn.flip en_passant_pawn_aux dst @@ inactive legal.child
+      let dst = Move.dst child.move in
+      if not child.is_en_passant then dst
+      else Fn.flip en_passant_pawn_aux dst @@ inactive child.self
 
   let new_threats {move; parent = pos; _} =
     let c = active pos in
@@ -1289,7 +1289,7 @@ module Legal = struct
       | Queen  -> Bb.empty
 end
 
-type legal = Legal.t [@@deriving compare, equal, sexp]
+type child = Child.t [@@deriving compare, equal, sexp]
 
 module Movegen = struct
   open Analysis
@@ -1447,7 +1447,7 @@ module Movegen = struct
   (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn =
     (* The new position, which we are free to mutate. *)
-    let child = copy pos in
+    let self = copy pos in
     (* All captures that are not en passant. *)
     let direct_capture = piece_at_square_uopt pos dst in
     (* Are we capturing on the en passant square? *)
@@ -1466,16 +1466,16 @@ module Movegen = struct
     let info = Makemove.Fields_of_info.create
         ~en_passant ~en_passant_pawn ~piece ~castle_side ~direct_capture in
     (* Update the position and return the captured piece, if any. *)
-    let capture = Makemove.go src dst promote info child in
-    child, capture, is_en_passant, castle_side
+    let capture = Makemove.go src dst promote info self in
+    self, capture, is_en_passant, castle_side
 
   (* Accumulate a list of legal moves. *)
   let[@inline] accum_makemove acc move ~parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
-    let child, capture, is_en_passant, castle_side =
+    let self, capture, is_en_passant, castle_side =
       run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
-    Legal.Fields.create
-      ~move ~parent ~child ~capture ~is_en_passant ~castle_side :: acc
+    Child.Fields.create
+      ~move ~parent ~self ~capture ~is_en_passant ~castle_side :: acc
 
   (* If we're promoting, then the back rank should be the only
      available squares. *)
@@ -1491,7 +1491,7 @@ module Movegen = struct
       (Bb.fold [@specialised]) b ~init
         ~f:(fun acc dst -> Move.create src dst :: acc)
 
-  let[@inline] bb_to_legals src k ~init ~a:{pos; en_passant_pawn; _} b =
+  let[@inline] bb_to_children src k ~init ~a:{pos; en_passant_pawn; _} b =
     let active = pos.active in
     let piece = Piece.create active k in
     let f = accum_makemove ~parent:pos ~en_passant_pawn ~piece in
@@ -1522,15 +1522,15 @@ module Movegen = struct
     else Pieces.king king_sq a |> f king_sq Piece.King ~init:[] ~a
 end
 
-let legal_moves pos = Movegen.(go bb_to_legals) @@ Analysis.create pos
-let legal_moves_unsafe pos = Movegen.(go bb_to_moves) @@ Analysis.create pos
+let legal_moves pos = Movegen.(go bb_to_moves) @@ Analysis.create pos
+let children pos = Movegen.(go bb_to_children) @@ Analysis.create pos
 
 let make_move pos move =
-  legal_moves pos |> List.find ~f:(Fn.flip Legal.is_move move)
+  children pos |> List.find ~f:(Fn.flip Child.is_move move)
 
 let make_move_exn pos move = match make_move pos move with
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()
-  | Some legal -> legal
+  | Some child -> child
 
 let make_move_unsafe parent move =
   let src, dst, promote = Move.decomp move in
@@ -1539,50 +1539,52 @@ let make_move_unsafe parent move =
       if has_pawn_threat parent ep
       then Uopt.some @@ en_passant_pawn_aux parent.active ep
       else Uopt.none) in
-  let child, capture, is_en_passant, castle_side =
+  let self, capture, is_en_passant, castle_side =
     Movegen.run_makemove parent ~src ~dst ~promote ~piece ~en_passant_pawn in
-  Legal.Fields.create
-    ~move ~parent ~child ~capture ~is_en_passant ~castle_side
+  Child.Fields.create
+    ~move ~parent ~self ~capture ~is_en_passant ~castle_side
 
-let null_move_unsafe pos =
-  let pos = copy pos in
-  Makemove.flip_active pos;
-  Makemove.update_hash pos ~f:(Hash.Update.en_passant pos);
-  set_en_passant pos Uopt.none;
-  set_halfmove pos 0;
-  pos
+module Unsafe = struct
+  let null_move pos =
+    let pos = copy pos in
+    Makemove.flip_active pos;
+    Makemove.update_hash pos ~f:(Hash.Update.en_passant pos);
+    set_en_passant pos Uopt.none;
+    set_halfmove pos 0;
+    pos
+
+  let is_en_passant pos m =
+    let src = Move.src m in
+    let dst = Move.dst m in
+    is_en_passant_square pos dst &&
+    piece_at_square_uopt pos src |> Uopt.exists ~f:(fun p ->
+        Piece.is_pawn p && Piece.(Color.equal (color p) pos.active))
+
+  let is_capture pos m =
+    let open Bb.Syntax in
+    let src = Move.src m in
+    let dst = Move.dst m in
+    is_en_passant pos m || begin
+      src @ active_board pos &&
+      dst @ inactive_board pos
+    end
+
+  let is_castle pos m =
+    let src = Move.src m in
+    let dst = Move.dst m in
+    piece_at_square_uopt pos src |>
+    Uopt.value_map ~default:false ~f:(fun p ->
+        let c, k = Piece.decomp p in
+        Piece.Color.(c = pos.active) && match c, k with
+        | White, King -> Square.(src = e1 && (dst = g1 || dst = c1))
+        | Black, King -> Square.(src = e8 && (dst = g8 || dst = c8))
+        | _ -> false)
+end
 
 let null_move_exn pos =
   if in_check pos
   then invalid_argf "Illegal null move on position %s" (Fen.to_string pos) ()
-  else null_move_unsafe pos
-
-let is_en_passant_unsafe pos m =
-  let src = Move.src m in
-  let dst = Move.dst m in
-  is_en_passant_square pos dst &&
-  piece_at_square_uopt pos src |> Uopt.exists ~f:(fun p ->
-      Piece.is_pawn p && Piece.(Color.equal (color p) pos.active))
-
-let is_capture_unsafe pos m =
-  let open Bb.Syntax in
-  let src = Move.src m in
-  let dst = Move.dst m in
-  is_en_passant_unsafe pos m || begin
-    src @ active_board pos &&
-    dst @ inactive_board pos
-  end
-
-let is_castle_unsafe pos m =
-  let src = Move.src m in
-  let dst = Move.dst m in
-  piece_at_square_uopt pos src |>
-  Uopt.value_map ~default:false ~f:(fun p ->
-      let c, k = Piece.decomp p in
-      Piece.Color.(c = pos.active) && match c, k with
-      | White, King -> Square.(src = e1 && (dst = g1 || dst = c1))
-      | Black, King -> Square.(src = e8 && (dst = g8 || dst = c8))
-      | _ -> false)
+  else Unsafe.null_move pos
 
 (* Standard Algebraic Notation (SAN). *)
 
@@ -1610,17 +1612,17 @@ module San = struct
           Format.fprintf ppf "%c%!" @@ Square.Rank.to_char rank
         else Format.fprintf ppf "%a%!" Square.pp src
 
-  let pp ppf legal =
-    let src, dst, promote = Move.decomp @@ Legal.move legal in
-    let pos = Legal.child legal in
+  let pp ppf child =
+    let src, dst, promote = Move.decomp @@ Child.move child in
+    let pos = Child.self child in
     let num_checkers =
       let king_sq =
         List.hd_exn @@ collect_piece pos @@ Piece.create pos.active King in
       let occupied = all_board pos in
       let inactive_board = inactive_board pos in
       Bb.count @@ Analysis.checkers pos ~king_sq ~inactive_board ~occupied in
-    let checkmate = num_checkers <> 0 && List.is_empty @@ legal_moves pos in
-    begin match Legal.castle_side legal with
+    let checkmate = num_checkers <> 0 && List.is_empty @@ children pos in
+    begin match Child.castle_side child with
       (* Castling *)
       | Some Cr.Kingside -> Format.fprintf ppf "O-O%!"
       | Some Cr.Queenside -> Format.fprintf ppf "O-O-O%!"
@@ -1630,9 +1632,9 @@ module San = struct
           | Some _ -> Piece.with_kind p Pawn
           | None -> p in
         (* Piece being moved *)
-        let dis = disambiguate ppf ~src ~dst @@ Legal.parent legal in
+        let dis = disambiguate ppf ~src ~dst @@ Child.parent child in
         begin match Piece.kind p with
-          | Piece.Pawn -> if Uopt.is_none legal.capture
+          | Piece.Pawn -> if Uopt.is_none child.capture
             then Format.fprintf ppf "%a%!" Square.pp dst
             else Format.fprintf ppf "%c%!" @@ Square.file_char src
           | Piece.Knight -> Format.fprintf ppf "N%!"; dis Knight
@@ -1642,10 +1644,10 @@ module San = struct
           | Piece.King   -> Format.fprintf ppf "K%!"
         end;
         (* Capture *)
-        Uopt.to_option legal.capture |>
+        Uopt.to_option child.capture |>
         Option.iter ~f:(fun _ -> Format.fprintf ppf "x%!");
         (* Destination *)
-        if not (Piece.is_pawn p && Uopt.is_none legal.capture) then
+        if not (Piece.is_pawn p && Uopt.is_none child.capture) then
           Format.fprintf ppf "%a%!" Square.pp dst;
         (* Promotion *)
         Option.iter promote ~f:(function
@@ -1659,11 +1661,10 @@ module San = struct
     else if num_checkers = 1 then Format.fprintf ppf "+%!"
     else if num_checkers = 2 then Format.fprintf ppf "++%!"
 
-  let to_string legal = Format.asprintf "%a%!" pp legal
+  let to_string child = Format.asprintf "%a%!" pp child
 
   let of_string s pos =
-    legal_moves pos |> List.find ~f:(fun legal ->
-        String.equal s @@ to_string legal)
+    children pos |> List.find ~f:(fun m -> String.equal s @@ to_string m)
 end
 
 include Comparable.Make(T)

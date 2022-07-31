@@ -1,7 +1,7 @@
 open Core_kernel
 
 module Bb = Bitboard
-module Legal = Position.Legal
+module Child = Position.Child
 module Pre = Precalculated
 
 (* Get the set of squares from sliding pieces that are attacking the
@@ -133,19 +133,19 @@ let[@inline] see m pos is_en_passant victim =
   (* Evaluate the material gains/losses. *)
   evaluate swap st.depth
 
-let go legal =
-  Legal.capture legal |>
+let go child =
+  Child.capture child |>
   Option.map ~f:(fun victim ->
-      let m = Legal.move legal in
-      let pos = Legal.parent legal in
-      let is_en_passant = Legal.is_en_passant legal in
+      let m = Child.move child in
+      let pos = Child.parent child in
+      let is_en_passant = Child.is_en_passant child in
       see m pos is_en_passant victim)
 
 let go_unsafe pos m =
   let dst = Move.dst m in
   let them = Position.inactive_board pos in
-  let is_en_passant = Position.is_en_passant_unsafe pos m in
-  if Position.is_en_passant_unsafe pos m || Bb.(dst @ them) then
+  let is_en_passant = Position.Unsafe.is_en_passant pos m in
+  if Position.Unsafe.is_en_passant pos m || Bb.(dst @ them) then
     let victim =
       if is_en_passant then Piece.Pawn
       else Piece.kind @@ Position.piece_at_square_exn pos dst in
