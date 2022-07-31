@@ -3,6 +3,9 @@ open Core_kernel
 module Bb = Bitboard
 module Cr = Castling_rights
 
+let clz = Ocaml_intrinsics.Int64.count_leading_zeros
+let ctz = Ocaml_intrinsics.Int64.count_trailing_zeros
+
 (* Magic shift constants. *)
 
 module Shift = struct
@@ -182,8 +185,7 @@ module Sliding = struct
           match to_int64 (ray & occupied) with
           | 0L -> acc
           | ray' -> acc - tbl.(f ray')) in
-    let l b = Square.last - Int64.clz b in
-    let r = Int64.ctz in
+    let l b = Square.last - clz b and r = ctz in
     Mask.Tbl.(gen [(neast, r); (nwest, r); (seast, l); (swest, l)],
               gen [(east,  r); (west,  l); (north, r); (south, l)])
 

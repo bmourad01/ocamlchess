@@ -1249,19 +1249,13 @@ and next st moves ~score ~pv ~mate ~mated ~time =
     Limits.mate st.limits |>
     Option.value_map ~default:false ~f:(fun n ->
         ply_to_moves (mate_score - score) <= n) in
-  (* Don't continue if there's a mating sequence within the
-     current depth limit. *)
-  let mate_inevitable = no_ponder && begin
-      (mate && mate_score - score <= st.root_depth) ||
-      (mated && mate_score + score <= st.root_depth)
-    end in
   (* Continue iterating? *)
   if movetime_done
   || too_long
   || max_nodes
   || max_depth
   || mate_in_x
-  || mate_inevitable then result else begin
+  then result else begin
     State.new_iter st;
     let prev = Some (result, score) in
     iterdeep st moves ~prev

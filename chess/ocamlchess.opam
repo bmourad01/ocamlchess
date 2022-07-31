@@ -11,6 +11,7 @@ depends: [
   "core_kernel" {>= "0.14.2"}
   "dune" {>= "2.9.3"}
   "monads" {>= "2.4.0"}
+  "ocaml_intrinsics"
   "ounit2"
   "ppx_compare"
   "ppx_fields_conv"

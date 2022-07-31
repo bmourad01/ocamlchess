@@ -3,10 +3,11 @@
  (public_name ocamlchess)
  (flags -w -58)
  (libraries
+   bap-future
    core_kernel
    core_kernel.uopt
-   bap-future
-   monads)
+   monads
+   ocaml_intrinsics)
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_compare
                   ppx_fields_conv

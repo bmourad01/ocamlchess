@@ -13,6 +13,7 @@ The following OCaml packages are required, available via `opam install <pkg>`:
 - core_kernel
 - dune
 - monads
+- ocaml_intrinsics
 - odoc
 - ounit2
 - ppx_compare
@@ -28,7 +29,7 @@ For building, a version of Make (such as GNU Make) is needed for building the pr
 
 Note that this project assumes that the target system is POSIX-compliant (Windows users may encounter some trouble).
 
-# Instructions
+# Setup
 
 - To build and install the project, run `make` (these can be done individually with `make build` and `make install`, respectively).
 - To uninstall the project, run `make uninstall`.
@@ -37,3 +38,17 @@ Note that this project assumes that the target system is POSIX-compliant (Window
 - For generating documentation, run `make doc`.
 
 The generated documentation (in HTML format) should be located in `./chess/_build/default/_doc/_html/index.html`, which can be opened in your browser of choice.
+
+# Usage
+
+For a list of commands (and general info), run `ocamlchess --help`.
+
+To communicate with the engine via UCI, run `ocamlchess uci`.
+The engine will listen for commands on `stdin` and will respond on `stdout`.
+See [this](http://wbec-ridderkerk.nl/html/UCIProtocol.html) page for a description of the UCI protocol.
+
+To use the custom testing GUI, run `ocamlchess gui`.
+See `ocamlchess gui --help` for more information.
+
+`ocamlchess perft <n>` will run the *perf*ormance *t*est up to depth `n`.
+See `ocamlchess perft --help` for more information.

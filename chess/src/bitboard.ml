@@ -71,15 +71,22 @@ let compl = Int64.bit_not
 let diff  = Int64.bit_xor
 let shl   = Int64.shift_left
 let shr   = Int64.shift_right_logical
-let count = Int64.popcount
+
+(* Intrinsics. *)
+
+let clz = Ocaml_intrinsics.Int64.count_leading_zeros
+let ctz = Ocaml_intrinsics.Int64.count_trailing_zeros
+let count = Ocaml_intrinsics.Int64.count_set_bits
+
+(* Setwise operators. *)
 
 let[@inline] minus x y = inter x @@ compl y
 let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
 let[@inline] set b sq = union b @@ singleton sq
 let[@inline] clear b sq = minus b @@ singleton sq
 let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
-let[@inline] next_square b = Square.of_int_unsafe @@ Int64.ctz b
-let[@inline] next_square_rev b = Square.(of_int_unsafe (last lxor Int64.clz b))
+let[@inline] next_square b = Square.of_int_unsafe @@ ctz b
+let[@inline] next_square_rev b = Square.(of_int_unsafe (last lxor clz b))
 
 (* Higher-order functions. *)
 
