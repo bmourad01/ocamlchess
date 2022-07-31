@@ -85,13 +85,16 @@ let[@inline] singleton sq = Int64.(one lsl Square.to_int sq)
 let[@inline] set b sq = union b @@ singleton sq
 let[@inline] clear b sq = minus b @@ singleton sq
 let[@inline] mem b sq = Int64.(singleton sq land b <> zero)
+
+(* Iteration helpers. *)
+
 let[@inline] next_square b = Square.of_int_unsafe @@ ctz b
 let[@inline] next_square_rev b = Square.(of_int_unsafe (last lxor clz b))
 
-(* Higher-order functions. *)
-
-(* We can more efficiently pop the LSB from the board than with the MSB. *)
+(* Quick way to pop the LSB from the board. *)
 let[@inline] clear_fast_fwd b = Int64.(b land pred b)
+
+(* Higher-order functions. *)
 
 let fold b ~init ~f =
   let[@inline] rec aux b acc =
@@ -101,10 +104,10 @@ let fold b ~init ~f =
 
 let fold_rev b ~init ~f =
   let[@inline] rec aux b acc =
-    if b = empty then acc
-    else
+    if b <> empty then
       let sq = next_square_rev b in
-      aux (clear b sq) @@ f acc sq in
+      aux (clear b sq) @@ f acc sq
+    else acc in
   aux b init
 
 let fold_until b ~init ~f ~finish =
@@ -119,12 +122,12 @@ let fold_until b ~init ~f ~finish =
 let fold_until_rev b ~init ~f ~finish =
   let open Continue_or_stop in
   let[@inline] rec aux b acc =
-    if b = empty then finish acc
-    else
+    if b <> empty then
       let sq = next_square_rev b in
       match f acc sq with
       | Continue acc -> aux (clear b sq) acc 
-      | Stop x -> x in
+      | Stop x -> x
+    else finish acc in
   aux b init
 
 let iter b ~f =
@@ -162,18 +165,18 @@ let[@inline] filter b ~f =
 
 let find b ~f =
   let[@inline] rec aux b =
-    if b = empty then None
-    else
+    if b <> empty then
       let sq = next_square b in
-      if f @@ next_square b then Some sq else aux @@ clear_fast_fwd b in
+      if f @@ next_square b then Some sq else aux @@ clear_fast_fwd b
+    else None in
   aux b
 
 let find_rev b ~f =
   let[@inline] rec aux b =
-    if b = empty then None
-    else
+    if b <> empty then
       let sq = next_square_rev b in
-      if f sq then Some sq else aux @@ clear b sq in
+      if f sq then Some sq else aux @@ clear b sq
+    else None in
   aux b
 
 let first_set_exn b =
