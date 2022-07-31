@@ -1005,7 +1005,7 @@ module Main = struct
   and probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving =
     let beta_cut = beta + probcut_margin improving in
     if depth >= probcut_min_depth
-    && abs beta <= mating (-max_ply)
+    && not (is_mate beta || is_mated beta)
     && probcut_tt ~depth ~beta_cut ~ttentry
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = None in
