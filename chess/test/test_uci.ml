@@ -61,6 +61,17 @@ let test_info_1 () = test_parse
         Pv (make_moves ["e2e4"; "e7e5"; "g1f3"]);
       ])))
 
+let test_info_2 () = test_parse
+    "info depth 2 score cp 214 bound upperbound time 1242 nodes 2124 nps 34928 pv e2e4 e7e5 g1f3"
+    ~expected:Uci.(Some (Send (Info Send.Info.[
+        Depth 2;
+        Score (Cp (214, Upper));
+        Time 1242;
+        Nodes 2124;
+        Nps 34928;
+        Pv (make_moves ["e2e4"; "e7e5"; "g1f3"]);
+      ])))
+
 let suite = "Test uci" >::: [
     ("Test combo option 1" >:: fun _ -> test_combo_1 ());
     ("Test combo option 2" >:: fun _ -> test_combo_2 ());
@@ -69,6 +80,7 @@ let suite = "Test uci" >::: [
     ("Test setoption 3" >:: fun _ -> test_setoption_3 ());
     ("Test setoption 4" >:: fun _ -> test_setoption_4 ());
     ("Test info 1" >:: fun _ -> test_info_1 ());
+    ("Test info 2" >:: fun _ -> test_info_2 ());
   ]
 
 let () = run_test_tt_main suite
