@@ -82,21 +82,6 @@ type limits = Limits.t
 
 (** The transposition table. *)
 module Tt : sig
-  (** [Exact] indicates that the best response to the position
-      was within the search window.
-
-      [Lower] indicates that at least one response to the position
-      was "too good", so the assigned score is a lower bound on the
-      true evaluation of the position.
-
-      [Upper] indicates that there were no responses that could
-      improve the position, given other choices for the player.
-      Hence, the score is an upper bound.
-  *)
-  type bound = Exact | Lower | Upper [@@deriving equal]
-
-  type t
-
   (** An entry in the table. *)
   module Entry : sig
     type t
@@ -114,10 +99,11 @@ module Tt : sig
     val best : t -> Position.child option
 
     (** The bound for the position's score. *)
-    val bound : t -> bound
+    val bound : t -> Uci.Send.Info.bound
   end
 
   type entry = Entry.t
+  type t
 
   (** Creates a fresh table. *)
   val create : unit -> t

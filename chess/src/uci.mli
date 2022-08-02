@@ -128,9 +128,23 @@ module Send : sig
 
   (** Information that the engine sends to the GUI about the search. *)
   module Info : sig
+    (** [Exact] indicates that the best response to the position
+        was within the search window.
+
+        [Lower] indicates that at least one response to the position
+        was "too good", so the assigned score is a lower bound on the
+        true evaluation of the position.
+
+        [Upper] indicates that there were no responses that could
+        improve the position, given other choices for the player.
+        Hence, the score is an upper bound.
+    *)
+    type bound = Exact | Lower | Upper
+    [@@deriving equal, compare, sexp]
+
     type score =
       | Mate of int
-      | Cp of int * [`lower | `upper] option
+      | Cp of int * bound
     [@@deriving equal, compare, sexp]
 
     type currline = {

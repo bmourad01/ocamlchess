@@ -382,9 +382,12 @@ module Send = struct
   end
 
   module Info = struct
+    type bound = Exact | Lower | Upper
+    [@@deriving equal, compare, sexp]
+
     type score =
       | Mate of int
-      | Cp of int * [`lower | `upper] option
+      | Cp of int * bound
     [@@deriving equal, compare, sexp]
 
     type currline = {
@@ -412,13 +415,9 @@ module Send = struct
       | Currline of currline
     [@@deriving equal, compare, sexp]
 
-    let pp_bound ppf = function
-      | `lower -> Format.fprintf ppf "lowerbound%!"
-      | `upper -> Format.fprintf ppf "upperbound%!"
-
     let bound_of_string = function
-      | "lowerbound" -> Some `lower
-      | "upperbound" -> Some `upper
+      | "lowerbound" -> Some Lower
+      | "upperbound" -> Some Upper
       | _ -> None
 
     let pp ppf = function
@@ -429,9 +428,12 @@ module Send = struct
       | Pv moves -> Format.fprintf ppf "pv %a%!" pp_moves moves
       | Multipv n -> Format.fprintf ppf "multipv %d%!" n
       | Score (Mate n) -> Format.fprintf ppf "score mate %d%!" n
-      | Score (Cp (cp, None)) -> Format.fprintf ppf "score cp %d%!" cp
-      | Score (Cp (cp, Some bound)) ->
-        Format.fprintf ppf "score cp %d bound %a%!" cp pp_bound bound
+      | Score (Cp (cp, Exact)) ->
+        Format.fprintf ppf "score cp %d%!" cp
+      | Score (Cp (cp, Lower)) ->
+        Format.fprintf ppf "score cp %d bound lowerbound%!" cp
+      | Score (Cp (cp, Upper)) ->
+        Format.fprintf ppf "score cp %d bound upperbound%!" cp
       | Currmove move -> Format.fprintf ppf "currmove %a%!" Move.pp move
       | Currmovenumber n -> Format.fprintf ppf "currmovenumber %d%!" n
       | Hashfull n -> Format.fprintf ppf "hashfull %d%!" n
@@ -464,11 +466,11 @@ module Send = struct
         Score (Mate n)
       | ["score"; "cp"; cp] ->
         int_of_string_opt cp >>| fun cp ->
-        Score (Cp (cp, None))
+        Score (Cp (cp, Exact))
       | ["score"; "cp"; cp; "bound"; bound] ->
         int_of_string_opt cp >>= fun cp ->
         bound_of_string bound >>| fun bound ->
-        Score (Cp (cp, Some bound))
+        Score (Cp (cp, bound))
       | ["currmove"; move] ->
         Move.of_string move >>| fun move -> Currmove move
       | ["currmovenumber"; n] ->
@@ -572,11 +574,11 @@ module Send = struct
       | "score" :: "cp" :: cp :: rest ->
         int_of_string_opt cp >>= fun cp ->
         begin match rest with
-          | [] -> Some (None, [])
+          | [] -> Some (Exact, [])
           | "bound" :: bound :: rest ->
             bound_of_string bound >>| fun bound ->
-            Some bound, rest
-          | rest -> Some (None, rest)
+            bound, rest
+          | rest -> Some (Exact, rest)
         end >>= fun (bound, rest) ->
         aux (Score (Cp (cp, bound)) :: acc) rest
       | "currmove" :: move :: rest ->

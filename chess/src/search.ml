@@ -145,7 +145,7 @@ let mated ply = -mate_score + ply
 
 (* Transposition table for caching search results. *)
 module Tt = struct
-  type bound = Exact | Lower | Upper [@@deriving equal]
+  type bound = Uci.Send.Info.bound [@@deriving equal]
 
   module Entry = struct
     type t = {
@@ -1184,12 +1184,16 @@ end
 let ply_to_moves ply = (ply + (ply land 1)) / 2
 
 (* We'll use the UCI datatype, which is either a numerical score in centipawns,
-   or our distance from checkmate. *)
+   or our distance from checkmate.
+
+   The centipawn score is always exact, since the aspiration loop will not
+   terminate until we get a score that is within our search window.
+*)
 let convert_score score ~mate ~mated =
   let open Uci.Send.Info in
   if mate then Mate (ply_to_moves (mate_score - score))
   else if mated then Mate (-(ply_to_moves (mate_score + score)))
-  else Cp (score, None)
+  else Cp (score, Exact)
 
 let result (st : state) ~score ~time ~pv ~mate ~mated =
   let score = convert_score score ~mate ~mated in
@@ -1265,7 +1269,7 @@ and next st moves ~score ~pv ~mate ~mated ~time =
 let no_moves root iter =
   let score =
     let open Uci.Send.Info in
-    if Position.in_check root then Mate 0 else Cp (0, None) in
+    if Position.in_check root then Mate 0 else Cp (0, Exact) in
   let r = Result.Fields.create
       ~pv:[] ~score ~nodes:0 ~depth:0 ~seldepth:0 ~time:0 in
   iter r;

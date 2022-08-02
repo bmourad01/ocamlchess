@@ -19,9 +19,9 @@ let pp_pv ppf pv =
 let pp_score ppf : Uci.Send.Info.score -> unit = function
   | Mate n when n < 0 -> Format.fprintf ppf "lose (mate in %d)%!" (-n)
   | Mate n -> Format.fprintf ppf "win (mate in %d)%!" n
-  | Cp (cp, None) -> Format.fprintf ppf "%d%!" cp
-  | Cp (cp, Some `lower) -> Format.fprintf ppf "%d (lower-bound)%!" cp
-  | Cp (cp, Some `upper) -> Format.fprintf ppf "%d (upper-bound)%!" cp
+  | Cp (cp, Exact) -> Format.fprintf ppf "%d%!" cp
+  | Cp (cp, Lower) -> Format.fprintf ppf "%d (lower-bound)%!" cp
+  | Cp (cp, Upper) -> Format.fprintf ppf "%d (upper-bound)%!" cp
 
 let print_res res =
   Format.printf "Time taken: %dms\n%!" @@ Search.Result.time res;
