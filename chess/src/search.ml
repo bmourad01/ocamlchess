@@ -1267,10 +1267,10 @@ and next st moves ~score ~pv ~mate ~mated ~time =
   end
 
 (* Either checkmate or stalemate. *)
-let no_moves root iter =
+let no_moves ?(mzero = false) root iter =
   let score =
     let open Uci.Send.Info in
-    if Position.in_check root then Mate 0 else Cp (0, Exact) in
+    if not mzero && Position.in_check root then Mate 0 else Cp (0, Exact) in
   let r = Result.Fields.create
       ~pv:[] ~score ~nodes:0 ~depth:0 ~seldepth:0 ~time:0 in
   iter r;
@@ -1295,7 +1295,7 @@ let mate_in_zero limits = match Limits.mate limits with
 let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~history ~tt () =
   match moves root limits with
   | [] -> no_moves root iter
-  | _ when mate_in_zero limits -> no_moves root iter
+  | _ when mate_in_zero limits -> no_moves root iter ~mzero:true
   | moves ->
     let st = State.create ~root ~limits ~history ~tt ~iter ~ponder in
     iterdeep st moves
