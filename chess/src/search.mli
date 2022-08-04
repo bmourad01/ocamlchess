@@ -12,7 +12,14 @@ module Limits : sig
   (** The limit on the number of positions that may be evaluated. *)
   val nodes : t -> int option
 
-  (** The number of fullmoves to find a mate in. *)
+  (** The number of fullmoves [n] to find a mate in.
+
+      Positive values of [n] indicate a winning checkmate for the active
+      player. Likewise, negative values indicate a losing checkmate.
+
+      If [n] is zero and the position to search is not checkmate, then the
+      search is aborted.
+  *)
   val mate : t -> int option
 
   (** The depth limit for the search, if any. *)

@@ -32,12 +32,6 @@ module Limits = struct
     | Some n ->
       invalid_argf "Invalid node limit %d, must be greater than 0" n ()
 
-  let check_mate = function
-    | None -> ()
-    | Some n when n >= 1 -> ()
-    | Some n ->
-      invalid_argf "Invalid mate limit %d, must be greater than 0" n ()
-
   let check_depth = function
     | None -> ()
     | Some n when n >= 1 -> ()
@@ -101,7 +95,6 @@ module Limits = struct
       ~stop
       () =
     check_nodes nodes;
-    check_mate mate;
     check_depth depth;
     let movetime = check_movetime movetime in
     let max_time = match wtime, btime with
@@ -1254,12 +1247,13 @@ and next st moves ~score ~pv ~mate ~mated ~time =
     no_ponder &&
     Limits.nodes st.limits |>
     Option.value_map ~default:false ~f:(fun n -> st.nodes >= n) in
-  (* Stop searching once we've found a mate in X (if applicable). *)
-  let mate_in_x =
-    no_ponder && mate &&
-    Limits.mate st.limits |>
-    Option.value_map ~default:false ~f:(fun n ->
-        ply_to_moves (mate_score - score) <= n) in
+  (* Stop searching once we've found a mate/mated in X (if applicable). *)
+  let mate_in_x = no_ponder && match Limits.mate st.limits with
+    | Some n when n < 0 && mated ->
+      ply_to_moves (mate_score + score) <= -n
+    | Some n when n >= 0 && mate ->
+      ply_to_moves (mate_score - score) <= n
+    | Some _ | None -> false in
   (* Continue iterating? *)
   if movetime_done
   || too_long
@@ -1282,6 +1276,8 @@ let no_moves root iter =
   iter r;
   r
 
+(* Of the available moves, filter out those that the user
+   didn't ask us to search (if they exist). *)
 let moves pos limits =
   let moves = Position.children pos in
   match Limits.moves limits with
@@ -1290,9 +1286,16 @@ let moves pos limits =
     List.filter moves ~f:(fun m ->
         List.exists searchmoves ~f:(Child.is_move m))
 
+(* Did the user ask for checkmate? If so, we can just abort
+   immediately when there's no moves for us to search. *)
+let mate_in_zero limits = match Limits.mate limits with
+  | Some n -> n = 0
+  | None -> false
+
 let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~history ~tt () =
   match moves root limits with
   | [] -> no_moves root iter
+  | _ when mate_in_zero limits -> no_moves root iter
   | moves ->
     let st = State.create ~root ~limits ~history ~tt ~iter ~ponder in
     iterdeep st moves
