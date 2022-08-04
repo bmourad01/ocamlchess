@@ -1204,6 +1204,13 @@ let result (st : state) ~score ~time ~pv ~mate ~mated =
   st.iter r;
   r
 
+(* If we've found a mate that's shorter than the root depth, then we will
+   want to cut off the PV extraction at that point. *)
+let pv_depth (st : state) score mate mated =
+  if mate then min (mate_score - score) st.root_depth
+  else if mated then min (mate_score + score) st.root_depth
+  else st.root_depth
+
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
@@ -1216,7 +1223,7 @@ let rec iterdeep ?(prev = None) st moves =
      available. *)
   let mate = is_mate score in
   let mated = is_mated score in
-  let pv = State.extract_pv st ~ply:0 ~depth:st.root_depth in
+  let pv = State.extract_pv st ~ply:0 ~depth:(pv_depth st score mate mated) in
   if Limits.stopped st.limits then match prev with
     | Some (result, _) -> result
     | None -> result st ~score ~time ~pv ~mate ~mated
