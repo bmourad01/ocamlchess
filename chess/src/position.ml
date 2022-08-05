@@ -1091,12 +1091,12 @@ module Makemove = struct
   let[@inline] clear_white_castling_rights pos =
     castle_hash White Kingside pos;
     castle_hash White Queenside pos;
-    set_castle pos @@ Cr.(minus pos.castle white)
+    set_castle pos @@ Cr.(pos.castle - white)
 
   let[@inline] clear_black_castling_rights pos =
     castle_hash Black Kingside pos;
     castle_hash Black Queenside pos;
-    set_castle pos @@ Cr.(minus pos.castle black)
+    set_castle pos @@ Cr.(pos.castle - black)
 
   let[@inline] white_kingside_castle pos =
     clear_square Piece.white_rook Square.h1 pos;
@@ -1118,14 +1118,23 @@ module Makemove = struct
     set_square Piece.black_rook Square.d8 pos;
     clear_black_castling_rights pos
 
+  let castles = [|
+    white_kingside_castle;
+    white_queenside_castle;
+    black_kingside_castle;
+    black_queenside_castle;
+  |]
+
+  let[@inline] select_castle pos s =
+    (Array.unsafe_get castles
+       (Int.ctz
+          Cr.(to_int (pos.active --> s)))) pos
+
   (* If we're castling our king on this move, then we need to move the rook as
      well as clear our rights. *)
   let[@inline] king_moved_or_castled castle pos =
-    if Uopt.is_some castle then match pos.active, Uopt.unsafe_value castle with
-      | Piece.White, Cr.Kingside  -> white_kingside_castle pos
-      | Piece.White, Cr.Queenside -> white_queenside_castle pos
-      | Piece.Black, Cr.Kingside  -> black_kingside_castle pos
-      | Piece.Black, Cr.Queenside -> black_queenside_castle pos
+    if Uopt.is_some castle then
+      select_castle pos @@ Uopt.unsafe_value castle
     else match pos.active with
       | Piece.White -> clear_white_castling_rights pos
       | Piece.Black -> clear_black_castling_rights pos

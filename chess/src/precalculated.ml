@@ -279,8 +279,8 @@ let castle_tbl =
   ] in
   Array.init (1 lsl Cr.bits) ~f:(fun i ->
       let x = Cr.of_int_unsafe i in
-      List.fold valid ~init:empty ~f:(fun b (c, s, b') ->
-          if Cr.mem x c s then b + b' else b))
+      List.fold valid ~init:empty ~f:(fun acc (c, s, b) ->
+          if Cr.mem x c s then acc + b else acc))
 
 let[@inline] castle cr c s =
   Cr.(to_int @@ inter cr @@ singleton c s) |> Array.unsafe_get castle_tbl

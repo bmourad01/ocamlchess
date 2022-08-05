@@ -134,6 +134,9 @@ module Syntax : sig
 
   (** [~~x] is equivalent to [compl x]. *)
   val (~~) : t -> t
+
+  (** [c --> s] is equivalent to [singleton c s]. *)
+  val (-->) : Piece.color -> side -> t
 end
 
 include module type of Syntax

@@ -80,11 +80,8 @@ let[@inline] minus x y = inter x @@ compl y
 
 (* Testing membership. *)
 
-let[@inline] mem x color side = match color, side with
-  | Piece.White, Kingside  -> inter x white_kingside  <> none
-  | Piece.White, Queenside -> inter x white_queenside <> none
-  | Piece.Black, Kingside  -> inter x black_kingside  <> none
-  | Piece.Black, Queenside -> inter x black_queenside <> none
+let[@inline] mem x color side =
+  inter x (singleton color side) <> none
 
 (* String operations. *)
 
@@ -116,7 +113,7 @@ module Syntax = struct
   let (+) = union
   let (~~) = compl
   let (-) = minus
-  let (!!) = singleton
+  let (-->) = singleton
 end
 
 include Syntax
