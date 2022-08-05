@@ -121,3 +121,19 @@ val of_string_exn : string -> t
     rights. Returns [None] if the string is invalid. Duplicate symbols are
     allowed. *)
 val of_string : string -> t option
+
+module Syntax : sig
+  (** [x & y] is equivalent to [inter x y]. *)
+  val (&) : t -> t -> t
+
+  (** [x + y] is equivalent to [union x y]. *)
+  val (+) : t -> t -> t
+
+  (** [x - y] is equivalent to [minus x y]. *)
+  val (-) : t -> t -> t
+
+  (** [~~x] is equivalent to [compl x]. *)
+  val (~~) : t -> t
+end
+
+include module type of Syntax

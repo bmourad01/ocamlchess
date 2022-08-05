@@ -58,17 +58,17 @@ let white_queenside = 0b0010
 let black_kingside  = 0b0100
 let black_queenside = 0b1000
 
-let white     = white_kingside lor white_queenside
-let black     = black_kingside lor black_queenside
-let kingside  = white_kingside lor black_kingside
+let white     = white_kingside  lor white_queenside
+let black     = black_kingside  lor black_queenside
+let kingside  = white_kingside  lor black_kingside
 let queenside = white_queenside lor black_queenside
-let all       = white lor black
+let all       = white           lor black
 
 (* Constructor *)
 
 let[@inline] singleton c s =
-  let c = (Obj.magic c : int) in
-  let s = (Obj.magic s : int) in
+  let c = Piece.Color.to_int c in
+  let s = Side.to_int s in
   (succ s) lsl (c * succ c)
 
 (* Logical operators. *)
@@ -81,20 +81,20 @@ let[@inline] minus x y = inter x @@ compl y
 (* Testing membership. *)
 
 let[@inline] mem x color side = match color, side with
-  | Piece.White, Kingside  -> inter x white_kingside <> none
+  | Piece.White, Kingside  -> inter x white_kingside  <> none
   | Piece.White, Queenside -> inter x white_queenside <> none
-  | Piece.Black, Kingside  -> inter x black_kingside <> none
+  | Piece.Black, Kingside  -> inter x black_kingside  <> none
   | Piece.Black, Queenside -> inter x black_queenside <> none
 
 (* String operations. *)
 
-let string_pairs =
-  List.zip_exn (List.init bits ~f:Int.((lsl) 1)) ["K"; "Q"; "k"; "q"]
+let char_pairs =
+  List.zip_exn (List.init bits ~f:Int.((lsl) 1)) ['K'; 'Q'; 'k'; 'q']
 
 let pp ppf = function
   | 0 -> Format.fprintf ppf "-%!"
-  | x -> List.iter string_pairs ~f:(fun (y, s) ->
-      if inter x y <> none then Format.fprintf ppf "%s%!" s)
+  | x -> List.iter char_pairs ~f:(fun (y, c) ->
+      if inter x y <> none then Format.fprintf ppf "%c%!" c)
 
 let to_string cr = Format.asprintf "%a%!" pp cr
 
@@ -110,3 +110,13 @@ let of_string_exn = function
                              string '%s'" sym s ())
 
 let of_string s = Option.try_with @@ fun () -> of_string_exn s
+
+module Syntax = struct
+  let (&) = inter
+  let (+) = union
+  let (~~) = compl
+  let (-) = minus
+  let (!!) = singleton
+end
+
+include Syntax
