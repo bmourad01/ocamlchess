@@ -1091,12 +1091,12 @@ module Makemove = struct
   let[@inline] clear_white_castling_rights pos =
     castle_hash White Kingside pos;
     castle_hash White Queenside pos;
-    set_castle pos @@ Cr.(pos.castle - white)
+    set_castle pos Cr.(pos.castle - white)
 
   let[@inline] clear_black_castling_rights pos =
     castle_hash Black Kingside pos;
     castle_hash Black Queenside pos;
-    set_castle pos @@ Cr.(pos.castle - black)
+    set_castle pos Cr.(pos.castle - black)
 
   let[@inline] white_kingside_castle pos =
     clear_square Piece.white_rook Square.h1 pos;
@@ -1144,16 +1144,16 @@ module Makemove = struct
   let[@inline] rook_moved_or_captured sq c pos = match c with
     | Piece.White when Square.(sq = h1) ->
       castle_hash White Kingside pos;
-      set_castle pos @@ Cr.(minus pos.castle white_kingside)
+      set_castle pos Cr.(pos.castle - white_kingside)
     | Piece.White when Square.(sq = a1) ->
       castle_hash White Queenside pos;
-      set_castle pos @@ Cr.(minus pos.castle white_queenside)
+      set_castle pos Cr.(pos.castle - white_queenside)
     | Piece.Black when Square.(sq = h8) ->
       castle_hash Black Kingside pos;
-      set_castle pos @@ Cr.(minus pos.castle black_kingside)
+      set_castle pos Cr.(pos.castle - black_kingside)
     | Piece.Black when Square.(sq = a8) ->
       castle_hash Black Queenside pos;
-      set_castle pos @@ Cr.(minus pos.castle black_queenside)
+      set_castle pos Cr.(pos.castle - black_queenside)
     | _ -> ()
 
   (* Rook moved from a square. *)
@@ -1179,19 +1179,17 @@ module Makemove = struct
   let[@inline] update_en_passant info src dst pos =
     Uopt.iter info.en_passant ~f:(fun ep ->
         update_hash pos ~f:(Hash.Update.en_passant_sq ep));
-    let ep = if Piece.is_pawn info.piece then
-        let src_rank = Square.rank src in
-        let dst_rank = Square.rank dst in
-        match pos.active with
-        | Piece.White when dst_rank - src_rank = 2 ->
-          Uopt.some @@ Square.(with_rank_unsafe dst Rank.three)
-        | Piece.Black when src_rank - dst_rank = 2 ->
-          Uopt.some @@ Square.(with_rank_unsafe dst Rank.six)
-        | _ -> Uopt.none
-      else Uopt.none in
-    set_en_passant pos ep
+    set_en_passant pos @@ if Piece.is_pawn info.piece then
+      let src_rank = Square.rank src in
+      let dst_rank = Square.rank dst in
+      match pos.active with
+      | Piece.White when dst_rank - src_rank = 2 ->
+        Uopt.some @@ Square.(with_rank_unsafe dst Rank.three)
+      | Piece.Black when src_rank - dst_rank = 2 ->
+        Uopt.some @@ Square.(with_rank_unsafe dst Rank.six)
+      | _ -> Uopt.none
+    else Uopt.none
 
-  (* After each halfmove, give the turn to the other player. *)
   let[@inline] flip_active pos =
     update_hash pos ~f:Hash.Update.active_player;
     set_active pos @@ inactive pos
