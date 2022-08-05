@@ -20,7 +20,6 @@ module Uopt = struct
   let[@inline] value_map x ~default ~f =
     if is_none x then default else f @@ unsafe_value x
 
-  let[@inline] iter x ~f = if not @@ is_none x then f @@ unsafe_value x
   let[@inline] exists x ~f = not (is_none x) && f (unsafe_value x)
 end
 
@@ -1141,7 +1140,7 @@ module Makemove = struct
 
   (* If we're moving or capturing a rook, then clear the castling rights for
      that particular side. *)
-  let[@inline] rook_moved_or_captured sq c pos = match c with
+  let[@inline] rook_moved_or_was_captured sq c pos = match c with
     | Piece.White when Square.(sq = h1) ->
       castle_hash White Kingside pos;
       set_castle pos Cr.(pos.castle - white_kingside)
@@ -1156,29 +1155,26 @@ module Makemove = struct
       set_castle pos Cr.(pos.castle - black_queenside)
     | _ -> ()
 
-  (* Rook moved from a square. *)
-  let[@inline] rook_moved src pos = rook_moved_or_captured src pos.active pos
-
-  (* Rook was captured at a square. Assume that it is the inactive's color. *)
-  let[@inline] rook_captured dst direct_capture pos =
-    if Uopt.is_some direct_capture then
-      let p = Uopt.unsafe_value direct_capture in
-      if Piece.is_rook p then rook_moved_or_captured dst (Piece.color p) pos
-
-  (* Handle castling-related details. *)
   let[@inline] update_castle info src dst pos =
+    (* Check if our king or rook moved. *)
     begin match Piece.kind info.piece with
-      | Rook -> rook_moved src pos
+      | Rook -> rook_moved_or_was_captured src pos.active pos
       | King -> king_moved_or_castled info.castle_side pos
       | _ -> ()
     end;
-    rook_captured dst info.direct_capture pos
+    (* Check if an enemy rook was captured. *)
+    if Uopt.is_some info.direct_capture then
+      let p = Uopt.unsafe_value info.direct_capture in
+      if Piece.is_rook p then
+        rook_moved_or_was_captured dst (Piece.color p) pos
 
   (* Reset the en passant hash and return the new en passant square if a pawn
      double push occurred. *) 
   let[@inline] update_en_passant info src dst pos =
-    Uopt.iter info.en_passant ~f:(fun ep ->
-        update_hash pos ~f:(Hash.Update.en_passant_sq ep));
+    if Uopt.is_some info.en_passant then begin
+      let ep = Uopt.unsafe_value info.en_passant in
+      update_hash pos ~f:(Hash.Update.en_passant_sq ep)
+    end;
     set_en_passant pos @@ if Piece.is_pawn info.piece then
       let src_rank = Square.rank src in
       let dst_rank = Square.rank dst in
