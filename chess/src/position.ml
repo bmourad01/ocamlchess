@@ -1489,7 +1489,7 @@ module Movegen = struct
   let[@inline] bb_to_moves src k ~init ~a b = match k with
     | Piece.Pawn when is_promote_rank b a.pos.active ->
       (Bb.fold [@specialised]) b ~init
-        ~f:(fun acc dst -> Pieces.Pawn.promote src dst @ acc)
+        ~f:(fun acc dst -> List.rev_append (Pieces.Pawn.promote src dst) acc)
     | _ ->
       (Bb.fold [@specialised]) b ~init
         ~f:(fun acc dst -> Move.create src dst :: acc)
