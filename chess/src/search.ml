@@ -8,11 +8,6 @@ module Child = Position.Child
 module Threats = Position.Threats
 
 module Limits = struct
-  type kind =
-    | Infinite
-    | Depth of int
-    | Time of int
-
   type t = {
     infinite : bool;
     nodes    : int option;
