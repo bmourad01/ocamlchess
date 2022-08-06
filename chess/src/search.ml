@@ -1081,7 +1081,8 @@ module Main = struct
      depth.
 
      On the other hand, if this entry has a score within a margin above beta,
-     then it probably isn't singular and we can cut off the search early.
+     then it probably isn't singular and we can either cut off the search
+     early or reduce the depth.
   *)
   and semc st pos m ~depth ~ply ~beta ~ttentry ~check = match ttentry with
     | None -> Second 0
@@ -1107,6 +1108,7 @@ module Main = struct
         State.clear_excluded st ~ply;
         if score < target then Second 1
         else if target >= beta then First target
+        else if ttscore >= beta then Second (-2)
         else Second 0
       else Second 0
 
