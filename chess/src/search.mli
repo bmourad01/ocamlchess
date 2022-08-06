@@ -96,11 +96,11 @@ module Tt : sig
     (** The depth that this entry was stored at. *)
     val depth : t -> int
 
-    (** The ply that this entry was stored at. *)
-    val ply : t -> int
-
     (** The score given for the position. *)
     val score : t -> int
+
+    (** The static evaluation of the position. *)
+    val eval : t -> int option
 
     (** The best move for the position. *)
     val best : t -> Position.child option
