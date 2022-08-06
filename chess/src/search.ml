@@ -354,7 +354,11 @@ module State = struct
       | Some e -> eval > e
       | None -> true
 
-  let lookup_eval pos ply st = Oa.unsafe_get st.evals @@ eval_idx pos ply
+  let lookup_eval pos ply st =
+    Oa.unsafe_get st.evals @@ eval_idx pos ply
+
+  let lookup_eval_unsafe pos ply st =
+    Oa.unsafe_get_some_exn st.evals @@ eval_idx pos ply
 
   let stop st = st.stopped <- true
 
@@ -964,7 +968,9 @@ module Main = struct
   *)
   and nmp st pos ~score ~beta ~ply ~depth =
     if score >= beta
+    && score >= State.lookup_eval_unsafe pos ply st
     && depth >= nmp_min_depth
+    && not (State.has_excluded st ~ply)
     && not (Eval.is_endgame pos)
     && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
       let r = if depth <= 6 then 2 else 3 in
