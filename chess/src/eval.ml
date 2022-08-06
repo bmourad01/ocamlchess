@@ -113,8 +113,8 @@ module Mobility = struct
 end
 
 module Rook_open_file = struct
-  let start_weight = 20
-  let end_weight = 40
+  let start_weight = 5
+  let end_weight = 10
 
   (* Count the rooks on open files. This can also be measured by the
      mobility score, but we also give a bonus here. *)
@@ -157,14 +157,33 @@ end
 
 module King_pawn_shield = struct
   let start_weight = 12
-  let end_weight = 5
+  let end_weight = 0
+
+  let idx c sq = c + sq * Piece.Color.count
+
+  let masks =
+    let tbl =
+      let len = Piece.Color.count * Square.count in
+      Array.create ~len Bb.empty in
+    for i = 0 to Square.count - 1 do
+      let open Bb in
+      let sq = !!(Square.of_int_exn i) in
+      let wm = rank_2 + rank_3 in
+      let bm = rank_6 + rank_7 in
+      let w = (sq << 8) + ((sq << 7) - file_h) + ((sq << 9) - file_a) in
+      let b = (sq >> 8) + ((sq >> 7) - file_a) + ((sq >> 9) - file_h) in
+      tbl.(idx Piece.Color.white i) <- w & wm;
+      tbl.(idx Piece.Color.black i) <- b & bm;
+    done;
+    tbl
 
   let evaluate = evaluate @@ fun pos c ->
     let b = Position.board_of_color pos c in
     let king = Bb.(b & Position.king pos) in
     let pawn = Bb.(b & Position.pawn pos) in
     let king_sq = Bb.first_set_exn king in
-    let score = Bb.(count (pawn & Pre.king king_sq)) in
+    let i = idx (Piece.Color.to_int c) (Square.to_int king_sq) in
+    let score = Bb.(count (pawn & Array.unsafe_get masks i)) in
     score * start_weight, score * end_weight
 end
 
@@ -212,7 +231,7 @@ module Pawns = struct
   end
 
   module Doubled = struct
-    let start_weight = 4
+    let start_weight = -4
     let end_weight = -10
 
     let go pos c =
@@ -228,7 +247,7 @@ module Pawns = struct
 
   module Isolated = struct
     let start_weight = -29
-    let end_weight = 0
+    let end_weight = -2
 
     let neighbor_files = Bb.[|
         file_b;
@@ -257,23 +276,6 @@ module Pawns = struct
       score * start_weight, score * end_weight
   end
 
-  module Chained = struct
-    let start_weight = 2
-    let end_weight = 5
-
-    let go pos c =
-      let all = Position.all_board pos in
-      let us = Position.board_of_color pos c in
-      let pawn = Bb.(us & Position.pawn pos) in
-      let score = Bb.fold pawn ~init:0 ~f:(fun acc sq ->
-          (* Count the number of pawns that are part of a chain. This
-             is the immediate diagonal squares that are surrounding any
-             particular pawn. *)
-          let mask = Bb.(Pre.bishop sq all & Pre.king sq) in
-          acc + Bb.(count (mask & pawn))) in
-      score * start_weight, score * end_weight
-  end
-
   (* Pawn structure usually doesn't change during the search, so it's
      possible to cache the previous evaluation results to get a
      performance improvement. *)
@@ -283,7 +285,6 @@ module Pawns = struct
       Passed.go pos c;
       Doubled.go pos c;
       Isolated.go pos c;
-      Chained.go pos c;
     ]
 
   (* Evaluate the overall pawn structure. *)
