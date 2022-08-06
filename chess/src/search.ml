@@ -513,8 +513,7 @@ module Order = struct
           fill (succ i) xs in
       fill 1 xs
 
-  (* Score each move according to `eval`. Note that `moves` is assumed to be
-     non-empty. *)
+  (* Score each move according to `f`. *)
   let score_aux moves ~f =
     Iterator.create @@ array_of_list_map moves ~f:(fun m -> m, f m)
 
@@ -855,7 +854,7 @@ module Main = struct
      to search the child nodes of this position. This shouldn't be done if
      we're in check, performing a PV search, or searching a null move.
 
-     Note that `eval` should be `None` if the position is in check.
+     Note that `score` should be `None` if the position is in check.
   *)
   and try_pruning_before_child st pos moves
       ~score ~alpha ~beta ~ply ~depth ~check
@@ -912,7 +911,7 @@ module Main = struct
      If our score is within a margin below alpha, then skip searching
      quiet moves (since they are likely to be "futile" in improving alpha).
 
-     Note that `eval` should be `None` if we are in check.
+     Note that `score` should be `None` if we are in check.
   *)
   and futile t m ~score ~beta ~depth ~pv =
     not pv &&
