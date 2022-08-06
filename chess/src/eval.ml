@@ -156,7 +156,7 @@ module King_danger = struct
 end
 
 module King_pawn_shield = struct
-  let start_weight = 12
+  let start_weight = 4
   let end_weight = 0
 
   let idx c sq = c + sq * Piece.Color.count
@@ -168,12 +168,10 @@ module King_pawn_shield = struct
     for i = 0 to Square.count - 1 do
       let open Bb in
       let sq = !!(Square.of_int_exn i) in
-      let wm = rank_2 + rank_3 in
-      let bm = rank_6 + rank_7 in
       let w = (sq << 8) + ((sq << 7) - file_h) + ((sq << 9) - file_a) in
       let b = (sq >> 8) + ((sq >> 7) - file_a) + ((sq >> 9) - file_h) in
-      tbl.(idx Piece.Color.white i) <- w & wm;
-      tbl.(idx Piece.Color.black i) <- b & bm;
+      tbl.(idx Piece.Color.white i) <- w & rank_2;
+      tbl.(idx Piece.Color.black i) <- b & rank_7;
     done;
     tbl
 
