@@ -581,31 +581,25 @@ module Search = struct
       State.update_move_history m depth st;
     end
 
-  (* Beta cutoff. *)
-  let cutoff st t m ~score ~beta ~ply ~depth =
-    let result = score >= beta in
-    if result then begin
-      update_history_and_killer st m ~ply ~depth;
-      t.best <- Some m;
-      t.bound <- Lower;
-    end; result
-
-  (* Alpha may have improved. *)
-  let better ?(q = false) st t m ~score ~ply ~pv =
-    let result = ref false in
+  (* Return true if we fail high. *)
+  let cutoff ?(q = false) st t m ~score ~beta ~ply ~depth ~pv =
     if score > t.score then begin
       t.score <- score;
       if score > t.alpha then begin
         t.best <- Some m;
-        t.alpha <- score;
-        result := true;
-        if pv then begin
+        if pv then State.update_pv st m ~ply;
+        if pv && score < beta then begin
+          t.alpha <- score;
           if not q then t.bound <- Exact;
-          State.update_pv st m ~ply;
+        end else begin
+          update_history_and_killer st m ~ply ~depth;
+          t.bound <- Lower;
         end
       end
     end;
-    !result
+    Tt.equal_bound t.bound Lower
+
+  let qcutoff = cutoff ~q:true ~depth:0
 
   (* Find a cached evaluation of the position. *)
   let lookup (st : state) pos ~depth ~ply ~alpha ~beta ~pv =
@@ -675,23 +669,25 @@ module Quiescence = struct
      evaluation is significantly lower than alpha.
   *)
   let delta =
-    let margin = Eval.Material.knight_mg in
+    let margin = Eval.Material.queen_mg in
     fun pos eval alpha -> eval + margin < alpha && not (Eval.is_endgame pos)
 
   (* Decide whether to use the TT evaluation or the result of the evaluation
      function (or neither, if we're in check). *)
-  let eval st pos ~alpha ~beta ~ply ~check ~ttentry =
+  let eval (st : state) pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv =
     if not check then
       let eval = Eval.go pos in
-      let score = match (ttentry : Tt.entry option) with
-        | Some {score; bound = Lower; _}
-          when Tt.to_score score ply > eval -> score
-        | Some {score; bound = Upper; _}
-          when Tt.to_score score ply <= eval -> score
+      let eval = match (ttentry : Tt.entry option) with
+        | Some {score; bound = Lower; _} -> max eval @@ Tt.to_score score ply
+        | Some {score; bound = Upper; _} -> min eval @@ Tt.to_score score ply
         | None | Some _ -> eval in
-      if score >= beta then First beta
-      else if delta pos score alpha then First score
-      else Second (max score alpha, Some score)
+      if eval >= beta then begin
+        if Option.is_none ttentry then
+          Tt.store st.tt pos ~ply ~depth
+            ~score:eval ~best:None ~bound:Lower;
+        First eval
+      end else if delta pos eval alpha then First eval
+      else Second ((if pv then max eval alpha else alpha), Some eval)
     else Second (alpha, None)
 
   (* TT entries for quiescence search have a depth of either 0 or -1,
@@ -717,10 +713,7 @@ module Quiescence = struct
     then Search.end_of_line pos ~check
     else Position.children pos |> function
       | [] -> if check then mated ply else 0
-      | moves -> match Search.mdp ~alpha ~beta ~ply with
-        | First alpha -> alpha
-        | Second (alpha, beta) ->
-          with_moves st pos moves ~alpha ~beta ~ply ~check ~pv ~init
+      | moves -> with_moves st pos moves ~alpha ~beta ~ply ~check ~pv ~init
 
   (* Search the available moves for a given position, but only if they are
      "noisy". *)
@@ -729,7 +722,7 @@ module Quiescence = struct
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
-      match eval st pos ~alpha ~beta ~ply ~check ~ttentry with
+      match eval st pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv with
       | First score -> score
       | Second (alpha, score) ->
         match order st moves pos ~ply ~check ~init ~ttentry with
@@ -757,8 +750,7 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
       State.pop_history pos st;
-      if Search.better st t m ~score ~ply ~pv ~q:true
-      && Search.cutoff st t m ~score ~beta ~ply ~depth:0 then Stop beta
+      if Search.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
       else if st.stopped then Stop t.score
       else Continue ()
     end
@@ -781,14 +773,12 @@ module Main = struct
   let eval st pos ~ply ~check ~ttentry =
     if not check then
       let eval = Eval.go pos in
-      let score = match (ttentry : Tt.entry option) with
-        | Some {score; bound = Lower; _}
-          when Tt.to_score score ply > eval -> score
-        | Some {score; bound = Upper; _}
-          when Tt.to_score score ply <= eval -> score
+      let eval = match (ttentry : Tt.entry option) with
+        | Some {score; bound = Lower; _} -> max eval @@ Tt.to_score score ply
+        | Some {score; bound = Upper; _} -> min eval @@ Tt.to_score score ply
         | None | Some _ -> eval in
-      let improving = State.update_eval pos ply score st in
-      Some score, improving
+      let improving = State.update_eval pos ply eval st in
+      Some eval, improving
     else None, false
 
   (* Search from a new position. *)
@@ -821,9 +811,10 @@ module Main = struct
     | First score -> score
     | Second ttentry ->
       let eval, improving = eval st pos ~ply ~check ~ttentry in
-      match try_pruning_before_child st pos moves
-              ~eval ~alpha ~beta ~ply ~depth ~check
-              ~null ~pv ~improving ~ttentry with
+      let p = try_pruning_before_child st pos moves
+          ~eval ~alpha ~beta ~ply ~depth ~check
+          ~null ~pv ~improving ~ttentry in
+      match p with
       | Some score -> score
       | None ->
         let it = Order.score st moves ~ply ~pos ~ttentry in
@@ -873,8 +864,7 @@ module Main = struct
         let pos = Child.self m in
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
-        if Search.better st t m ~score ~ply ~pv
-        && Search.cutoff st t m ~score ~beta ~ply ~depth then Stop beta
+        if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
         else if st.stopped then Stop t.score
         else Continue (i + 1)
 
@@ -934,7 +924,7 @@ module Main = struct
     Option.some_if begin
       depth <= rfp_max_depth &&
       eval - rfp_margin depth improving >= beta
-    end beta
+    end eval
 
   and rfp_margin depth improving =
     let m = Eval.Material.pawn_mg in
@@ -963,7 +953,7 @@ module Main = struct
           ~depth:(depth - r - 1)
           ~null:true
           ~pv:false |> Int.neg in
-      Option.some_if (score >= beta) beta
+      Option.some_if (score >= beta) score
     else None
 
   and nmp_min_depth = 3
@@ -999,7 +989,7 @@ module Main = struct
     let beta_cut = beta + probcut_margin improving in
     if depth >= probcut_min_depth
     && not (is_mate beta || is_mated beta)
-    && probcut_tt ~depth ~beta_cut ~ttentry
+    && probcut_tt ~ply ~depth ~beta_cut ~ttentry
     && Threats.(count @@ get pos @@ Position.active pos) > 0 then
       let finish () = None in
       let f = probcut_child st pos ~depth ~ply ~beta_cut in
@@ -1038,10 +1028,10 @@ module Main = struct
 
   (* If the evaluation was cached then make sure that it doesn't refute
      our hypothesis. *)
-  and probcut_tt ~depth ~beta_cut ~ttentry = match ttentry with
+  and probcut_tt ~ply ~depth ~beta_cut ~ttentry = match ttentry with
     | Some (entry : Tt.entry) ->
       entry.depth < depth - (probcut_min_depth - 2) ||
-      entry.score >= beta_cut
+      Tt.to_score entry.score ply >= beta_cut
     | None -> true
 
   and probcut_margin improving =
