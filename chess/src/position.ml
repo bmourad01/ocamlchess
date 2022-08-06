@@ -1126,7 +1126,7 @@ module Makemove = struct
 
   let[@inline] select_castle pos s =
     (Array.unsafe_get castles
-       (Int.ctz
+       (Ocaml_intrinsics.Int.count_trailing_zeros
           Cr.(to_int (pos.active --> s)))) pos
 
   (* If we're castling our king on this move, then we need to move the rook as
