@@ -858,8 +858,8 @@ module Main = struct
         let it = Order.score st moves ~ply ~pos ~ttentry in
         let t = Search.create ~alpha () in
         let finish _ = t.score in
-        let f = child st t pos ~score ~beta ~depth
-            ~ply ~check ~pv ~improving ~ttentry in
+        let f = child st t pos ~beta ~depth ~ply
+            ~check ~pv ~improving ~ttentry in
         let score = Iterator.fold_until it ~init:0 ~finish ~f in
         if not @@ State.has_excluded st ply then
           Search.store st t pos ~depth ~ply ~score;
@@ -888,8 +888,8 @@ module Main = struct
     | None -> probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
 
   (* Search a child of the current node. *)
-  and child st t pos ~score ~beta ~depth ~ply ~check
-      ~pv ~improving ~ttentry = fun i (m, order) ->
+  and child st t pos ~beta ~depth ~ply ~check ~pv
+      ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
     if should_skip st t m ~beta ~depth ~ply ~order then Continue (i + 1)
     else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
