@@ -696,7 +696,7 @@ module Quiescence = struct
     let margin = Eval.Material.queen_mg in
     fun pos eval alpha -> eval + margin < alpha && not (Eval.is_endgame pos)
 
-  let static_eval st pos ~ply ~ttentry = match (ttentry : Tt.entry option) with
+  let static_eval st pos ~ply ~(ttentry : Tt.entry option) = match ttentry with
     | None when ply <= 0 -> Eval.go pos
     | None when not (State.is_null_move st (ply - 1)) -> Eval.go pos
     | None -> -(State.lookup_eval_unsafe st (ply - 1))
@@ -808,7 +808,7 @@ end
 (* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
-  let static_eval st pos ~ttentry = match (ttentry : Tt.entry option) with
+  let static_eval st pos ~(ttentry : Tt.entry option) = match ttentry with
     | Some {eval; _} when Uopt.is_none eval -> Eval.go pos
     | Some {eval; _} -> Uopt.unsafe_value eval
     | None -> Eval.go pos
