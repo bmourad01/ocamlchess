@@ -696,18 +696,18 @@ module Quiescence = struct
     let margin = Eval.Material.queen_mg in
     fun pos eval alpha -> eval + margin < alpha && not (Eval.is_endgame pos)
 
-  (* Decide whether to use the TT evaluation or the result of the evaluation
-     function (or neither, if we're in check). *)
-  let eval (st : state) pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv =
+  let static_eval st pos ~ply ~ttentry = match (ttentry : Tt.entry option) with
+    | None when ply <= 0 -> Eval.go pos
+    | None when not (State.is_null_move st (ply - 1)) -> Eval.go pos
+    | None -> -(State.lookup_eval_unsafe st (ply - 1))
+    | Some {eval; _} when Uopt.is_none eval -> Eval.go pos
+    | Some {eval; } -> Uopt.unsafe_value eval
+
+  let evaluate st pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv =
     if not check then
-      let eval = match (ttentry : Tt.entry option) with
-        | Some {eval; _} when Uopt.is_some eval -> Uopt.unsafe_value eval
-        | Some _ -> Eval.go pos
-        | None when ply <= 0 -> Eval.go pos
-        | None when not (State.is_null_move st (ply - 1)) -> Eval.go pos
-        | None -> -(State.lookup_eval_unsafe st (ply - 1)) in
+      let eval = static_eval st pos ~ply ~ttentry in
       State.update_eval st ~ply ~eval |> ignore;
-      let score = match (ttentry : Tt.entry option) with
+      let score = match ttentry with
         | Some {score; bound = Lower; _} -> max eval @@ Tt.to_score score ply
         | Some {score; bound = Upper; _} -> min eval @@ Tt.to_score score ply
         | None | Some _ -> eval in
@@ -756,7 +756,7 @@ module Quiescence = struct
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
-      match eval st pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv with
+      match evaluate st pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv with
       | First score -> score
       | Second (alpha, score) ->
         match order st moves pos ~ply ~check ~init ~ttentry with
@@ -808,17 +808,16 @@ end
 (* The main search of the game tree. The core of it is the negamax algorithm
    with alpha-beta pruning (and other enhancements). *)
 module Main = struct
-  (* Decide whether to use the TT evaluation or the result of the evaluation
-     function (or whether to skip altogether). *)
-  let eval st pos ~ply ~check ~ttentry =
+  let static_eval st pos ~ttentry = match (ttentry : Tt.entry option) with
+    | Some {eval; _} when Uopt.is_none eval -> Eval.go pos
+    | Some {eval; _} -> Uopt.unsafe_value eval
+    | None -> Eval.go pos
+
+  let evaluate st pos ~ply ~check ~ttentry =
     if not check then
-      let eval = match (ttentry : Tt.entry option) with
-        | None -> Eval.go pos
-        | Some {eval; _} ->
-          if Uopt.is_some eval then Uopt.unsafe_value eval
-          else Eval.go pos in
+      let eval = static_eval st pos ~ttentry in
       let improving = State.update_eval st ~ply ~eval in
-      let score = match (ttentry : Tt.entry option) with
+      let score = match ttentry with
         | Some {score; bound = Lower; _} -> max eval @@ Tt.to_score score ply
         | Some {score; bound = Upper; _} -> min eval @@ Tt.to_score score ply
         | None | Some _ -> eval in
@@ -856,7 +855,7 @@ module Main = struct
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
-      let score, improving = eval st pos ~ply ~check ~ttentry in
+      let score, improving = evaluate st pos ~ply ~check ~ttentry in
       let p = prune_non_pv_node st pos moves
           ~score ~alpha ~beta ~ply ~depth
           ~pv ~improving ~ttentry in
