@@ -186,6 +186,18 @@ let assert_pawn_hash new_pos =
       "New position has pawn hash %016LX, but %016LX was expected. \
        Position: %s" h' h (Position.Fen.to_string new_pos) ()
 
+let print_new_pos new_pos prev moves =
+  let mv = Option.value_exn prev in
+  let m = Child.move mv in
+  Format.printf "%a (%a): %a\n%!"
+    Move.pp m Position.San.pp mv Position.pp new_pos;
+  Format.printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
+  Format.printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
+  See.go mv |> Option.iter ~f:(fun see ->
+      Format.printf "Static Exchange Evaluation: %d\n%!" see);
+  Format.printf "%d legal moves\n%!" @@ List.length moves;
+  Format.printf "\n%!"
+
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
   if Window.is_open window then
     (* Process input if the game is still playable. *)
@@ -202,18 +214,8 @@ let rec main_loop ~delay () = State.(gets window) >>= fun window ->
     State.(gets moves) >>= fun moves ->
     State.(gets prev) >>= fun prev ->
     (* Print information about position change. *)
-    if not @@ Position.same_hash pos new_pos then begin
-      let mv = Option.value_exn prev in
-      let m = Child.move mv in
-      Format.printf "%a (%a): %a\n%!"
-        Move.pp m Position.San.pp mv Position.pp new_pos;
-      Format.printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
-      Format.printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
-      See.go mv |> Option.iter ~f:(fun see ->
-          Format.printf "Static Exchange Evaluation: %d\n%!" see);
-      Format.printf "%d legal moves\n%!" @@ List.length moves;
-      Format.printf "\n%!";
-    end;
+    if not @@ Position.same_hash pos new_pos then
+      print_new_pos new_pos prev moves;
     let prev = Option.map prev ~f:Child.move in
     (* Get the valid squares for our selected piece to move to. *)
     State.(gets sel) >>= begin function
@@ -261,7 +263,6 @@ let text_font = assets ^ "FreeSans.ttf"
 let run pos ~white ~black ~delay =
   init_fonts piece_font text_font;
   init_named_values ();
-  let window = Window.create window_size window_size "chess" in
   let moves = Position.children pos in
   let white_name = match white with
     | None -> Format.printf "White is human\n%!"; "human"
@@ -287,6 +288,8 @@ let run pos ~white ~black ~delay =
   Format.printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
   Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "\n%!";
+  let window_name = Format.sprintf "ocamlchess: %s vs. %s" white_name black_name in
+  let window = Window.create window_size window_size window_name in
   let State.T.{game; _} =
     let sel = None in
     let prev = None in
