@@ -79,11 +79,15 @@ end
 module Mobility = struct
   let start_weight = 4
   let end_weight = 1
-  let center_bonus = 2
 
-  (* Calculating pawn and king mobility is too slow and not especially
-     important. These pieces are better evaluated by other features. *)
-  let kinds = Piece.[|Knight; Bishop; Rook; Queen|]
+  (* Pair each kind with its bonus for controlling the center squares. We skip
+     evaluating mobility for pawn and king. *)
+  let kinds = Piece.[|
+      Knight, 3;
+      Bishop, 4;
+      Rook,   1;
+      Queen,  2;
+    |]
 
   (* Weighted sum of the "mobility" of the material. Also, collect the number
      of attacks near the squares immediately surrounding the enemy king. This
@@ -95,7 +99,7 @@ module Mobility = struct
     let king_sq = Bb.(first_set_exn (them & Position.king pos)) in
     let box = Pre.king king_sq in
     let king_danger = match c with White -> bk | Black -> wk in
-    let score = Array.fold kinds ~init:0 ~f:(fun init k ->
+    let score = Array.fold kinds ~init:0 ~f:(fun init (k, center_bonus) ->
         let f = match k with
           | Pawn   -> assert false
           | Knight -> Pre.knight
