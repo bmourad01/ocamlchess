@@ -77,7 +77,7 @@ module Material = struct
 end
 
 module Mobility = struct
-  let start_weight = 5
+  let start_weight = 4
   let end_weight = 1
   let center_bonus = 2
 
@@ -131,8 +131,8 @@ module Rook_open_file = struct
 end
 
 module Bishop_pair = struct
-  let start_weight = 45
-  let end_weight = 55
+  let start_weight = 12
+  let end_weight = 18
 
   (* Give a bonus if the player has a bishop pair. *)
   let evaluate = evaluate @@ fun pos c ->
@@ -146,8 +146,8 @@ module Bishop_pair = struct
 end
 
 module King_danger = struct
-  let start_weight = -14
-  let end_weight = 3
+  let start_weight = -20
+  let end_weight = -1
 
   (* Count the squares surrounding the king that are attacked. *)
   let evaluate (wk, bk) = evaluate @@ fun _ -> function
