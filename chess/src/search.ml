@@ -891,8 +891,7 @@ module Main = struct
   and child st t pos ~score ~beta ~depth ~ply ~check
       ~pv ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
-    if should_skip st t m ~beta ~depth ~ply ~check ~order
-    then Continue (i + 1)
+    if should_skip st t m ~beta ~depth ~ply ~order then Continue (i + 1)
     else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
       | First score -> Stop score
       | Second _ when st.stopped -> Stop t.score
@@ -906,25 +905,30 @@ module Main = struct
         else if st.stopped then Stop t.score
         else Continue (i + 1)
 
-  and should_skip st t m ~beta ~depth ~ply ~check ~order =
+  and should_skip st t m ~beta ~depth ~ply ~order =
     State.is_excluded st ply m || begin
       t.score > mated max_ply && begin
         see m ~order ~depth ||
-        futile st t m ~beta ~ply ~depth ~check
+        futile st t m ~beta ~ply ~depth
       end
     end
 
   (* Futility pruning.
 
-     If our score is within a margin below alpha, then skip searching
-     quiet moves (since they are likely to be "futile" in improving alpha).
+     We want to skip searching quiet moves if our static evaluation of the
+     position is within a margin below alpha, since it is unlikely that such
+     moves will improve alpha.
+
+     This won't apply if the position is in check (since we don't perform
+     static evaluations in this situation).
   *)
-  and futile st t m ~beta ~ply ~depth ~check =
-    not check
-    && ply > 0
-    && depth <= futile_max_depth
-    && is_quiet m
-    && State.lookup_eval_unsafe st ply + futile_margin depth < t.alpha
+  and futile st t m ~beta ~ply ~depth = match State.lookup_eval st ply with
+    | None -> false
+    | Some eval ->
+      ply > 0
+      && depth <= futile_max_depth
+      && is_quiet m
+      && eval + futile_margin depth < t.alpha
 
   and futile_margin depth =
     let m = Eval.Material.pawn_mg in
