@@ -6,6 +6,7 @@ module Bb = Bitboard
 module Pre = Precalculated
 module Child = Position.Child
 module Threats = Position.Threats
+module Oa = Option_array
 
 module Limits = struct
   type t = {
@@ -223,8 +224,6 @@ let is_quiet ?(check = true) = Fn.non @@ is_noisy ~check
 
 (* Our state for the entirety of the search. *)
 module State = struct
-  module Oa = Option_array
-
   type t = {
     limits                     : limits;
     root                       : Position.t;
@@ -294,21 +293,21 @@ module State = struct
   let inc_nodes st = st.nodes <- st.nodes + 1
 
   (* Get the first killer move. *)
-  let killer1 ply st = Oa.get st.killer1 ply
+  let killer1 st ply = Oa.get st.killer1 ply
 
   (* Get the second killer move. *)
-  let killer2 ply st = Oa.get st.killer2 ply
+  let killer2 st ply = Oa.get st.killer2 ply
 
   (* Is `m` a killer move? *)
-  let is_killer m ply st = match killer1 ply st with
+  let is_killer st m ply = match killer1 st ply with
     | Some m' when Child.same m m' -> true
-    | _ -> match killer2 ply st with
+    | _ -> match killer2 st ply with
       | Some m' -> Child.same m m'
       | None -> false
 
   (* Update the killer move for a particular ply. *)
-  let update_killer ply m st =
-    killer1 ply st |> Option.iter
+  let update_killer st ply m =
+    killer1 st ply |> Option.iter
       ~f:(Oa.set_some st.killer2 ply);
     Oa.set_some st.killer1 ply m
 
@@ -320,7 +319,7 @@ module State = struct
     ((src lsl 1) lor c) * Square.count + dst
 
   (* Update the move history heuristic. *)
-  let update_move_history m depth st =
+  let update_move_history st m depth =
     if depth > 0 then begin
       let i = history_idx m in
       let d = Array.unsafe_get st.move_history i + (depth * depth) in
@@ -332,7 +331,7 @@ module State = struct
         st.move_history_max_b <- max d st.move_history_max_b
     end
 
-  let move_history_max pos st = match Position.active pos with
+  let move_history_max st pos = match Position.active pos with
     | White -> st.move_history_max_w
     | Black -> st.move_history_max_b
 
@@ -342,7 +341,7 @@ module State = struct
      We use an idea from Stockfish where, if our previous position was
      in check, we can try looking at the one before that.
   *)
-  let update_eval ply eval st =
+  let update_eval st ~ply ~eval =
     Oa.unsafe_set_some st.evals ply eval;
     ply < 2 || match Oa.unsafe_get st.evals ply with
     | Some e -> eval > e
@@ -351,18 +350,18 @@ module State = struct
       | Some e -> eval > e
       | None -> true
 
-  let lookup_eval ply st = Oa.unsafe_get st.evals ply
-  let lookup_eval_unsafe ply st = Oa.unsafe_get_some_exn st.evals ply
-  let clear_eval ply st = Oa.unsafe_set_none st.evals ply
+  let lookup_eval st ply = Oa.unsafe_get st.evals ply
+  let lookup_eval_unsafe st ply = Oa.unsafe_get_some_exn st.evals ply
+  let clear_eval st ply = Oa.unsafe_set_none st.evals ply
 
   let stop st = st.stopped <- true
 
-  let push_history pos st =
+  let push_history st pos =
     Position.hash pos |>
     Hashtbl.update st.history ~f:(function
         | Some n -> n + 1 | None -> 1)
 
-  let pop_history pos st =
+  let pop_history st pos =
     Position.hash pos |>
     Hashtbl.change st.history ~f:(function
         | None | Some 1 -> None
@@ -372,15 +371,15 @@ module State = struct
     | Some p -> not @@ Future.is_decided p
     | None -> false
 
-  let excluded st ~ply = Oa.unsafe_get st.excluded ply
-  let has_excluded st ~ply = Oa.unsafe_is_some st.excluded ply
-  let set_excluded st m ~ply = Oa.unsafe_set_some st.excluded ply m
-  let clear_excluded st ~ply = Oa.unsafe_set_none st.excluded ply
+  let excluded st ply = Oa.unsafe_get st.excluded ply
+  let has_excluded st ply = Oa.unsafe_is_some st.excluded ply
+  let set_excluded st ply m = Oa.unsafe_set_some st.excluded ply m
+  let clear_excluded st ply = Oa.unsafe_set_none st.excluded ply
 
-  let is_excluded st m ~ply =
-    excluded st ~ply |> Option.exists ~f:(Child.same m)
+  let is_excluded st ply m =
+    excluded st ply |> Option.exists ~f:(Child.same m)
 
-  let update_pv st m ~ply =
+  let update_pv st ply m =
     let pv = Array.unsafe_get st.pv ply in
     let child_pv = Array.unsafe_get st.pv (ply + 1) in
     Oa.unsafe_set_some pv 0 m;
@@ -401,10 +400,10 @@ module State = struct
         | Some m -> extract (m :: acc) (i + 1) in
     extract [] 0
 
-  let current_move st ~ply = Oa.unsafe_get st.moves ply
-  let set_move st m ~ply = Oa.unsafe_set_some st.moves ply m
-  let null_move st ~ply = Oa.unsafe_set_none st.moves ply
-  let is_null_move st ~ply = ply >= 0 && Oa.is_none st.moves ply
+  let current_move st ply = Oa.unsafe_get st.moves ply
+  let set_move st ply m = Oa.unsafe_set_some st.moves ply m
+  let null_move st ply = Oa.unsafe_set_none st.moves ply
+  let is_null_move st ply = ply >= 0 && Oa.is_none st.moves ply
 end
 
 type state = State.t
@@ -531,10 +530,10 @@ module Order = struct
      6. Captures that produced a negative SEE score.
   *)
   let score st moves ~ply ~pos ~ttentry =
-    let killer1 = State.killer1 ply st in
-    let killer2 = State.killer2 ply st in
+    let killer1 = State.killer1 st ply in
+    let killer2 = State.killer2 st ply in
     let move_history = st.move_history in
-    let move_history_max = State.move_history_max pos st in
+    let move_history_max = State.move_history_max st pos in
     let is_hash = is_hash ttentry in
     let killer m = match killer1, killer2 with
       | Some k, _ when Child.same m k -> killer1_offset
@@ -593,8 +592,8 @@ module Search = struct
 
   let update_history_and_killer st m ~ply ~depth =
     if is_quiet m then begin
-      State.update_killer ply m st;
-      State.update_move_history m depth st;
+      State.update_killer st ply m;
+      State.update_move_history st m depth;
     end
 
   (* Return true if we fail high. *)
@@ -603,7 +602,7 @@ module Search = struct
       t.score <- score;
       if score > t.alpha then begin
         t.best <- Uopt.some m;
-        if pv then State.update_pv st m ~ply;
+        if pv then State.update_pv st ply m;
         if pv && score < beta then begin
           t.alpha <- score;
           if not q then t.bound <- Exact;
@@ -623,7 +622,7 @@ module Search = struct
 
   (* Cache an evaluation. *)
   let store (st : state) t pos ~depth ~ply ~score =
-    let eval = Uopt.of_option @@ State.lookup_eval ply st in
+    let eval = Uopt.of_option @@ State.lookup_eval st ply in
     Tt.store st.tt pos ~ply ~depth ~score ~eval ~best:t.best ~bound:t.bound
 
   let has_reached_limits st =
@@ -697,9 +696,9 @@ module Quiescence = struct
         | Some {eval; _} when Uopt.is_some eval -> Uopt.unsafe_value eval
         | Some _ -> Eval.go pos
         | None when ply <= 0 -> Eval.go pos
-        | None when not (State.is_null_move st ~ply:(ply - 1)) -> Eval.go pos
-        | None -> -(State.lookup_eval_unsafe (ply - 1) st) in
-      State.update_eval ply eval st |> ignore;
+        | None when not (State.is_null_move st (ply - 1)) -> Eval.go pos
+        | None -> -(State.lookup_eval_unsafe st (ply - 1)) in
+      State.update_eval st ~ply ~eval |> ignore;
       let score = match (ttentry : Tt.entry option) with
         | Some {score; bound = Lower; _} -> max eval @@ Tt.to_score score ply
         | Some {score; bound = Upper; _} -> min eval @@ Tt.to_score score ply
@@ -713,7 +712,7 @@ module Quiescence = struct
       end else if delta pos score alpha then First score
       else Second ((if pv then max score alpha else alpha), Some eval)
     else begin
-      State.clear_eval ply st;
+      State.clear_eval st ply;
       Second (alpha, None)
     end
 
@@ -769,15 +768,15 @@ module Quiescence = struct
     then Continue qe
     else begin
       let pos = Child.self m in
-      State.set_move st m ~ply;
-      State.push_history pos st;
+      State.set_move st ply m;
+      State.push_history st pos;
       State.inc_nodes st;
       let score = Int.neg @@ go st pos ~pv
           ~init:false
           ~ply:(ply + 1)
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
-      State.pop_history pos st;
+      State.pop_history st pos;
       if Search.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
       else if st.stopped then Stop t.score
       else Continue qe
@@ -810,14 +809,14 @@ module Main = struct
         | Some {eval; _} ->
           if Uopt.is_some eval then Uopt.unsafe_value eval
           else Eval.go pos in
-      let improving = State.update_eval ply eval st in
+      let improving = State.update_eval st ~ply ~eval in
       let score = match (ttentry : Tt.entry option) with
         | Some {score; bound = Lower; _} -> max eval @@ Tt.to_score score ply
         | Some {score; bound = Upper; _} -> min eval @@ Tt.to_score score ply
         | None | Some _ -> eval in
       Some score, improving
     else begin
-      State.clear_eval ply st;
+      State.clear_eval st ply;
       None, false
     end
 
@@ -862,7 +861,7 @@ module Main = struct
         let f = child st t pos ~score ~beta ~depth
             ~ply ~check ~pv ~improving ~ttentry in
         let score = Iterator.fold_until it ~init:0 ~finish ~f in
-        if not @@ State.has_excluded st ~ply then
+        if not @@ State.has_excluded st ply then
           Search.store st t pos ~depth ~ply ~score;
         score
 
@@ -892,7 +891,7 @@ module Main = struct
   and child st t pos ~score ~beta ~depth ~ply ~check
       ~pv ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
-    if should_skip st t m ~score ~beta ~depth ~ply ~check ~pv ~order
+    if should_skip st t m ~beta ~depth ~ply ~check ~order
     then Continue (i + 1)
     else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
       | First score -> Stop score
@@ -900,18 +899,18 @@ module Main = struct
       | Second ext ->
         let r = lmr st m ~i ~beta ~ply ~depth ~check ~pv ~improving in
         let pos = Child.self m in
-        State.set_move st m ~ply;
+        State.set_move st ply m;
         State.inc_nodes st;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
         if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
         else if st.stopped then Stop t.score
         else Continue (i + 1)
 
-  and should_skip st t m ~score ~beta ~depth ~ply ~check ~pv ~order =
-    State.is_excluded st m ~ply || begin
-      not check && t.score > mated max_ply && begin
+  and should_skip st t m ~beta ~depth ~ply ~check ~order =
+    State.is_excluded st ply m || begin
+      t.score > mated max_ply && begin
         see m ~order ~depth ||
-        futile t m ~score ~beta ~depth ~pv
+        futile st t m ~beta ~ply ~depth ~check
       end
     end
 
@@ -919,15 +918,13 @@ module Main = struct
 
      If our score is within a margin below alpha, then skip searching
      quiet moves (since they are likely to be "futile" in improving alpha).
-
-     Note that `score` should be `None` if we are in check.
   *)
-  and futile t m ~score ~beta ~depth ~pv =
-    not pv &&
-    depth <= futile_max_depth &&
-    is_quiet m &&
-    Option.value_map score ~default:false
-      ~f:(fun score -> score + futile_margin depth <= t.alpha)
+  and futile st t m ~beta ~ply ~depth ~check =
+    not check
+    && ply > 0
+    && depth <= futile_max_depth
+    && is_quiet m
+    && State.lookup_eval_unsafe st ply + futile_margin depth < t.alpha
 
   and futile_margin depth =
     let m = Eval.Material.pawn_mg in
@@ -970,17 +967,19 @@ module Main = struct
      If we forfeit our right to play a move and our opponent's best
      response still produces a beta cutoff, then we know this position
      is unlikely.
+
+     This should not be called when the position is in check.
   *)
   and nmp st pos ~score ~beta ~ply ~depth =
-    if not (State.is_null_move st ~ply:(ply - 1))
+    if not (State.is_null_move st (ply - 1))
     && score >= beta
-    && score >= State.lookup_eval_unsafe ply st
+    && score >= State.lookup_eval_unsafe st ply
     && depth >= nmp_min_depth
-    && not (State.has_excluded st ~ply)
+    && not (State.has_excluded st ply)
     && not (Eval.is_endgame pos)
     && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
       let r = if depth <= 6 then 2 else 3 in
-      State.null_move st ~ply;
+      State.null_move st ply;
       let score =
         Position.Unsafe.null_move pos |> go st
           ~alpha:(-beta)
@@ -1035,12 +1034,12 @@ module Main = struct
 
   and probcut_child st pos ~depth ~ply ~beta_cut = fun () (m, _) ->
     let open Continue_or_stop in
-    if not @@ State.is_excluded st m ~ply then
+    if not @@ State.is_excluded st ply m then
       let alpha = -beta_cut in
       let beta = -beta_cut + 1 in
       let child = Child.self m in
-      State.set_move st m ~ply;
-      State.push_history child st;
+      State.set_move st ply m;
+      State.push_history st child;
       State.inc_nodes st;
       (* Confirm with quiescence search first. *)
       let score = Int.neg @@ Quiescence.go st child
@@ -1052,11 +1051,11 @@ module Main = struct
           Int.neg @@ go st child ~alpha ~beta ~depth
             ~ply:(ply + 1) ~pv:false
         else score in
-      State.pop_history child st;
+      State.pop_history st child;
       if score >= beta_cut then
         (* Save this cutoff in the TT. *)
         let depth = depth - (probcut_min_depth - 2) in
-        let eval = Uopt.of_option @@ State.lookup_eval ply st in
+        let eval = Uopt.of_option @@ State.lookup_eval st ply in
         Tt.store st.tt pos ~ply ~depth ~score ~eval
           ~best:(Uopt.some m) ~bound:Lower;
         Stop (Some score)
@@ -1101,18 +1100,18 @@ module Main = struct
       && not (Tt.equal_bound entry.bound Upper)
       && not (is_mate ttscore || is_mated ttscore)
       && depth >= se_min_depth
-      && not (State.has_excluded st ~ply)
+      && not (State.has_excluded st ply)
       && Uopt.is_some entry.best
       && Child.same m (Uopt.unsafe_value entry.best)
       && entry.depth >= se_min_ttdepth depth then
         let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
-        State.set_excluded st m ~ply;
+        State.set_excluded st ply m;
         let score = go st pos ~depth ~ply
             ~alpha:(target - 1)
             ~beta:target
             ~pv:false in
-        State.clear_excluded st ~ply;
+        State.clear_excluded st ply;
         if score < target then Second 1
         else if target >= beta then First target
         else if ttscore >= beta then Second (-2)
@@ -1139,7 +1138,7 @@ module Main = struct
     && i >= lmr_min_index
     && depth >= lmr_min_depth
     && is_quiet m
-    && not @@ State.is_killer m ply st then
+    && not @@ State.is_killer st m ply then
       let t = Bb.count @@ Child.new_threats m in
       max 0 (1 + b2in improving - t)
     else 0
@@ -1155,12 +1154,12 @@ module Main = struct
   *)
   and pvs st t pos ~i ~r ~beta ~ply ~depth ~pv =
     let[@specialise] go ?(r = 0) alpha ~pv =
-      State.push_history pos st;
+      State.push_history st pos;
       let score = go st pos ~pv ~alpha
           ~beta:(-t.alpha)
           ~ply:(ply + 1)
           ~depth:(depth - r - 1) in
-      State.pop_history pos st;
+      State.pop_history st pos;
       -score in
     (* Zero and full window for alpha. *)
     let zw = -t.alpha - 1 and fw = -beta in
