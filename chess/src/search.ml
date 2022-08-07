@@ -851,15 +851,12 @@ module Main = struct
 
   (* Search the available moves for the given position. *)
   and with_moves st pos moves ~alpha ~beta ~ply ~depth ~check ~pv =
-    (* Find a cached evaluation of the position. *)
     match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
       let score, improving = evaluate st pos ~ply ~check ~ttentry in
-      let p = prune_non_pv_node st pos moves
-          ~score ~alpha ~beta ~ply ~depth
-          ~pv ~improving ~ttentry in
-      match p with
+      prune_non_pv_node st pos moves ~score ~alpha ~beta
+        ~ply ~depth ~pv ~improving ~ttentry |> function
       | Some score -> score
       | None ->
         let it = Order.score st moves ~ply ~pos ~ttentry in
@@ -872,27 +869,25 @@ module Main = struct
           Search.store st t pos ~depth ~ply ~score;
         score
 
-  (* If we're not in a PV search, then try a variety of pruning heuristics
-     before we search the children of this node.
+  (* If we're not in a PV search and we're not in check, then try a
+     variety of pruning heuristics before we search the children of
+     this node.
 
      Note that `score` should be `None` if the position is in check.
   *)
-  and prune_non_pv_node st pos moves
-      ~score ~alpha ~beta ~ply ~depth
-      ~pv ~improving ~ttentry =
-    let result = match score with
-      | None -> None
-      | Some _ when pv -> None
-      | Some score ->
-        match razor st pos moves ~score ~alpha ~ply ~depth ~pv with
+  and prune_non_pv_node st pos moves ~score ~alpha
+      ~beta ~ply ~depth ~pv ~improving ~ttentry =
+    match score with
+    | None -> None
+    | Some _ when pv -> None
+    | Some score ->
+      match razor st pos moves ~score ~alpha ~ply ~depth ~pv with
+      | Some _ as score -> score
+      | None -> match rfp ~depth ~score ~beta ~improving with
         | Some _ as score -> score
-        | None -> match rfp ~depth ~score ~beta ~improving with
+        | None -> match nmp st pos ~score ~beta ~ply ~depth with
           | Some _ as score -> score
-          | None -> nmp st pos ~score ~beta ~ply ~depth in
-    match result with
-    | Some _ -> result
-    | None when pv -> result
-    | None -> probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
+          | None -> probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
 
   (* Search a child of the current node. *)
   and child st t pos ~beta ~depth ~ply ~check ~pv
