@@ -130,16 +130,20 @@ module Result : sig
   (** The search result. *)
   type t
 
-  (** The best move to play, if any. *)
+  (** The principal variation (PV). This is the engine's preferred line of
+      play for both sides. Thus, the first element of the PV is the engine's
+      preferred move for the position that was searched.
+
+      If this is not a mating sequence, then it is guaranteed to have a length
+      that is at most the depth that was searched.
+  *)
+  val pv : t -> Position.child list
+
+  (** The best move to play, if any. This is the first element of the PV. *)
   val best : t -> Position.child option
 
   (** The best move to play. Raises if the PV is empty. *)
   val best_exn : t -> Position.child
-
-  (** The principal variation. If this is not a mating sequence, then it
-      is guaranteed to have a length that is at most the depth that was
-      searched. *)
-  val pv : t -> Position.child list
 
   (** The score that was given to the best move. *)
   val score : t -> Uci.Send.Info.score
@@ -147,13 +151,17 @@ module Result : sig
   (** The number of nodes (positions) that were searched. *)
   val nodes : t -> int
 
-  (** The depth that was searched to in order to obtain the result. *)
+  (** The depth limit of the search. *)
   val depth : t -> int
 
-  (** The selective search depth in plies. *)
+  (** The selective search depth in plies. This is the actual maximum depth
+      that was searched, which may be less or greater than the actual depth
+      limit. This may happen if the engine decides to extend the search for
+      more interesting lines, or reduce the search for lines which are
+      unlikely to improve the position. *)
   val seldepth : t -> int
 
-  (** The total time (in milliseconds) taken to complete the search.. *)
+  (** The total time (in milliseconds) taken to complete the search. *)
   val time : t -> int
 end
 
