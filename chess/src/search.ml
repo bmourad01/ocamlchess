@@ -616,6 +616,13 @@ module Search = struct
 
   let qcutoff = cutoff ~q:true ~depth:0
 
+  (* Final score of a search.
+
+     If our score is still -inf then we didn't get to search any moves,
+     so as a fallback we will use alpha.
+  *)
+  let finish t _ = if t.score = -inf then t.alpha else t.score
+
   (* Find a cached evaluation of the position. *)
   let lookup (st : state) pos ~depth ~ply ~alpha ~beta ~pv =
     Tt.lookup st.tt ~pos ~depth ~ply ~alpha ~beta ~pv
@@ -623,7 +630,8 @@ module Search = struct
   (* Cache an evaluation. *)
   let store (st : state) t pos ~depth ~ply ~score =
     let eval = Uopt.of_option @@ State.lookup_eval st ply in
-    Tt.store st.tt pos ~ply ~depth ~score ~eval ~best:t.best ~bound:t.bound
+    Tt.store st.tt pos ~ply ~depth ~score ~eval
+      ~best:t.best ~bound:t.bound
 
   let has_reached_limits st =
     let elapsed = State.elapsed st in
@@ -755,7 +763,7 @@ module Quiescence = struct
         | None -> Option.value_exn score
         | Some (it, quiet_evasion) ->
           let t = Search.create ~alpha ?score () in
-          let finish _ = t.score in
+          let finish = Search.finish t in
           let f = child st t ~beta ~ply ~pv ~check ~quiet_evasion in
           let score = Iterator.fold_until it ~init:(ref 0) ~finish ~f in
           Search.store st t pos ~depth ~ply ~score;
@@ -857,7 +865,7 @@ module Main = struct
       | None ->
         let it = Order.score st moves ~ply ~pos ~ttentry in
         let t = Search.create ~alpha () in
-        let finish _ = t.score in
+        let finish = Search.finish t in
         let f = child st t pos ~beta ~depth ~ply
             ~check ~pv ~improving ~ttentry in
         let score = Iterator.fold_until it ~init:0 ~finish ~f in
