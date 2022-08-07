@@ -711,7 +711,7 @@ module Quiescence = struct
             ~bound:Lower;
         First score
       end else if delta pos score alpha then First score
-      else Second ((if pv then max eval alpha else alpha), Some eval)
+      else Second ((if pv then max score alpha else alpha), Some eval)
     else begin
       State.clear_eval ply st;
       Second (alpha, None)
