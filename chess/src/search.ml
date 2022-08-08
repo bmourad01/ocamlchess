@@ -893,7 +893,7 @@ module Main = struct
   and child st t pos ~beta ~depth ~ply ~check ~pv
       ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
-    if should_skip st t m ~beta ~depth ~ply ~order then Continue (i + 1)
+    if should_skip st t m ~i ~beta ~depth ~ply ~order then Continue (i + 1)
     else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
       | First score -> Stop score
       | Second _ when st.stopped -> Stop t.score
@@ -907,9 +907,9 @@ module Main = struct
         else if st.stopped then Stop t.score
         else Continue (i + 1)
 
-  and should_skip st t m ~beta ~depth ~ply ~order =
+  and should_skip st t m ~i ~beta ~depth ~ply ~order =
     State.is_excluded st ply m || begin
-      t.score > mated max_ply && begin
+      i > 0 && t.score > mated max_ply && begin
         see m ~order ~depth ||
         futile st t m ~beta ~ply ~depth
       end
@@ -1103,7 +1103,7 @@ module Main = struct
       if not check
       && ply > 0
       && ply < st.root_depth * 2
-      && not (Tt.equal_bound entry.bound Upper)
+      && Tt.equal_bound entry.bound Lower
       && not (is_mate ttscore || is_mated ttscore)
       && depth >= se_min_depth
       && not (State.has_excluded st ply)
