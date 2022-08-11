@@ -138,6 +138,7 @@ module Tt = struct
 
   module Entry = struct
     type t = {
+      key   : int64;
       depth : int;
       score : int;
       eval  : int Uopt.t;
@@ -150,11 +151,42 @@ module Tt = struct
   end
 
   type entry = Entry.t
-  type t = (Zobrist.key, entry) Hashtbl.t
 
-  let create () = Hashtbl.create (module Int64)
-  let clear = Hashtbl.clear
-  let find tt pos = Hashtbl.find tt @@ Position.hash pos
+  (* We're going to use a fixed-size flat hash table. I've found that
+     searches to a depth of >=12 will cache too many positions using
+     the standard library's hash table.
+
+     Thus, with a fixed size we need to decide which entries to evict,
+     and when.
+  *)
+  type t = entry Oa.t
+
+  let create ?(len = 0x80000) () = Oa.create ~len
+  let clear tt = Oa.clear tt
+
+  (* Taken from Stockfish. We multiply two 64-bit numbers to get a
+     128-bit number. The upper 64 bits of this result is used as the
+     index into the table. Depending on the quality of the random
+     Zobrist keys, this should give us a better distribution. *)
+  let mul_hi64 key n =
+    let open Int64 in
+    let n = of_int n in
+    let al = key land 0xFFFFFFFFL in
+    let ah = key lsr 32 in
+    let bl = n land 0xFFFFFFFFL in
+    let bh = n lsr 32 in
+    let c1 = (al * bl) lsr 32 in
+    let c2 = ah * bl + c1 in
+    let c3 = al * bh + (c2 land 0xFFFFFFFFL) in
+    to_int_trunc (ah * bh + (c2 lsr 32) + (c3 lsr 32))
+
+  let slot tt key = mul_hi64 key @@ Oa.length tt
+
+  let find tt pos =
+    let key = Position.hash pos in
+    let i = slot tt key in
+    Oa.unsafe_get tt i |> Option.bind ~f:(fun entry ->
+        Option.some_if (Zobrist.equal_key key entry.Entry.key) entry)
 
   let of_score score ply =
     if is_mate score then score + ply
@@ -163,16 +195,18 @@ module Tt = struct
 
   (* Store the evaluation results for the position.
 
-     If the position has already been cached in the table, then we can
-     replace it if the new entry's depth is greater or equal to that of
-     the old entry.
+     If an entry already exists for this slot, regardless of whether the
+     Zobrist key matches or not, we will replace it if the depth values
+     are comparable.
   *)
   let store tt pos ~ply ~depth ~score ~eval ~best ~bound =
-    Position.hash pos |> Hashtbl.update tt ~f:(function
-        | Some entry when Entry.depth entry > depth -> entry
-        | None | Some _ ->
-          let score = of_score score ply in
-          Entry.Fields.create ~depth ~score ~eval ~best ~bound)
+    let key = Position.hash pos in
+    let i = slot tt key in
+    match Oa.unsafe_get tt i with
+    | Some entry when entry.Entry.depth > depth -> ()
+    | None | Some _ ->
+      let e = Entry.Fields.create ~key ~depth ~score ~eval ~best ~bound in
+      Oa.unsafe_set_some tt i e
 
   let to_score score ply =
     if is_mate score then score - ply
@@ -1182,32 +1216,52 @@ module Main = struct
       (* Ignore beta if we're reducing the depth. *)
       if score > t.alpha && (r > 0 || score < beta)
       then go fw ~pv:false else score
+end
 
-  (* Aspiration window.
+(* Aspiration window.
 
-     The idea is that if we have the best score from a shallower search,
-     then we can use it as the basis for a window to search around (the
-     initial values of alpha and beta), and hopefully narrow the search
-     space.
-  *)
-  let rec aspire ?(low = 250) ?(high = 250) st moves depth basis =
-    let alpha, beta = window basis depth low high in
-    let score = with_moves st st.root moves
-        ~alpha ~beta ~depth ~check:st.check ~ply:0 ~pv:true in
-    (* Search was stopped, or we landed inside the window. *)
-    if st.stopped || (score > alpha && score < beta) then score
-    else (* Result was outside the window, so we need to widen a bit. *)
-      let low, high = widen score beta low high in
-      aspire st moves depth basis ~low ~high
+   The idea is that if we have the best score from a shallower search,
+   then we can use it as the basis for a window to search around (the
+   initial values of alpha and beta), and hopefully narrow the search
+   space. If the score for this position ends up being outside of the
+   current window, then we gradually widen it.
+*)
+module Aspiration = struct
+  let min_depth = 4
+  let initial_delta = 16
 
-  (* Set up the initial window to search around. *)
-  and window basis depth low high =
-    if basis <= -inf || depth <= 1 then -inf, inf
-    else max (-inf) (basis - low), min inf (basis + high)
+  let rec loop st moves depth ~alpha ~beta ~delta =
+    let score =
+      Main.with_moves st st.root moves ~alpha ~beta ~depth
+        ~check:st.check ~ply:0 ~pv:true in
+    if not st.stopped then
+      let new_delta = delta + (delta / 4) + 2 in
+      if score >= beta then
+        let beta = min inf (beta + delta) in
+        loop st moves depth ~alpha ~beta ~delta:new_delta
+      else if score <= alpha then
+        let alpha = max (-inf) (alpha - delta) in
+        let beta = min inf ((alpha + beta) / 2) in
+        loop st moves depth ~alpha ~beta ~delta:new_delta
+      else score
+    else score
 
-  (* Widen the window based on the result of a search. *)
-  and widen score beta low high =
-    if score >= beta then low, high * 2 else low * 2, high
+  let go st moves depth basis =
+    if depth < min_depth then
+      (* It shouldn't be necessary to enter the loop at lower depths.
+         We will get a more accurate "best" score if we just keep
+         searching a bit deeper before entering the loop. *)
+      Main.with_moves st st.root moves ~depth
+        ~alpha:(-inf)
+        ~beta:inf
+        ~check:st.check
+        ~ply:0
+        ~pv:true
+    else
+      let delta = initial_delta in
+      let alpha = max (-inf) (basis - delta) in
+      let beta = min inf (basis + delta) in
+      loop st moves depth ~alpha ~beta ~delta
 end
 
 let ply_to_moves ply = (ply + (ply land 1)) / 2
@@ -1243,9 +1297,9 @@ let pv_depth (st : state) score mate mated =
 (* Use iterative deepening to optimize the search. This works by using TT
    entries from shallower searches in the move ordering for deeper searches,
    which makes pruning more effective. *)
-let rec iterdeep ?(prev = None) st moves =
+let rec iterdeep ?(prev = None) (st : state) moves =
   let basis = Option.value_map prev ~default:(-inf) ~f:snd in
-  let score = Main.aspire st moves st.root_depth basis in
+  let score = Aspiration.go st moves st.root_depth basis in
   (* Get the elapsed time ASAP. *)
   let time = State.elapsed st in
   (* If the search was stopped, use the previous completed result, if

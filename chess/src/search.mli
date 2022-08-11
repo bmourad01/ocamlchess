@@ -112,8 +112,9 @@ module Tt : sig
   type entry = Entry.t
   type t
 
-  (** Creates a fresh table. *)
-  val create : unit -> t
+  (** [create ?len ()] creates a fresh table, where [len] is the maximum
+      number of entries allowed. *)
+  val create : ?len:int -> unit -> t
 
   (** Clears all entries in the table. *)
   val clear : t -> unit
