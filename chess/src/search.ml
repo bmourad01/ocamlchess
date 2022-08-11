@@ -646,13 +646,6 @@ module Search = struct
 
   let qcutoff = cutoff ~q:true ~depth:0
 
-  (* Final score of a search.
-
-     If our score is still -inf then we didn't get to search any moves,
-     so as a fallback we will use alpha.
-  *)
-  let finish t _ = if t.score = -inf then t.alpha else t.score
-
   (* Find a cached evaluation of the position. *)
   let lookup (st : state) pos ~depth ~ply ~alpha ~beta ~pv =
     Tt.lookup st.tt ~pos ~depth ~ply ~alpha ~beta ~pv
@@ -793,7 +786,7 @@ module Quiescence = struct
         | None -> Option.value_exn score
         | Some (it, quiet_evasion) ->
           let t = Search.create ~alpha ?score () in
-          let finish = Search.finish t in
+          let finish _ = t.score in
           let f = child st t ~beta ~ply ~pv ~check ~quiet_evasion in
           let score = Iterator.fold_until it ~init:(ref 0) ~finish ~f in
           Search.store st t pos ~depth ~ply ~score;
@@ -891,7 +884,7 @@ module Main = struct
       | None ->
         let it = Order.score st moves ~ply ~pos ~ttentry in
         let t = Search.create ~alpha () in
-        let finish = Search.finish t in
+        let finish _ = t.score in
         let f = child st t pos ~beta ~depth ~ply
             ~check ~pv ~improving ~ttentry in
         let score = Iterator.fold_until it ~init:0 ~finish ~f in
@@ -1224,15 +1217,15 @@ end
    adjust the window based on whether we failed low or high.
 *)
 module Aspiration = struct
-  let min_depth = 4
-  let initial_delta = 16
+  let min_depth = 6
+  let initial_delta = 10
 
   let rec loop st moves depth ~alpha ~beta ~delta =
     let score =
       Main.with_moves st st.root moves ~alpha ~beta ~depth
         ~check:st.check ~ply:0 ~pv:true in
     if not st.stopped then
-      let new_delta = delta + (delta / 4) + 2 in
+      let new_delta = delta * 2 in
       if score >= beta then
         let beta = min inf (score + delta) in
         loop st moves depth ~alpha ~beta ~delta:new_delta
@@ -1249,13 +1242,9 @@ module Aspiration = struct
          We will get a more accurate "best" score if we just keep
          searching a bit deeper before entering the loop. *)
       Main.with_moves st st.root moves ~depth
-        ~alpha:(-inf)
-        ~beta:inf
-        ~check:st.check
-        ~ply:0
-        ~pv:true
+        ~alpha:(-inf) ~beta:inf ~check:st.check ~ply:0 ~pv:true
     else
-      let delta = initial_delta + basis * basis / 19178 in
+      let delta = initial_delta in
       let alpha = max (-inf) (basis - delta) in
       let beta = min inf (basis + delta) in
       loop st moves depth ~alpha ~beta ~delta
