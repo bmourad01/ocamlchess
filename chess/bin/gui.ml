@@ -12,19 +12,19 @@ module Window = struct
     | `Mouse_button_pressed of int * int
   ]
 
-  external create : int -> int -> string -> t = "ml_window_create"
-  external size : t -> (int * int) = "ml_window_size"
-  external is_open : t -> bool = "ml_window_is_open"
-  external poll_event : t -> event option = "ml_window_poll_event"
-  external close : t -> unit = "ml_window_close"
-  external clear : t -> unit = "ml_window_clear"
+  external create : int -> int -> string -> t = "ocamlchess_window_create"
+  external size : t -> (int * int) = "ocamlchess_window_size"
+  external is_open : t -> bool = "ocamlchess_window_is_open"
+  external poll_event : t -> event option = "ocamlchess_window_poll_event"
+  external close : t -> unit = "ocamlchess_window_close"
+  external clear : t -> unit = "ocamlchess_window_clear"
 
   external promote :
-    int -> int -> string -> Piece.color -> Move.promote = "ml_promote"
+    int -> int -> string -> Piece.color -> Move.promote = "ocamlchess_promote"
 
   external paint_board :
     t -> Position.t -> int64 -> Square.t option -> Move.t option -> unit =
-    "ml_window_paint_board"
+    "ocamlchess_window_paint_board"
 end
 
 module State = struct
@@ -253,8 +253,8 @@ let () = Callback.register "string_of_square" Square.to_string
 
 let window_size = 640
 
-external init_fonts : string -> string -> unit = "ml_init_fonts"
-external init_named_values : unit -> unit = "ml_init_named_values"
+external init_fonts : string -> string -> unit = "ocamlchess_init_fonts"
+external init_named_values : unit -> unit = "ocamlchess_init_named_values"
 
 let assets = Sys.getenv "HOME" ^ "/.local/share/ocamlchess/assets/"
 let piece_font = assets ^ "FreeSerif.ttf"

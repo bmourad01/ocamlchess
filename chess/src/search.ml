@@ -170,21 +170,11 @@ module Tt = struct
 
   let clear tt = Oa.clear tt
 
-  (* Taken from Stockfish. We multiply two 64-bit numbers to get a
-     128-bit number. The upper 64 bits of this result is used as the
-     index into the table. Depending on the quality of the random
-     Zobrist keys, this should give us a better distribution. *)
-  let mul_hi64 key n =
-    let open Int64 in
-    let n = of_int n in
-    let al = key land 0xFFFFFFFFL in
-    let ah = key lsr 32 in
-    let bl = n land 0xFFFFFFFFL in
-    let bh = n lsr 32 in
-    let c1 = (al * bl) lsr 32 in
-    let c2 = ah * bl + c1 in
-    let c3 = al * bh + (c2 land 0xFFFFFFFFL) in
-    to_int_trunc (ah * bh + (c2 lsr 32) + (c3 lsr 32))
+  external mul_hi64 :
+    (int64[@unboxed]) ->
+    (int[@untagged]) ->
+    (int[@untagged]) =
+    "ocamlchess_mul_hi64" "ocamlchess_mul_hi64_unboxed" [@@noalloc]
 
   let slot tt key = mul_hi64 key @@ Oa.length tt
 
@@ -1227,10 +1217,11 @@ end
 (* Aspiration window.
 
    The idea is that if we have the best score from a shallower search,
-   then we can use it as the basis for a window to search around (the
-   initial values of alpha and beta), and hopefully narrow the search
-   space. If the score for this position ends up being outside of the
-   current window, then we gradually widen it.
+   then we can use it as the basis for an initial window to search
+   around (the initial values of alpha and beta).
+
+   Then, we can recursively use the resulting scores of each search to
+   adjust the window based on whether we failed low or high.
 *)
 module Aspiration = struct
   let min_depth = 4
@@ -1240,14 +1231,15 @@ module Aspiration = struct
     let score =
       Main.with_moves st st.root moves ~alpha ~beta ~depth
         ~check:st.check ~ply:0 ~pv:true in
+    let () = Format.eprintf "score=%d, alpha=%d, beta=%d, delta=%d\n%!" score alpha beta delta in
     if not st.stopped then
       let new_delta = delta + (delta / 4) + 2 in
       if score >= beta then
-        let beta = min inf (beta + delta) in
+        let beta = min inf (score + delta) in
         loop st moves depth ~alpha ~beta ~delta:new_delta
       else if score <= alpha then
-        let alpha = max (-inf) (alpha - delta) in
-        let beta = min inf ((alpha + beta) / 2) in
+        let beta = (alpha + beta) / 2 in
+        let alpha = max (-inf) (score - delta) in
         loop st moves depth ~alpha ~beta ~delta:new_delta
       else score
     else score
@@ -1264,7 +1256,7 @@ module Aspiration = struct
         ~ply:0
         ~pv:true
     else
-      let delta = initial_delta in
+      let delta = initial_delta + basis * basis / 19178 in
       let alpha = max (-inf) (basis - delta) in
       let beta = min inf (basis + delta) in
       loop st moves depth ~alpha ~beta ~delta

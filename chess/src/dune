@@ -8,6 +8,10 @@
    core_kernel.uopt
    monads
    ocaml_intrinsics)
+ (foreign_stubs
+  (language c)
+  (names int64_stubs)
+  (flags -march=native))
  (ocamlopt_flags -O3)
  (preprocess (pps ppx_compare
                   ppx_fields_conv

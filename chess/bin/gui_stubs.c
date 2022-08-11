@@ -109,21 +109,21 @@ static struct custom_operations sfml_window_custom_ops = {
 
 /* Exposed minimal API */
 
-value ml_init_fonts(value piece, value text) {
+value ocamlchess_init_fonts(value piece, value text) {
   CAMLparam2(piece, text);
   init_font_or_fail(&_piece_font, String_val(piece), _piece_font_filename);
   init_font_or_fail(&_text_font, String_val(text), _text_font_filename);
   CAMLreturn(Val_unit);
 }
 
-value ml_init_named_values(value dummy) {
+value ocamlchess_init_named_values(value dummy) {
   CAMLparam1(dummy);
   _piece_at_square = named_value_or_fail("piece_at_square");
   _string_of_square = named_value_or_fail("string_of_square");
   CAMLreturn(Val_unit);
 }
 
-value ml_window_create(value w, value h, value name) {
+value ocamlchess_window_create(value w, value h, value name) {
   CAMLparam3(w, h, name);
   CAMLlocal1(window);
 
@@ -141,7 +141,7 @@ value ml_window_create(value w, value h, value name) {
   CAMLreturn(window);
 }
 
-value ml_window_size(value window) {
+value ocamlchess_window_size(value window) {
   CAMLparam1(window);
   CAMLlocal1(result);
 
@@ -153,13 +153,13 @@ value ml_window_size(value window) {
   CAMLreturn(result);
 }
 
-value ml_window_is_open(value window) {
+value ocamlchess_window_is_open(value window) {
   CAMLparam1(window);
   sfRenderWindow *sf_window = Sfml_window_val(window);
   CAMLreturn(Val_bool(sfRenderWindow_isOpen(sf_window)));
 }
 
-value ml_window_poll_event(value window) {
+value ocamlchess_window_poll_event(value window) {
   CAMLparam1(window);
   CAMLlocal2(result, mouse_coords);
 
@@ -251,7 +251,7 @@ static bool mouse_within(int mx, int my, int px, int py, int tw, int th) {
   return mx >= px && mx < px + tw && my >= py && my < py + th;
 }
 
-value ml_promote(value w, value h, value name, value c) {
+value ocamlchess_promote(value w, value h, value name, value c) {
   CAMLparam4(w, h, name, c);
   CAMLlocal1(result);
 
@@ -301,22 +301,23 @@ value ml_promote(value w, value h, value name, value c) {
   CAMLreturn(result);
 }
 
-value ml_window_close(value window) {
+value ocamlchess_window_close(value window) {
   CAMLparam1(window);
   sfRenderWindow *sf_window = Sfml_window_val(window);
   sfRenderWindow_close(sf_window);
   CAMLreturn(Val_unit);
 }
 
-value ml_window_clear(value window) {
+value ocamlchess_window_clear(value window) {
   CAMLparam1(window);
   sfRenderWindow *sf_window = Sfml_window_val(window);
   sfRenderWindow_clear(sf_window, sfBlack);
   CAMLreturn(Val_unit);
 }
 
-value ml_window_paint_board(value window, value pos, value valid_squares,
-                            value selected_square, value prev_move) {
+value ocamlchess_window_paint_board(value window, value pos,
+                                    value valid_squares, value selected_square,
+                                    value prev_move) {
   CAMLparam5(window, pos, valid_squares, selected_square, prev_move);
   CAMLlocal2(piece, sq_string);
 
