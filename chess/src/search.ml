@@ -1231,7 +1231,6 @@ module Aspiration = struct
     let score =
       Main.with_moves st st.root moves ~alpha ~beta ~depth
         ~check:st.check ~ply:0 ~pv:true in
-    let () = Format.eprintf "score=%d, alpha=%d, beta=%d, delta=%d\n%!" score alpha beta delta in
     if not st.stopped then
       let new_delta = delta + (delta / 4) + 2 in
       if score >= beta then
