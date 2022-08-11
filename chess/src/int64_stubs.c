@@ -19,5 +19,5 @@ intnat ocamlchess_mul_hi64_unboxed(uint64_t a, uint64_t b) {
 
 CAMLprim value ocamlchess_mul_hi64(value a, value b) {
   return Val_int(
-      ocamlchess_mul_hi64_unboxed(Int64_val(a), (uint64_t)Int_val(b)));
+      ocamlchess_mul_hi64_unboxed(Int64_val(a), (uint64_t)Long_val(b)));
 }
