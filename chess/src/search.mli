@@ -93,6 +93,9 @@ module Tt : sig
   module Entry : sig
     type t
 
+    (** The Zobrist key for this entry. *)
+    val key : t -> Zobrist.key
+
     (** The depth that this entry was stored at. *)
     val depth : t -> int
 

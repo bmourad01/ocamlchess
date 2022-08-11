@@ -138,7 +138,7 @@ module Tt = struct
 
   module Entry = struct
     type t = {
-      key   : int64;
+      key   : Zobrist.key;
       depth : int;
       score : int;
       eval  : int Uopt.t;
@@ -161,7 +161,13 @@ module Tt = struct
   *)
   type t = entry Oa.t
 
-  let create ?(len = 0x80000) () = Oa.create ~len
+  let create ?(len = 0x80000) () =
+    if len <= 0 then
+      invalid_argf
+        "Invalid transposition table length %d, must be greater than zero"
+        len ()
+    else Oa.create ~len
+
   let clear tt = Oa.clear tt
 
   (* Taken from Stockfish. We multiply two 64-bit numbers to get a
