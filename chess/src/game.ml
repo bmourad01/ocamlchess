@@ -60,26 +60,23 @@ end
 
 module T = struct
   type t = {
-    event   : string option;
-    site    : string option;
-    date    : Date.t option;
-    round   : int option;
-    white   : string option;
-    black   : string option;
-    result  : result;
-    start   : Position.t;
-    moves   : Position.child list;
-    history : int Int64.Map.t;
+    event    : string option;
+    site     : string option;
+    date     : Date.t option;
+    round    : int option;
+    white    : string option;
+    black    : string option;
+    result   : result;
+    start    : Position.t;
+    moves    : Move.t list;
+    position : Position.t;
+    history  : int Int64.Map.t;
   } [@@deriving compare, equal, sexp, fields]
 end
 
 include T
 
 let moves game = List.rev game.moves
-
-let position game = match game.moves with
-  | prev :: _ -> Child.self prev
-  | [] -> game.start
 
 let is_over game = match game.result with
   | Ongoing -> false
@@ -114,7 +111,7 @@ let create
   let history = Int64.Map.singleton (Position.hash start) 1 in
   let result = result_of start history in
   Fields.create ~event ~site ~date ~round ~white ~black
-    ~result ~start ~moves:[] ~history
+    ~result ~start ~moves:[] ~history ~position:start
 
 exception Game_over
 exception Invalid_parent
@@ -129,7 +126,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game child =
       (* We do hard comparison instead of checking the hashes because we also
          care about the halfmove and fullmove clocks. *)
       if Position.(prev <> parent) then raise Invalid_parent
-      else child :: game.moves in
+      else Child.move child :: game.moves in
     let pos = Child.self child in
     let hash = Position.hash pos in
     let history =
@@ -158,7 +155,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game child =
                 then Draw (draw :> draw) else raise Invalid_fifty_move
         end
       | _ -> result in
-    {game with moves; result; history}
+    {game with moves; result; history; position = Child.self child}
   else raise Game_over
 
 let pp_option_string ppf = function
@@ -179,7 +176,8 @@ let pp ppf game =
   if Position.(game.start <> start) then
     Format.fprintf ppf "[FEN \"%a\"]\n%!" Position.pp game.start;
   Format.fprintf ppf "\n%!";
-  moves game |> List.fold ~init:true ~f:(fun full child ->
+  moves game |> List.fold ~init:(game.start, true) ~f:(fun (pos, full) m ->
+      let child = Position.make_move_exn pos m in
       let parent = Child.parent child in
       if full then
         Format.fprintf ppf "%d.%!" @@ Position.fullmove parent;
@@ -191,9 +189,9 @@ let pp ppf game =
           Format.fprintf ppf "..%!"; full
         end else not full in
       Format.fprintf ppf "%a %!" Position.San.pp child;
-      full) |> ignore;
+      Child.self child, full) |> ignore;
   Format.fprintf ppf "%a\n%!" Result.pp game.result
 
 let to_string = Format.asprintf "%a\n%!" pp
 
-include Comparable.Make(T)
+include Base.Comparable.Make(T)

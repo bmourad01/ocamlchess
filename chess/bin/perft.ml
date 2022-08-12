@@ -7,8 +7,9 @@ let rec perft pos depth =
   if depth <= 0 then 1L
   else
     let depth = depth - 1 in
-    Position.children pos |> List.fold ~init:0L ~f:(fun acc m ->
-        Int64.(acc + perft (Child.self m) depth))
+    Position.legal_moves pos |> List.fold ~init:0L ~f:(fun acc m ->
+        let pos = Child.self @@ Position.Unsafe.make_move pos m in
+        Int64.(acc + perft pos depth))
 
 let run depth pos =
   let t = Time.now () in

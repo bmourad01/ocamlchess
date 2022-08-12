@@ -1071,8 +1071,7 @@ module Makemove = struct
   let[@inline] clear_square_capture sq direct_capture pos =
     if Uopt.is_some direct_capture then
       let p = Uopt.unsafe_value direct_capture in
-      map_piece p sq pos ~f:(clr sq) |> Uopt.some
-    else Uopt.none
+      map_piece p sq pos ~f:(clr sq) |> ignore
 
   (* The halfmove clock is reset after captures and pawn moves, and incremented
      otherwise. *)
@@ -1206,9 +1205,7 @@ module Makemove = struct
     if Uopt.is_some pw then
       let sq = Uopt.unsafe_value pw in
       let p = Piece.create (inactive pos) Pawn in
-      clear_square p sq pos;
-      Uopt.some Piece.Pawn
-    else Uopt.none
+      clear_square p sq pos
 
   let[@inline] go src dst promote info pos =
     (* Do the stuff that relies on the initial state. *)
@@ -1217,20 +1214,16 @@ module Makemove = struct
     update_castle info src dst pos;
     (* Clear the old placement. *)
     clear_square info.piece src pos;
-    let capture = clear_square_capture dst info.direct_capture pos in
+    clear_square_capture dst info.direct_capture pos;
     (* Set the new placement. *)
     let p = do_promote info.piece promote pos in
     set_square p dst pos;
-    let capture =
-      if Uopt.is_some capture then capture
-      else en_passant_capture info.en_passant_pawn pos in
+    en_passant_capture info.en_passant_pawn pos;
     (* Prepare for the next move. *)
     update_fullmove pos;
     flip_active pos;
     (* If en passant state changed, then update the hash. *)
-    update_hash pos ~f:(Hash.Update.en_passant pos);
-    (* Return the capture that was made, if any. *)
-    capture 
+    update_hash pos ~f:(Hash.Update.en_passant pos)
 end
 
 module Child = struct
@@ -1238,33 +1231,34 @@ module Child = struct
     type t = {
       move          : Move.t;
       parent        : T.t;
-      self          : T.t;
+      self          : T.t Lazy.t;
       capture       : Piece.kind Uopt.t;
       is_en_passant : bool;
       castle_side   : Cr.side Uopt.t;
-    } [@@deriving compare, equal, sexp, fields]
+    } [@@deriving fields]
   end
 
   include T
-  include Comparable.Make(T)
+
+  let self child = Lazy.force child.self
 
   let same x y =
     same_hash x.parent y.parent &&
-    same_hash x.self   y.self
+    same_hash (self x) (self y)
 
   let is_move child m = Move.(m = child.move)
   let is_capture child = Uopt.is_some child.capture
   let is_castle child = Uopt.is_some child.castle_side
   let capture child = Uopt.to_option child.capture
   let castle_side child = Uopt.to_option child.castle_side
-  let gives_check child = in_check child.self
+  let gives_check child = in_check @@ Lazy.force child.self
 
   let capture_square child =
     if Uopt.is_none child.capture then None
     else Option.some @@
       let dst = Move.dst child.move in
       if not child.is_en_passant then dst
-      else Fn.flip en_passant_pawn_aux dst @@ inactive child.self
+      else Fn.flip en_passant_pawn_aux dst @@ inactive @@ self child
 
   let new_threats {move; parent = pos; _} =
     let c = active pos in
@@ -1292,7 +1286,7 @@ module Child = struct
       | Queen  -> Bb.empty
 end
 
-type child = Child.t [@@deriving compare, equal, sexp]
+type child = Child.t
 
 module Movegen = struct
   open Analysis
@@ -1449,27 +1443,37 @@ module Movegen = struct
 
   (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn =
-    (* The new position, which we are free to mutate. *)
-    let self = copy pos in
-    (* All captures that are not en passant. *)
-    let direct_capture = piece_at_square_uopt pos dst in
     (* Are we capturing on the en passant square? *)
     let is_en_passant = Piece.is_pawn piece && is_en_passant_square pos dst in
-    (* The en passant square, which we only care about if a threat is
-       possible. *)
-    let en_passant =
-      if Uopt.is_some en_passant_pawn then pos.en_passant else Uopt.none in
-    (* The pawn "in front" of the en passant square, which we only care
-       about if we are capturing it on this move. *)
-    let en_passant_pawn =
-      if is_en_passant then en_passant_pawn else Uopt.none in
     (* The side we're castling on, if any. *)
     let castle_side = castle_side piece src dst in
-    (* Shared info for makemove. *)
-    let info = Makemove.Fields_of_info.create
-        ~en_passant ~en_passant_pawn ~piece ~castle_side ~direct_capture in
+    (* All captures that are not en passant. *)
+    let direct_capture =
+      if is_en_passant then Uopt.none
+      else piece_at_square_uopt pos dst in
+    let capture =
+      if is_en_passant then Uopt.some Piece.Pawn
+      else if Uopt.is_some direct_capture then
+        Uopt.some @@ Piece.kind @@ Uopt.unsafe_value direct_capture
+      else Uopt.none in
     (* Update the position and return the captured piece, if any. *)
-    let capture = Makemove.go src dst promote info self in
+    let self = lazy begin
+      (* Create a unique copy of the position, which we are free to mutate. *)
+      let self = copy pos in
+      (* The en passant square, which we only care about if a threat is
+         possible. *)
+      let en_passant =
+        if Uopt.is_some en_passant_pawn then pos.en_passant else Uopt.none in
+      (* The pawn "in front" of the en passant square, which we only care
+         about if we are capturing it on this move. *)
+      let en_passant_pawn =
+        if is_en_passant then en_passant_pawn else Uopt.none in
+      let info = Makemove.Fields_of_info.create
+          ~en_passant ~en_passant_pawn ~piece
+          ~castle_side ~direct_capture in
+      Makemove.go src dst promote info self;
+      self
+    end in
     self, capture, is_en_passant, castle_side
 
   (* Accumulate a list of legal moves. *)
@@ -1541,7 +1545,7 @@ module Unsafe = struct
     let self, capture, is_en_passant, castle_side =
       let piece = piece_at_square_uopt parent src in
       if Uopt.is_none piece then
-        copy parent, Uopt.none, false, Uopt.none
+        lazy (copy parent), Uopt.none, false, Uopt.none
       else
         let piece = Uopt.unsafe_value piece in
         let en_passant_pawn = Uopt.bind parent.en_passant ~f:(fun ep ->
@@ -1669,10 +1673,18 @@ module San = struct
     else if num_checkers = 1 then Format.fprintf ppf "+%!"
     else if num_checkers = 2 then Format.fprintf ppf "++%!"
 
-  let to_string child = Format.asprintf "%a%!" pp child
+  let of_child child = Format.asprintf "%a%!" pp child
+
+  let of_move pos m = Option.(make_move pos m >>| of_child)
+
+  let of_move_exn pos m = match of_move pos m with
+    | Some s -> s
+    | None ->
+      invalid_argf "Illegal move %s for position %s"
+        (Move.to_string m) (Fen.to_string pos) ()
 
   let of_string s pos =
-    children pos |> List.find ~f:(fun m -> String.equal s @@ to_string m)
+    children pos |> List.find ~f:(fun m -> String.equal s @@ of_child m)
 end
 
 include Comparable.Make(T)

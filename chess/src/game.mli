@@ -77,7 +77,7 @@ val result : t -> result
 val start : t -> Position.t
 
 (** The list of moves that were played. *)
-val moves : t -> Position.child list
+val moves : t -> Move.t list
 
 (** The map from position hashes to the number of times they have occurred in
     the game. *)

@@ -330,7 +330,7 @@ val in_check : t -> bool
 val is_insufficient_material : t -> bool
 
 (** A position resulting from a legal move. *)
-type child [@@deriving compare, equal, sexp]
+type child
 
 module Child : sig
   (** [same x y] returns [true] if [x] and [y] refer to the same move.
@@ -379,9 +379,7 @@ module Child : sig
       that are under threat as a result of the move. *)
   val new_threats : child -> Bitboard.t
 
-  type t = child [@@deriving compare, equal, sexp]
-
-  include Base.Comparable.S with type t := t
+  type t = child
 end
 
 (** Returns the list of legal moves without applying them to the
@@ -446,8 +444,16 @@ module San : sig
   (** [pp ppf legal] pretty-prints the [child] in SAN to formatter [ppf]. *)
   val pp : Format.formatter -> child -> unit
 
-  (** [to_string legal] returns a string representing the [legal] move in SAN. *)
-  val to_string : child -> string
+  (** [of_child child] returns a string representing the [child] move in SAN. *)
+  val of_child : child -> string
+
+  (** [of_move pos m] returns a string representing move [m] for position
+      [pos], if it is legal. *)
+  val of_move : t -> Move.t -> string option
+
+  (** Same as [of_move], but raises [Invalid_argument] if the move is not
+      legal. *)
+  val of_move_exn : t -> Move.t -> string
 
   (** [of_string s pos] returns the legal move of string [s] given the
       position [pos], if it exists. *)

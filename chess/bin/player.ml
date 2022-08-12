@@ -24,7 +24,7 @@ let choose {choice; state; _} pos =
   | [] -> raise No_moves
   | moves ->
     let m, state = choice state moves in
-    if List.mem moves m ~equal:Child.equal then m, state
+    if List.mem moves m ~equal:Child.same then m, state
     else raise @@ Invalid_move (pos, m)
 
 let update player state = {player with state}
