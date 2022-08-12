@@ -11,16 +11,6 @@ module Uopt = struct
   let equal eq x y = Option.equal eq (to_option x) (to_option y)
   let sexp_of_t f x = Option.sexp_of_t f @@ to_option x
   let t_of_sexp f x = of_option @@ Option.t_of_sexp f x
-
-  (* Convenience functions. *)
-
-  let[@inline] bind x ~f = if is_none x then x else f @@ unsafe_value x
-  let[@inline] map x ~f = if is_none x then x else some @@ f @@ unsafe_value x
-
-  let[@inline] value_map x ~default ~f =
-    if is_none x then default else f @@ unsafe_value x
-
-  let[@inline] exists x ~f = not (is_none x) && f (unsafe_value x)
 end
 
 module Pre = Precalculated
@@ -110,7 +100,11 @@ let[@inline] en_passant_pawn_aux active ep = match active with
   | Piece.Black -> Square.(with_rank_unsafe ep Rank.four)
 
 let[@inline] en_passant_pawn_uopt pos =
-  Uopt.map pos.en_passant ~f:(en_passant_pawn_aux pos.active)
+  if Uopt.is_some pos.en_passant then
+    Uopt.unsafe_value pos.en_passant |>
+    en_passant_pawn_aux pos.active |>
+    Uopt.some
+  else Uopt.none
 
 let[@inline] en_passant_pawn pos = Uopt.to_option @@ en_passant_pawn_uopt pos
 
@@ -201,8 +195,10 @@ module Hash = struct
     let[@inline] active_player h = flip h Zobrist.white_to_move
 
     let[@inline] en_passant pos h =
-      Uopt.value_map pos.en_passant ~default:h ~f:(fun ep ->
-          if has_pawn_threat pos ep then en_passant_sq ep h else h)
+      if Uopt.is_some pos.en_passant then
+        let ep = Uopt.unsafe_value pos.en_passant in
+        if has_pawn_threat pos ep then en_passant_sq ep h else h
+      else h
 
     let[@inline] castle_test cr c s h =
       if Cr.mem cr c s then castle c s h else h
@@ -465,10 +461,13 @@ module Analysis = struct
     let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
     (* Square of the en passant pawn. For purposes of analysis, we only care
        if this pawn is actually threatened with an en passant capture. *)
-    let en_passant_pawn = Uopt.bind pos.en_passant ~f:(fun ep ->
+    let en_passant_pawn =
+      if Uopt.is_some pos.en_passant then
+        let ep = Uopt.unsafe_value pos.en_passant in
         if has_pawn_threat pos ep
         then Uopt.some @@ en_passant_pawn_aux pos.active ep
-        else Uopt.none) in
+        else Uopt.none
+      else Uopt.none in
     (* Most general info. *)
     let inactive = inactive pos in
     let occupied = all_board pos in
@@ -1207,7 +1206,7 @@ module Makemove = struct
       let p = Piece.create (inactive pos) Pawn in
       clear_square p sq pos
 
-  let[@inline] go src dst promote info pos =
+  let[@inline] go src dst promote pos info =
     (* Do the stuff that relies on the initial state. *)
     update_en_passant info src dst pos;
     update_halfmove info pos;
@@ -1468,10 +1467,11 @@ module Movegen = struct
          about if we are capturing it on this move. *)
       let en_passant_pawn =
         if is_en_passant then en_passant_pawn else Uopt.none in
-      let info = Makemove.Fields_of_info.create
-          ~en_passant ~en_passant_pawn ~piece
-          ~castle_side ~direct_capture in
-      Makemove.go src dst promote info self;
+      (* Make the move! *)
+      Makemove.go src dst promote self @@
+      Makemove.Fields_of_info.create
+        ~en_passant ~en_passant_pawn ~piece
+        ~castle_side ~direct_capture;
       self
     end in
     self, capture, is_en_passant, castle_side
@@ -1548,10 +1548,13 @@ module Unsafe = struct
         lazy (copy parent), Uopt.none, false, Uopt.none
       else
         let piece = Uopt.unsafe_value piece in
-        let en_passant_pawn = Uopt.bind parent.en_passant ~f:(fun ep ->
+        let en_passant_pawn =
+          if Uopt.is_some parent.en_passant then
+            let ep = Uopt.unsafe_value parent.en_passant in
             if has_pawn_threat parent ep
             then Uopt.some @@ en_passant_pawn_aux parent.active ep
-            else Uopt.none) in
+            else Uopt.none
+          else Uopt.none in
         Movegen.run_makemove parent
           ~src ~dst ~promote ~piece ~en_passant_pawn in
     Child.Fields.create
@@ -1569,8 +1572,11 @@ module Unsafe = struct
     let src = Move.src m in
     let dst = Move.dst m in
     is_en_passant_square pos dst &&
-    piece_at_square_uopt pos src |> Uopt.exists ~f:(fun p ->
-        Piece.is_pawn p && Piece.(Color.equal (color p) pos.active))
+    let p = piece_at_square_uopt pos src in
+    Uopt.is_some p &&
+    let p = Uopt.unsafe_value p in
+    Piece.is_pawn p &&
+    Piece.(Color.equal (color p) pos.active)
 
   let is_capture pos m =
     let open Bb.Syntax in
@@ -1584,13 +1590,14 @@ module Unsafe = struct
   let is_castle pos m =
     let src = Move.src m in
     let dst = Move.dst m in
-    piece_at_square_uopt pos src |>
-    Uopt.value_map ~default:false ~f:(fun p ->
-        let c, k = Piece.decomp p in
-        Piece.Color.(c = pos.active) && match c, k with
-        | White, King -> Square.(src = e1 && (dst = g1 || dst = c1))
-        | Black, King -> Square.(src = e8 && (dst = g8 || dst = c8))
-        | _ -> false)
+    let p = piece_at_square_uopt pos src in
+    Uopt.is_some p &&
+    let p = Uopt.unsafe_value p in
+    let c, k = Piece.decomp p in
+    Piece.Color.(c = pos.active) && match c, k with
+    | White, King -> Square.(src = e1 && (dst = g1 || dst = c1))
+    | Black, King -> Square.(src = e8 && (dst = g8 || dst = c8))
+    | _ -> false
 end
 
 let null_move_exn pos =
