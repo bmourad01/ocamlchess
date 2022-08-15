@@ -262,8 +262,8 @@ module State = struct
     tt                         : tt;
     start_time                 : Time.t;
     evals                      : int Oa.t;
+    excluded                   : Move.t Oa.t;
     pv                         : Child.t Oa.t array;
-    excluded                   : Child.t Oa.t;
     moves                      : Child.t Oa.t;
     killer1                    : Child.t Oa.t;
     killer2                    : Child.t Oa.t;
@@ -294,8 +294,8 @@ module State = struct
       tt;
       start_time = Time.now ();
       evals = Oa.create ~len:max_ply;
-      pv = Array.init pv_size ~f:(fun _ -> Oa.create ~len:pv_size);
       excluded = Oa.create ~len:max_ply;
+      pv = Array.init pv_size ~f:(fun _ -> Oa.create ~len:pv_size);
       moves = Oa.create ~len:max_ply;
       killer1 = Oa.create ~len:killer_size;
       killer2 = Oa.create ~len:killer_size;
@@ -407,7 +407,7 @@ module State = struct
   let clear_excluded st ply = Oa.unsafe_set_none st.excluded ply
 
   let is_excluded st ply m =
-    excluded st ply |> Option.exists ~f:(Child.same m)
+    excluded st ply |> Option.exists ~f:(Child.is_move m)
 
   let update_pv st ply m =
     let pv = Array.unsafe_get st.pv ply in
@@ -1135,7 +1135,7 @@ module Main = struct
       && entry.depth >= se_min_ttdepth depth then
         let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
-        State.set_excluded st ply m;
+        State.set_excluded st ply @@ Child.move m;
         let score = go st pos ~depth ~ply
             ~alpha:(target - 1)
             ~beta:target

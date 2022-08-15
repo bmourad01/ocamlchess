@@ -1230,7 +1230,7 @@ module Child = struct
     type t = {
       move          : Move.t;
       parent        : T.t;
-      self          : T.t Lazy.t;
+      self          : T.t lazy_t;
       capture       : Piece.kind Uopt.t;
       is_en_passant : bool;
       castle_side   : Cr.side Uopt.t;
@@ -1242,15 +1242,15 @@ module Child = struct
   let self child = Lazy.force child.self
 
   let same x y =
-    same_hash x.parent y.parent &&
-    same_hash (self x) (self y)
+    same_hash  x.parent y.parent &&
+    Move.equal x.move   y.move
 
   let is_move child m = Move.(m = child.move)
   let is_capture child = Uopt.is_some child.capture
   let is_castle child = Uopt.is_some child.castle_side
   let capture child = Uopt.to_option child.capture
   let castle_side child = Uopt.to_option child.castle_side
-  let gives_check child = in_check @@ Lazy.force child.self
+  let gives_check child = in_check @@ self child
 
   let capture_square child =
     if Uopt.is_none child.capture then None
