@@ -59,24 +59,26 @@ let[@inline] init is_en_passant from dst pos victim =
     depth = 0;
     side = Position.active pos;
   } in
-  let swap = Array.create ~len:swap_len 0 in
-  swap.(0) <- Piece.Kind.value victim;
+  let swap = Array.create ~len:swap_len @@ Piece.Kind.value victim in
   state, swap
 
 (* Simple negamax search with a branching factor of 1. *)
 let[@inline] rec evaluate swap depth =
   let depth = depth - 1 in
   if depth > 0 then
-    let s = swap.(depth) in
-    let s1 = swap.(depth - 1) in
-    swap.(depth - 1) <- -(max (-s1) s);
+    let s = Array.unsafe_get swap depth in
+    let s1 = Array.unsafe_get swap (depth - 1) in
+    Array.unsafe_set swap (depth - 1) (-(max (-s1) s));
     evaluate swap depth
-  else swap.(0)
+  else Array.unsafe_get swap 0
 
 let[@inline] see m pos is_en_passant victim =
   let src = Move.src m in
   let dst = Move.dst m in
   let st, swap = init is_en_passant src dst pos victim in
+  let[@inline] update_swap () =
+    let s1 = Array.unsafe_get swap (st.depth - 1) in
+    Array.unsafe_set swap st.depth (st.target_val - s1) in
   let all = Position.all_board pos in
   let lva =
     (* `Base.Array.exists` starts from the last element in the array...
@@ -119,9 +121,8 @@ let[@inline] see m pos is_en_passant victim =
     (* Other side to move. *)
     st.side <- Piece.Color.opposite st.side;
     st.depth <- st.depth + 1;
-    (* Update the swap list. *)
-    swap.(st.depth) <- st.target_val - swap.(st.depth - 1);
     (* Find the least valuable attacker, if they exist. *)
+    update_swap ();
     if lva () then loop () in
   loop ();
   (* Evaluate the material gains/losses. *)
