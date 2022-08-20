@@ -333,7 +333,8 @@ let line_tbl =
       let by = if y @ bx then bishop y empty else empty in
       let rx = rook x empty in
       let ry = if y @ rx then rook y empty else empty in
-      tbl.(Int.(i + j * Square.count)) <- (bx & by) + (rx & ry);
+      if by <> empty || ry <> empty then
+        tbl.(Int.(i + j * Square.count)) <- (bx & by) + (rx & ry) ++ x ++ y;
     done
   done;
   tbl
