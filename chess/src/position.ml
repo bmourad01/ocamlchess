@@ -408,7 +408,7 @@ module Analysis = struct
       let occupied = all_board pos in
       let wksq = Bb.(first_set_exn (pos.king & pos.white)) in
       let bksq = Bb.(first_set_exn (pos.king & pos.black)) in
-      let squares c =
+      let[@specialise] squares c =
         let ksq = match c with
           | Piece.White -> wksq
           | Piece.Black -> bksq in
@@ -437,12 +437,12 @@ module Analysis = struct
     let a = match pos.active with
       | Piece.White -> check.wsquares
       | Piece.Black -> check.bsquares in
-    let b = Array.foldi a ~init:empty ~f:(fun i acc b ->
+    let b = (Array.foldi [@specialised]) a ~init:empty ~f:(fun i acc b ->
         match Piece.Kind.of_int_exn i with
-        | Pawn -> acc + (b & pos.pawn)
+        | Pawn   -> acc + (b & pos.pawn)
         | Knight -> acc + (b & pos.knight)
         | Bishop -> acc + (b & (pos.bishop + pos.queen))
-        | Rook -> acc + (b & (pos.rook + pos.queen))
+        | Rook   -> acc + (b & (pos.rook + pos.queen))
         | Queen | King ->
           (* Queen is covered by the above two cases. Kings can never be
              checkers *)
@@ -1418,12 +1418,14 @@ module Movegen = struct
         let bishop = Pre.bishop a.king_sq occupied in
         let rook   = Pre.rook   a.king_sq occupied in
         let queen  = Pre.queen  a.king_sq occupied in
-        (List.fold_until [@specialised]) a.inactive_sliders
-          ~init:(diag ++ ep) ~finish:ident ~f:(fun acc -> function
-              | sq, Piece.Bishop when sq @ bishop -> Stop diag
-              | sq, Piece.Rook   when sq @ rook   -> Stop diag
-              | sq, Piece.Queen  when sq @ queen  -> Stop diag
-              | _ -> Continue acc)
+        let[@inline] rec aux = function
+          | [] -> diag ++ ep
+          | (sq, k) :: rest -> match k with
+            | Piece.Bishop when sq @ bishop -> diag
+            | Piece.Rook   when sq @ rook   -> diag
+            | Piece.Queen  when sq @ queen  -> diag
+            | _ -> aux rest in
+        aux a.inactive_sliders
 
       let[@inline] capture sq a =
         let open Bb.Syntax in
