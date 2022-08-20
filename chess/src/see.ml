@@ -52,7 +52,7 @@ let[@inline] init is_en_passant from dst pos victim =
       (* Special case for en passant captures. *)
       if is_en_passant then
         Bb.(full -- Option.value_exn (Position.en_passant_pawn pos))
-      else Bb.full;
+      else Bb.(full -- dst);
     target_val =
       (* Start with the value of the initial attacker. *)
       Piece.(Kind.value @@ kind @@ Position.piece_at_square_exn pos from);
@@ -94,9 +94,17 @@ let[@inline] see m pos is_en_passant victim =
     (* Get the least valuable piece that is currently able to attack the
        square. *)
     fun[@inline] () ->
+      let pinners = Position.pinners pos @@ Piece.Color.opposite st.side in
+      let pinned = Position.pinned pos st.side in
       let us = Position.board_of_color pos st.side in
       let them = Bb.(all - us) in
       let mask = Bb.(st.attackers & us) in
+      let mask =
+        (* Pinned pieces shouldn't be able to attack if the pinners haven't
+           moved yet. *)
+        if Bb.((all & st.occupation & pinners) <> empty)
+        then Bb.(mask - pinned)
+        else mask in
       Bb.(mask <> empty) && Array.exists order ~f:(function
           (* We can't attack with the king if our opponent still has pieces left
              to exchange. Since we've used up our remaining pieces, we terminate

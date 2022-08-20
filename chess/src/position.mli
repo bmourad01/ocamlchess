@@ -4,8 +4,6 @@
 (** Representation of a chess position. *)
 type t [@@deriving compare, equal, sexp]
 
-include Base.Comparable.S with type t := t
-
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
 val white : t -> Bitboard.t
@@ -37,6 +35,18 @@ val queen : t -> Bitboard.t
 (** [king pos] returns the bitboard representing all squares occupied by
     kings in position [pos]. *)
 val king : t -> Bitboard.t
+
+(** [pinned pos c] returns the bitboard representing all pinned pieces for
+    the king of color [c] in position [pos].
+
+    If the piece's color is opposite of [c], then it is blocking a
+    discovered check.
+*)
+val pinned : t -> Piece.color -> Bitboard.t
+
+(** [pinners pos c] returns the bitboard for pieces of color [c] that are
+    pinning an enemy piece to the king in position [pos]. *)
+val pinners : t -> Piece.color -> Bitboard.t
 
 (** [active pos] returns the active color (whose turn it is to move) for
     position [pos]. *)
@@ -385,6 +395,10 @@ end
 (** Returns the list of legal moves without applying them to the
     position. No particular order is guaranteed. *)
 val legal_moves : t -> Move.t list
+
+(** [gives_check pos m] returns [true] if the move [m] gives check for
+    position [pos]. It is assumed that [m] is legal. *)
+val gives_check : t -> Move.t -> bool
 
 (** [children pos] returns the result of applying all legal moves of
     position [pos].
