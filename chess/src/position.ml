@@ -594,7 +594,7 @@ let gives_check pos m =
             let r = Square.(to_int @@ if dst > src then f1 else d1) in
             let i = Piece.Color.to_int pos.active * 56 in
             let r = Square.of_int_exn Int.(r lxor i) in
-            ksq @ Pre.rook r empty ||
+            ksq @ Pre.rook r empty &&
             ksq @ Pre.rook r (all -- src -- dst)
           | _ -> false
       end
