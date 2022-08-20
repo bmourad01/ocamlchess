@@ -399,7 +399,7 @@ module Analysis = struct
         let b = Pre.between sq ssq & occupied in
         if Int.equal 1 @@ count b then
           let pinned = pinned + b in
-          let pinners = if (b & c) <> empty then pinners ++ ssq else empty in
+          let pinners = if (b & c) <> empty then pinners ++ ssq else pinners in
           pinned, pinners
         else acc)
 
