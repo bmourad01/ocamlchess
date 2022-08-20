@@ -8,6 +8,10 @@ module Child = Position.Child
 module Threats = Position.Threats
 module Oa = Option_array
 
+let[@inline][@specialise] (>>?) x f = match x with
+  | None -> f ()
+  | Some _ -> x
+
 module Limits = struct
   type t = {
     infinite : bool;
@@ -904,13 +908,10 @@ module Main = struct
     | None -> None
     | Some _ when pv -> None
     | Some score ->
-      match razor st pos moves ~score ~alpha ~ply ~depth ~pv with
-      | Some _ as score -> score
-      | None -> match rfp ~depth ~score ~beta ~improving with
-        | Some _ as score -> score
-        | None -> match nmp st pos ~score ~beta ~ply ~depth with
-          | Some _ as score -> score
-          | None -> probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
+      razor st pos moves ~score ~alpha ~ply ~depth ~pv >>? fun () ->
+      rfp ~depth ~score ~beta ~improving >>? fun () ->
+      nmp st pos ~score ~beta ~ply ~depth >>? fun () ->
+      probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
 
   (* Search a child of the current node. *)
   and child st t pos ~beta ~depth ~ply ~check ~pv
