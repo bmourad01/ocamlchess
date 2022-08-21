@@ -34,6 +34,9 @@ let test_kingside_castle () =
 let test_queenside_castle () =
   go "3k4/8/8/8/8/8/8/R3K3 w Q - 0 1" "e1c1" true
 
+let test_promotion () =
+  go "2k2b2/6P1/8/8/8/8/8/2K5 w - - 0 1" "g7f8q" true
+
 let suite = "Test checks" >::: [
     ("Starting position" >:: fun _ -> test_start ());
     ("Direct" >:: fun _ -> test_direct ());
@@ -42,6 +45,7 @@ let suite = "Test checks" >::: [
     ("En passant discovery" >:: fun _ -> test_en_passant_discovery ());
     ("Kingside castle" >:: fun _ -> test_kingside_castle ());
     ("Queenside castle" >:: fun _ -> test_queenside_castle ());
+    ("Promotion" >:: fun _ -> test_promotion ());
   ]
 
 let () = run_test_tt_main suite
