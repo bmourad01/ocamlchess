@@ -6,6 +6,7 @@ module Bb = Bitboard
 module Cr = Castling_rights
 
 module T = struct
+  (* Metadata for calculating results related to checks. *)
   type checks = {
     wpinned  : Bb.t;
     bpinned  : Bb.t;
@@ -28,48 +29,49 @@ module T = struct
      performance advantage over a typical state monad pattern (where
      we are making a new copy every time we update a field). *)
   type t = {
-    mutable white      : Bb.t;
-    mutable black      : Bb.t;
-    mutable pawn       : Bb.t;
-    mutable knight     : Bb.t;
-    mutable bishop     : Bb.t;
-    mutable rook       : Bb.t;
-    mutable queen      : Bb.t;
-    mutable king       : Bb.t;
-    mutable active     : Piece.color;
-    mutable castle     : Cr.t;
-    mutable en_passant : Square.t Uopt.t;
-    mutable halfmove   : int;
-    mutable fullmove   : int;
-    mutable hash       : Zobrist.key;
-    mutable pawn_hash  : Zobrist.key;
-    mutable in_check   : bool lazy_t;
-    mutable checks     : checks lazy_t;
+    mutable white        : Bb.t;
+    mutable black        : Bb.t;
+    mutable pawn         : Bb.t;
+    mutable knight       : Bb.t;
+    mutable bishop       : Bb.t;
+    mutable rook         : Bb.t;
+    mutable queen        : Bb.t;
+    mutable king         : Bb.t;
+    mutable active       : Piece.color;
+    mutable castle       : Cr.t;
+    mutable en_passant   : Square.t Uopt.t;
+    mutable halfmove     : int;
+    mutable fullmove     : int;
+    mutable hash         : Zobrist.key;
+    mutable pawn_hash    : Zobrist.key;
+    mutable num_checkers : int lazy_t;
+    mutable checks       : checks lazy_t;
   } [@@deriving fields]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
-  let[@inline] in_check pos = force pos.in_check
+  let[@inline] num_checkers pos = force pos.num_checkers
+  let[@inline] in_check pos = num_checkers pos > 0
 
   (* We make an explicit copy because our move generator will return
      a new position (thus adhering to a functional style). *)
   let[@inline] copy pos = {
-    white      = pos.white;
-    black      = pos.black;
-    pawn       = pos.pawn;
-    knight     = pos.knight;
-    bishop     = pos.bishop;
-    rook       = pos.rook;
-    queen      = pos.queen;
-    king       = pos.king;
-    active     = pos.active;
-    castle     = pos.castle;
-    en_passant = pos.en_passant;
-    halfmove   = pos.halfmove;
-    fullmove   = pos.fullmove;
-    hash       = pos.hash;
-    pawn_hash  = pos.pawn_hash;
-    in_check   = pos.in_check;
-    checks     = pos.checks;
+    white        = pos.white;
+    black        = pos.black;
+    pawn         = pos.pawn;
+    knight       = pos.knight;
+    bishop       = pos.bishop;
+    rook         = pos.rook;
+    queen        = pos.queen;
+    king         = pos.king;
+    active       = pos.active;
+    castle       = pos.castle;
+    en_passant   = pos.en_passant;
+    halfmove     = pos.halfmove;
+    fullmove     = pos.fullmove;
+    hash         = pos.hash;
+    pawn_hash    = pos.pawn_hash;
+    num_checkers = pos.num_checkers;
+    checks       = pos.checks;
   }
 end
 
@@ -519,10 +521,10 @@ end
 
 (* Miscellaneous rules *)
 
-let calculate_in_check pos =
-  set_in_check pos @@ lazy begin
+let calculate_num_checkers pos =
+  set_num_checkers pos @@ lazy begin
     let inactive_board = inactive_board pos in
-    (Bb.count @@ Analysis.checkers pos ~inactive_board) > 0
+    Bb.count @@ Analysis.checkers pos ~inactive_board
   end
 
 let is_insufficient_material pos =
@@ -1072,12 +1074,12 @@ module Fen = struct
       parse_halfmove halfmove >>= fun halfmove ->
       parse_fullmove fullmove >>= fun fullmove ->
       let pos = Fields.create ~hash:0L ~pawn_hash:0L
-          ~in_check:(lazy false) ~checks:(lazy empty_checks)
+          ~num_checkers:(lazy 0) ~checks:(lazy empty_checks)
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove in
       set_hash pos @@ Hash.of_position pos;
       set_pawn_hash pos @@ Hash.of_pawns pos;
-      calculate_in_check pos;
+      calculate_num_checkers pos;
       Analysis.calculate_checks pos;
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
@@ -1577,7 +1579,7 @@ module Movegen = struct
       Makemove.Fields_of_info.create
         ~en_passant ~en_passant_pawn ~piece
         ~castle_side ~direct_capture;
-      calculate_in_check self;
+      calculate_num_checkers self;
       calculate_checks self;
       self
     end in
@@ -1853,11 +1855,20 @@ module San = struct
     children pos |> List.find ~f:(fun m -> String.equal s @@ of_child m)
 end
 
-let compare x y = String.compare (Fen.to_string x) (Fen.to_string y)
-let equal x y = compare x y = 0
+module Comparable = struct
+  type t = T.t
 
-let t_of_sexp = function
-  | Sexp.Atom fen -> Fen.of_string_exn fen
-  | sexp -> invalid_argf "Invalid position sexp %s" (Sexp.to_string sexp) ()
+  (* This should work, with questionable efficiency. We can't use the
+     derivers since the record contains lazy fields. *)
+  let compare x y = String.compare (Fen.to_string x) (Fen.to_string y)
+  let equal x y = compare x y = 0
 
-let sexp_of_t pos = Sexp.Atom (Fen.to_string pos)
+  let t_of_sexp = function
+    | Sexp.Atom fen -> Fen.of_string_exn fen
+    | sexp -> invalid_argf "Invalid position sexp %s" (Sexp.to_string sexp) ()
+
+  let sexp_of_t pos = Sexp.Atom (Fen.to_string pos)
+end
+
+include Comparable
+include Base.Comparable.Make(Comparable)

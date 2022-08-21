@@ -125,7 +125,7 @@ let add_move ?(resigned = None) ?(declared_draw = None) game child =
       let parent = Child.parent child in
       (* We do hard comparison instead of checking the hashes because we also
          care about the halfmove and fullmove clocks. *)
-      if Position.equal prev parent
+      if Position.(prev = parent)
       then Child.move child :: game.moves
       else raise Invalid_parent in
     let pos = Child.self child in
@@ -174,7 +174,7 @@ let pp ppf game =
   Format.fprintf ppf "[White \"%a\"]\n%!" pp_option_string game.white;
   Format.fprintf ppf "[Black \"%a\"]\n%!" pp_option_string game.black;
   Format.fprintf ppf "[Result \"%a\"]\n%!" Result.pp game.result;
-  if not Position.(equal game.start start) then
+  if Position.(game.start <> start) then
     Format.fprintf ppf "[FEN \"%a\"]\n%!" Position.pp game.start;
   Format.fprintf ppf "\n%!";
   moves game |> List.fold ~init:(game.start, true) ~f:(fun (pos, full) m ->

@@ -4,6 +4,8 @@
 (** Representation of a chess position. *)
 type t [@@deriving compare, equal, sexp]
 
+include Base.Comparable.S with type t := t
+
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
 val white : t -> Bitboard.t
@@ -325,8 +327,11 @@ module Threats : sig
   include Base.Comparable.S with type t := t
 end
 
-(** [in_check pos] returns [true] if the active player for position [pos] is
-    currently in check. *)
+(** [num_checkers pos] returns the number of pieces that are checking the
+    king for the active player of position [pos]. *)
+val num_checkers : t -> int
+
+(** [in_check pos] is shorthand for [num_checkers pos > 0]. *)
 val in_check : t -> bool
 
 (** [is_insufficient_material pos] returns [true] if the game may result in a
