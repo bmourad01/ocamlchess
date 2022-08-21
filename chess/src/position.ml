@@ -44,12 +44,12 @@ module T = struct
     mutable fullmove     : int;
     mutable hash         : Zobrist.key;
     mutable pawn_hash    : Zobrist.key;
-    mutable num_checkers : int lazy_t;
-    mutable checks       : checks lazy_t;
+    mutable num_checkers : int Lazy.t;
+    mutable checks       : checks Lazy.t;
   } [@@deriving fields]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
-  let[@inline] num_checkers pos = force pos.num_checkers
+  let[@inline] num_checkers pos = Lazy.force pos.num_checkers
   let[@inline] in_check pos = num_checkers pos > 0
 
   (* We make an explicit copy because our move generator will return
@@ -80,13 +80,13 @@ include T
 let[@inline] inactive pos = Piece.Color.opposite pos.active
 
 let[@inline] pinned pos c =
-  let checks = force pos.checks in
+  let checks = Lazy.force pos.checks in
   match c with
   | Piece.White -> checks.wpinned
   | Piece.Black -> checks.bpinned
 
 let[@inline] pinners pos c =
-  let checks = force pos.checks in
+  let checks = Lazy.force pos.checks in
   match c with
   | Piece.White -> checks.wpinners
   | Piece.Black -> checks.bpinners
@@ -434,7 +434,7 @@ module Analysis = struct
   (* Calculate the set of inactive pieces that are checking the king. *)
   let[@inline] checkers pos ~inactive_board =
     let open Bb in
-    let checks = force pos.checks in
+    let checks = Lazy.force pos.checks in
     let squares = match pos.active with
       | Piece.White -> checks.wsquares
       | Piece.Black -> checks.bsquares in
@@ -567,7 +567,7 @@ let gives_check pos m =
     (* Make sure it is the side to move. *)
     let c, k = Piece.decomp @@ Uopt.unsafe_value p in
     Piece.Color.(c = pos.active) &&
-    let checks = force pos.checks in
+    let checks = Lazy.force pos.checks in
     let squares, pinned = match c with
       | Piece.White -> checks.bsquares, checks.bpinned
       | Piece.Black -> checks.wsquares, checks.wpinned in
@@ -1329,7 +1329,7 @@ module Child = struct
     type t = {
       move          : Move.t;
       parent        : T.t;
-      self          : T.t lazy_t;
+      self          : T.t Lazy.t;
       capture       : Piece.kind Uopt.t;
       is_en_passant : bool;
       castle_side   : Cr.side Uopt.t;
@@ -1338,7 +1338,7 @@ module Child = struct
 
   include T
 
-  let self child = force child.self
+  let self child = Lazy.force child.self
 
   let same x y =
     same_hash  x.parent y.parent &&
@@ -1707,7 +1707,7 @@ module Unsafe = struct
     Child.Fields.create
       ~move ~parent ~self ~capture ~is_en_passant ~castle_side
 
-  let null_move pos =
+  let[@inline] null_move pos =
     let pos = copy pos in
     Makemove.flip_active pos;
     Makemove.update_hash pos ~f:(Hash.Update.en_passant pos);
@@ -1715,34 +1715,28 @@ module Unsafe = struct
     set_halfmove pos 0;
     pos
 
-  let is_en_passant pos m =
-    let src = Move.src m in
-    let dst = Move.dst m in
-    is_en_passant_square pos dst &&
-    let p = piece_at_square_uopt pos src in
+  let[@inline] is_en_passant pos m =
+    is_en_passant_square pos (Move.dst m) &&
+    let p = piece_at_square_uopt pos (Move.src m) in
     Uopt.is_some p &&
     let p = Uopt.unsafe_value p in
     Piece.is_pawn p &&
     Piece.(Color.equal (color p) pos.active)
 
-  let is_capture pos m =
+  let[@inline] is_capture pos m =
     let open Bb.Syntax in
-    let src = Move.src m in
-    let dst = Move.dst m in
-    is_en_passant pos m || begin
-      src @ active_board pos &&
-      dst @ inactive_board pos
-    end
+    (Move.src m @ active_board pos &&
+     Move.dst m @ inactive_board pos) ||
+    is_en_passant pos m
 
   let is_castle pos m =
     let src = Move.src m in
-    let dst = Move.dst m in
     let p = piece_at_square_uopt pos src in
     Uopt.is_some p &&
-    let p = Uopt.unsafe_value p in
-    let c, k = Piece.decomp p in
-    Piece.Color.(c = pos.active) && match k with
-    | King -> is_castle src dst c | _ -> false
+    let c, k = Piece.decomp @@ Uopt.unsafe_value p in
+    Piece.Color.(c = pos.active) &&
+    Piece.Kind.(k = King) &&
+    is_castle src (Move.dst m) c
 end
 
 let null_move_exn pos =
