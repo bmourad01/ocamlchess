@@ -568,21 +568,23 @@ module Order = struct
      7. Captures that produced a negative SEE score.
   *)
   let score st moves ~ply ~pos ~ttentry =
-    let killer1 = State.killer1 st ply in
-    let killer2 = State.killer2 st ply in
-    let move_history = st.move_history in
-    let move_history_max = State.move_history_max st pos in
     let is_hash = is_hash ttentry in
-    let killer m = match killer1, killer2 with
-      | Some k, _ when Child.same m k -> killer1_offset
-      | _, Some k when Child.same m k -> killer2_offset
-      | _ -> 0 in
-    let move_history m =
-      let i = State.history_idx m in
-      let h = Array.unsafe_get move_history i in
-      (* We "squish" the history score so that it fits between bad captures
-         and castling moves. *)
-      ((h * history_scale) + move_history_max - 1) / move_history_max in
+    let killer =
+      let k1 = State.killer1 st ply in
+      let k2 = State.killer2 st ply in
+      fun m -> match k1, k2 with
+        | Some k, _ when Child.same m k -> killer1_offset
+        | _, Some k when Child.same m k -> killer2_offset
+        | _ -> 0 in
+    let move_history =
+      let tbl = st.move_history in
+      let max = State.move_history_max st pos in
+      fun m ->
+        let i = State.history_idx m in
+        let h = Array.unsafe_get tbl i in
+        (* We "squish" the history score so that it fits between bad
+           captures and castling moves. *)
+        (((h * history_scale) + max - 1) / max) + history_offset in
     score_aux moves ~f:(fun m ->
         if is_hash m then inf
         else match See.go m with
@@ -596,7 +598,7 @@ module Order = struct
               if killer <> 0 then killer
               else match Child.castle_side m with
                 | Some _ -> castle_offset
-                | None -> move_history m + history_offset)
+                | None -> move_history m)
 
   (* Score the moves for quiescence search. *)
   let qscore moves ~ttentry ~check =
