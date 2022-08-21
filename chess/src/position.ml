@@ -554,15 +554,19 @@ let is_insufficient_material pos =
     end
   end
 
+let is_castle src dst = function
+  | Piece.White -> Square.(src = e1 && (dst = g1 || dst = c1))
+  | Piece.Black -> Square.(src = e8 && (dst = g8 || dst = c8))
+
 let gives_check pos m =
   let open Bb in
   let src, dst, promote = Move.decomp m in
-  let is_castle = function
-    | Piece.White -> Square.(src = e1 && (dst = g1 || dst = c1))
-    | Piece.Black -> Square.(src = e8 && (dst = g8 || dst = c8)) in
+  (* Make sure the piece exists. *)
   let p = piece_at_square_uopt pos src in
   Uopt.is_some p && begin
+    (* Make sure it is the side to move. *)
     let c, k = Piece.decomp @@ Uopt.unsafe_value p in
+    Piece.Color.(c = pos.active) &&
     let checks = force pos.checks in
     let squares, pinned = match c with
       | Piece.White -> checks.bsquares, checks.bpinned
@@ -570,23 +574,23 @@ let gives_check pos m =
     (* Direct check. *)
     dst @ Array.unsafe_get squares @@ Piece.Kind.to_int k || begin
       let ksq = first_set_exn (pos.king & inactive_board pos) in
-      (* Discovery check. *)
+      (* Discovered check. *)
       (src @ pinned && not (ksq @ Pre.line src dst)) || begin
         let all = all_board pos in
         match promote with
         | Some k ->
           (* Promotion check. *)
           let k = Move.Promote.to_piece_kind k in
-          ksq @ Attacks.pre_of_kind dst (all -- src) c k
+          ksq @ Attacks.pre_of_kind dst (all -- src -- dst) c k
         | None -> match k with
           | Piece.Pawn when is_en_passant_square pos dst ->
             (* En passant check. *)
             let pw = Uopt.unsafe_value @@ en_passant_pawn_uopt pos in
-            let b = (all -- src -- pw) ++ dst in
-            let bq = Pre.bishop ksq b & (pos.queen + pos.bishop) in
-            let rq = Pre.rook ksq b & (pos.queen + pos.rook) in
-            (bq + rq) <> empty
-          | Piece.King when is_castle c ->
+            let occ = (all -- src -- pw) ++ dst in
+            let bq = Pre.bishop ksq occ & (pos.queen + pos.bishop) in
+            let rq = Pre.rook   ksq occ & (pos.queen + pos.rook) in
+            ((bq + rq) & board_of_color pos c) <> empty
+          | Piece.King when is_castle src dst c ->
             (* Castling check. *)
             let r = Square.(to_int @@ if dst > src then f1 else d1) in
             let i = Piece.Color.to_int pos.active * 56 in
@@ -1416,9 +1420,9 @@ module Movegen = struct
         (* Check if an appropriate diagonal attack from the king would reach
            that corresponding piece. *)
         let {bishop; rook; queen; _} = a.pos in
-        let b = Pre.bishop a.king_sq occupied & (bishop + queen) in
-        let r = Pre.rook   a.king_sq occupied & (rook   + queen) in
-        if ((b + r) & a.inactive_board) <> empty then diag else diag ++ ep
+        let bq = Pre.bishop a.king_sq occupied & (bishop + queen) in
+        let rq = Pre.rook   a.king_sq occupied & (rook   + queen) in
+        if ((bq + rq) & a.inactive_board) <> empty then diag else diag ++ ep
 
       let[@inline] capture sq a =
         let open Bb.Syntax in
@@ -1742,10 +1746,8 @@ module Unsafe = struct
     Uopt.is_some p &&
     let p = Uopt.unsafe_value p in
     let c, k = Piece.decomp p in
-    Piece.Color.(c = pos.active) && match c, k with
-    | White, King -> Square.(src = e1 && (dst = g1 || dst = c1))
-    | Black, King -> Square.(src = e8 && (dst = g8 || dst = c8))
-    | _ -> false
+    Piece.Color.(c = pos.active) && match k with
+    | King -> is_castle src dst c | _ -> false
 end
 
 let null_move_exn pos =
