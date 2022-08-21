@@ -1348,7 +1348,10 @@ module Child = struct
   let is_castle child = Uopt.is_some child.castle_side
   let capture child = Uopt.to_option child.capture
   let castle_side child = Uopt.to_option child.castle_side
-  let gives_check child = in_check @@ self child
+
+  let gives_check child =
+    if Lazy.is_val child.self then in_check @@ self child
+    else gives_check child.parent child.move
 
   let capture_square child =
     if Uopt.is_none child.capture then None
@@ -1624,20 +1627,75 @@ module Movegen = struct
     | Piece.Queen  -> Pieces.queen  sq a
     | Piece.King   -> Pieces.king   sq a
 
-  let[@inline][@specialise] go f ({pos; king_sq; num_checkers; _} as a) =
-    (* If the king has more than one attacker, then it is the only piece
-       we can move. *)
-    if num_checkers <= 1 then
+  let[@inline][@specialise] go f a =
+    if a.num_checkers <= 1 then
       (List.fold [@speciailised]) ~init:[] ~f:(fun init (sq, k) ->
-          bb_of_kind sq k a |> f sq k ~init ~a) @@ collect_active pos
-    else Pieces.king king_sq a |> f king_sq Piece.King ~init:[] ~a
+          bb_of_kind sq k a |> f sq k ~init ~a) @@ collect_active a.pos
+    else Pieces.king a.king_sq a |> f a.king_sq Piece.King ~init:[] ~a
+
+  let[@inline][@specialise] go_captures f a =
+    if a.num_checkers <= 1 then
+      (List.fold [@speciailised]) ~init:[] ~f:(fun init (sq, k) ->
+          let b = bb_of_kind sq k a in
+          let b = match k with
+            | Piece.Pawn when Uopt.is_some a.en_passant_pawn ->
+              let ep = Uopt.unsafe_value a.pos.en_passant in
+              Bb.(b & (a.inactive_board ++ ep))
+            | _ -> Bb.(b & a.inactive_board) in
+          f sq k ~init ~a b) @@ collect_active a.pos
+    else
+      Bb.(Pieces.king a.king_sq a & a.inactive_board) |>
+      f a.king_sq Piece.King ~init:[] ~a
+
+  let[@inline][@specialise] go_promotions f a =
+    if a.num_checkers <= 1 then
+      let mask = match a.pos.active with
+        | Piece.White -> Bb.rank_8
+        | Piece.Black -> Bb.rank_1 in
+      Bb.(a.pos.pawn & a.active_board) |>
+      (Bb.fold [@speciailised]) ~init:[] ~f:(fun init sq ->
+          Bb.(Pieces.pawn sq a & mask) |> f sq Piece.Pawn ~init ~a)
+    else []
+
+  let[@inline][@specialise] go_quiet f a =
+    if a.num_checkers <= 1 then
+      (List.fold [@speciailised]) ~init:[] ~f:(fun init (sq, k) ->
+          let b = bb_of_kind sq k a in
+          let b = match k with
+            | Piece.Pawn when Uopt.is_some a.en_passant_pawn ->
+              let ep = Uopt.unsafe_value a.pos.en_passant in
+              Bb.(b - (a.inactive_board ++ ep))
+            | _ -> Bb.(b - a.inactive_board) in
+          f sq k ~init ~a b) @@ collect_active a.pos
+    else
+      Bb.(Pieces.king a.king_sq a - a.inactive_board) |>
+      f a.king_sq Piece.King ~init:[] ~a
 end
 
 let legal_moves pos = Movegen.(go bb_to_moves) @@ Analysis.create pos
+
+let capture_moves pos =
+  Movegen.(go_captures bb_to_moves) @@ Analysis.create pos
+
+let promotion_moves pos =
+  Movegen.(go_promotions bb_to_moves) @@ Analysis.create pos
+
+let quiet_moves pos =
+  Movegen.(go_quiet bb_to_moves) @@ Analysis.create pos
+
 let children pos = Movegen.(go bb_to_children) @@ Analysis.create pos
 
-let make_move pos move =
-  children pos |> List.find ~f:(Fn.flip Child.is_move move)
+let capture_children pos =
+  Movegen.(go_captures bb_to_children) @@ Analysis.create pos
+
+let promotion_children pos =
+  Movegen.(go_captures bb_to_children) @@ Analysis.create pos
+
+let quiet_children pos =
+  Movegen.(go_captures bb_to_children) @@ Analysis.create pos
+
+let make_move pos m =
+  children pos |> List.find ~f:(Fn.flip Child.is_move m)
 
 let make_move_exn pos move = match make_move pos move with
   | None -> invalid_argf "Move %s is not legal" (Move.to_string move) ()

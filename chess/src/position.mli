@@ -396,6 +396,15 @@ end
     position. No particular order is guaranteed. *)
 val legal_moves : t -> Move.t list
 
+(** Returns the list of legal moves that are captures. *)
+val capture_moves : t -> Move.t list
+
+(** Returns the list of legal moves that are promotions. *)
+val promotion_moves : t -> Move.t list
+
+(** Returns the list of legal moves that are not captures or promotions. *)
+val quiet_moves : t -> Move.t list
+
 (** [gives_check pos m] returns [true] if the move [m] gives check for
     position [pos]. It is assumed that [m] is legal. *)
 val gives_check : t -> Move.t -> bool
@@ -408,6 +417,15 @@ val gives_check : t -> Move.t -> bool
     guaranteed for the resulting list.
 *)
 val children : t -> child list
+
+(** Returns the list of children that are captures. *)
+val capture_children : t -> child list
+
+(** Returns the list of children that are promotions. *)
+val promotion_children : t -> child list
+
+(** Returns the list of children that are not captures or promotions. *)
+val quiet_children : t -> child list
 
 (** [make_move pos m] applies move [m] to position [pos]. If [m] is not a
     legal move, or if [pos] is an illegal position, then [None] is returned.
