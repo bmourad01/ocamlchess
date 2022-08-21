@@ -433,21 +433,16 @@ module Analysis = struct
   (* Calculate the set of inactive pieces that are checking the king. *)
   let[@inline] checkers pos ~inactive_board =
     let open Bb in
-    let check = force pos.checks in
-    let a = match pos.active with
-      | Piece.White -> check.wsquares
-      | Piece.Black -> check.bsquares in
-    let b = (Array.foldi [@specialised]) a ~init:empty ~f:(fun i acc b ->
-        match Piece.Kind.of_int_exn i with
-        | Pawn   -> acc + (b & pos.pawn)
-        | Knight -> acc + (b & pos.knight)
-        | Bishop -> acc + (b & (pos.bishop + pos.queen))
-        | Rook   -> acc + (b & (pos.rook + pos.queen))
-        | Queen | King ->
-          (* Queen is covered by the above two cases. Kings can never be
-             checkers *)
-          acc) in
-    b & inactive_board
+    let checks = force pos.checks in
+    let squares = match pos.active with
+      | Piece.White -> checks.wsquares
+      | Piece.Black -> checks.bsquares in
+    let q = pos.queen in
+    let p = Array.unsafe_get squares Piece.Kind.pawn   & pos.pawn in
+    let n = Array.unsafe_get squares Piece.Kind.knight & pos.knight in
+    let b = Array.unsafe_get squares Piece.Kind.bishop & (pos.bishop + q) in
+    let r = Array.unsafe_get squares Piece.Kind.rook   & (pos.rook + q) in
+    (p + n + b + r) & inactive_board
 
   (* For each pinned piece, calculate a pin mask to restrict its movement. *)
   let[@inline] pin_masks pos ~king_sq =
