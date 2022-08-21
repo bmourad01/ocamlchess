@@ -272,6 +272,7 @@ module State = struct
     excluded                   : Move.t Oa.t;
     pv                         : Child.t Oa.t array;
     moves                      : Child.t Oa.t;
+    countermoves               : Child.t Oa.t;
     killer1                    : Child.t Oa.t;
     killer2                    : Child.t Oa.t;
     move_history               : int array;
@@ -288,6 +289,7 @@ module State = struct
   let pv_size = max_ply + 2
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
+  let countermove_size = (1 lsl Piece.bits) * Square.count
 
   let create ~limits ~root ~history ~tt ~iter ~ponder =
     (* Make sure that the root position is in our history. *)
@@ -304,6 +306,7 @@ module State = struct
       excluded = Oa.create ~len:max_ply;
       pv = Array.init pv_size ~f:(fun _ -> Oa.create ~len:pv_size);
       moves = Oa.create ~len:max_ply;
+      countermoves = Oa.create ~len:countermove_size;
       killer1 = Oa.create ~len:killer_size;
       killer2 = Oa.create ~len:killer_size;
       move_history = Array.create ~len:move_history_size 0;
@@ -337,16 +340,19 @@ module State = struct
 
   (* Is `m` a killer move? *)
   let is_killer st m ply = match killer1 st ply with
-    | Some m' when Child.same m m' -> true
+    | Some k when Child.same k m -> true
     | _ -> match killer2 st ply with
-      | Some m' -> Child.same m m'
+      | Some k -> Child.same k m
       | None -> false
 
   (* Update the killer move for a particular ply. *)
   let update_killer st ply m =
-    killer1 st ply |> Option.iter
-      ~f:(Oa.set_some st.killer2 ply);
-    Oa.set_some st.killer1 ply m
+    match killer1 st ply with
+    | Some k when Child.same k m -> ()
+    | None -> Oa.set_some st.killer1 ply m
+    | Some k ->
+      Oa.set_some st.killer2 ply k;
+      Oa.set_some st.killer1 ply m
 
   let history_idx m =
     let c = Piece.Color.to_int @@ Position.active @@ Child.parent m in
@@ -441,6 +447,33 @@ module State = struct
   let set_move st ply m = Oa.unsafe_set_some st.moves ply m
   let null_move st ply = Oa.unsafe_set_none st.moves ply
   let is_null_move st ply = ply >= 0 && Oa.is_none st.moves ply
+
+  let countermove_idx p sq =
+    Piece.to_int p * Square.count + Square.to_int sq
+
+  let countermove st pos ply =
+    if ply > 0 then match Oa.unsafe_get st.moves (ply - 1) with
+      | None -> None
+      | Some prev ->
+        let dst = Move.dst @@ Child.move prev in
+        match Position.piece_at_square pos dst with
+        | None -> None
+        | Some p ->
+          let i = countermove_idx p dst in
+          Oa.unsafe_get st.countermoves i
+    else None
+
+  let update_countermove st ply m =
+    if ply > 0 then match Oa.unsafe_get st.moves (ply - 1) with
+      | None -> ()
+      | Some prev ->
+        let pos = Child.parent m in
+        let dst = Move.dst @@ Child.move prev in
+        match Position.piece_at_square pos dst with
+        | None -> ()
+        | Some p ->
+          let i = countermove_idx p dst in
+          Oa.unsafe_set_some st.countermoves i m
 end
 
 type state = State.t
@@ -513,7 +546,8 @@ module Order = struct
   let promote_offset = 96
   let killer1_offset = 95
   let killer2_offset = 94
-  let castle_offset = 93
+  let countermove_offset = 93
+  let castle_offset = 92
   let history_offset = -90
   let history_scale = 180
 
@@ -562,26 +596,29 @@ module Order = struct
      1. Moves that were cached in the TT.
      2. Captures that produced a non-negative SEE score.
      3. Promotions.
-     4. Killer moves.
+     4. Refutations.
      5. Castling moves.
      6. Move history score (the "distance" heuristic).
      7. Captures that produced a negative SEE score.
   *)
   let score st moves ~ply ~pos ~ttentry =
     let is_hash = is_hash ttentry in
-    let killer =
+    let refutation =
       let k1 = State.killer1 st ply in
       let k2 = State.killer2 st ply in
-      fun m -> match k1, k2 with
-        | Some k, _ when Child.same m k -> killer1_offset
-        | _, Some k when Child.same m k -> killer2_offset
-        | _ -> 0 in
+      let cm = State.countermove st pos ply in
+      fun m -> match k1 with
+        | Some k when Child.same m k -> killer1_offset
+        | _ -> match k2 with
+          | Some k when Child.same m k -> killer2_offset
+          | _ -> match cm with
+            | Some c when Child.same m c -> countermove_offset
+            | _ -> 0 in
     let move_history =
-      let tbl = st.move_history in
       let max = State.move_history_max st pos in
       fun m ->
         let i = State.history_idx m in
-        let h = Array.unsafe_get tbl i in
+        let h = Array.unsafe_get st.move_history i in
         (* We "squish" the history score so that it fits between bad
            captures and castling moves. *)
         (((h * history_scale) + max - 1) / max) + history_offset in
@@ -594,8 +631,8 @@ module Order = struct
             let promote = promote_by_offset m in
             if promote <> 0 then promote
             else
-              let killer = killer m in
-              if killer <> 0 then killer
+              let refute = refutation m in
+              if refute <> 0 then refute
               else match Child.castle_side m with
                 | Some _ -> castle_offset
                 | None -> move_history m)
@@ -637,10 +674,11 @@ module Search = struct
     bound = Upper;
   }
 
-  let update_history_and_killer st m ~ply ~depth =
+  let update_quiet st m ~ply ~depth =
     if is_quiet m then begin
       State.update_killer st ply m;
       State.update_move_history st m depth;
+      State.update_countermove st ply m;
     end
 
   (* Return true if we fail high. *)
@@ -654,7 +692,7 @@ module Search = struct
           t.alpha <- score;
           if not q then t.bound <- Exact;
         end else begin
-          update_history_and_killer st m ~ply ~depth;
+          update_quiet st m ~ply ~depth;
           t.bound <- Lower;
         end
       end
