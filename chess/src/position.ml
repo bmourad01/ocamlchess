@@ -384,7 +384,6 @@ module Analysis = struct
       num_checkers          : int;
       check_mask            : Bb.t;
       en_passant_check_mask : Bb.t;
-      inactive_sliders      : (Square.t * Piece.kind) list;
     } [@@deriving fields]
   end
 
@@ -496,9 +495,6 @@ module Analysis = struct
       let occupied = Bb.(occupied -- king_sq) in
       List.fold inactive_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
           Bb.(acc + Attacks.pre_of_kind sq occupied inactive k)) in
-    (* Sliding pieces will be used to calculate pins. *)
-    let inactive_sliders =
-      List.filter inactive_pieces ~f:(fun (_, k) -> Piece.Kind.is_sliding k) in
     (* Pinned pieces. *)
     let pin_masks = pin_masks pos ~king_sq in
     (* Pieces checking our king. *)
@@ -513,11 +509,10 @@ module Analysis = struct
     T.Fields.create
       ~pos ~king_sq ~en_passant_pawn ~occupied ~active_board
       ~inactive_board ~inactive_attacks ~pin_masks ~num_checkers
-      ~check_mask ~en_passant_check_mask ~inactive_sliders
+      ~check_mask ~en_passant_check_mask
 
   include T
 end
-
 
 (* Miscellaneous rules *)
 
@@ -1413,24 +1408,17 @@ module Movegen = struct
          on the king. En passant moves arise rarely across all chess positions,
          so we can do a bit of heavy calculation here. *)
       let[@inline] en_passant sq ep pw diag a =
-        let open Bb.Syntax in
+        let open Bb in
         (* Remove our pawn and the captured pawn from the board, but pretend
            that the en passant square is occupied. This covers the case where
            we can capture the pawn, but it may leave our pawn pinned. *)
         let occupied = a.occupied -- sq -- pw ++ ep in
         (* Check if an appropriate diagonal attack from the king would reach
            that corresponding piece. *)
-        let bishop = Pre.bishop a.king_sq occupied in
-        let rook   = Pre.rook   a.king_sq occupied in
-        let queen  = Pre.queen  a.king_sq occupied in
-        let[@inline] rec aux = function
-          | [] -> diag ++ ep
-          | (sq, k) :: rest -> match k with
-            | Piece.Bishop when sq @ bishop -> diag
-            | Piece.Rook   when sq @ rook   -> diag
-            | Piece.Queen  when sq @ queen  -> diag
-            | _ -> aux rest in
-        aux a.inactive_sliders
+        let {bishop; rook; queen; _} = a.pos in
+        let b = Pre.bishop a.king_sq occupied & (bishop + queen) in
+        let r = Pre.rook   a.king_sq occupied & (rook   + queen) in
+        if ((b + r) & a.inactive_board) <> empty then diag else diag ++ ep
 
       let[@inline] capture sq a =
         let open Bb.Syntax in
@@ -1500,14 +1488,9 @@ module Movegen = struct
 
     (* Special case for pawns, with en passant capture being an option to
        escape check. *)
-    let[@inline] check_mask_pawn capture
-        {num_checkers; check_mask; en_passant_check_mask; _} =
-      if num_checkers <> 1 then check_mask
-      else Bb.(check_mask + (capture & en_passant_check_mask))
-
-    (* Pawn has special case for check mask. *)
-    let[@inline] make_pawn sq b capture a =
-      Bb.(b & pin_mask sq a & check_mask_pawn capture a)
+    let[@inline] pawn_check_mask capture a =
+      if a.num_checkers <> 1 then a.check_mask
+      else Bb.(a.check_mask + (capture & a.en_passant_check_mask))
 
     (* All other pieces (except the king). *)
     let[@inline] make sq a b = Bb.(b & pin_mask sq a & a.check_mask)
@@ -1522,7 +1505,7 @@ module Movegen = struct
           push + push2 rank file a
         else push in
       let capture = capture sq a in
-      make_pawn sq (push + capture) capture a
+      (push + capture) & pin_mask sq a & pawn_check_mask capture a
 
     let[@inline] knight sq a = make sq a @@ Knight.jump  sq a
     let[@inline] bishop sq a = make sq a @@ Bishop.slide sq a
@@ -1557,12 +1540,7 @@ module Movegen = struct
     let direct_capture =
       if is_en_passant then Uopt.none
       else piece_at_square_uopt pos dst in
-    let capture =
-      if is_en_passant then Uopt.some Piece.Pawn
-      else if Uopt.is_some direct_capture then
-        Uopt.some @@ Piece.kind @@ Uopt.unsafe_value direct_capture
-      else Uopt.none in
-    (* Update the position and return the captured piece, if any. *)
+    (* Calculate the new position. *)
     let self = lazy begin
       (* Create a unique copy of the position, which we are free to mutate. *)
       let self = copy pos in
@@ -1583,6 +1561,12 @@ module Movegen = struct
       calculate_checks self;
       self
     end in
+    (* The captured piece kind. *)
+    let capture =
+      if is_en_passant then Uopt.some Piece.Pawn
+      else if Uopt.is_some direct_capture then
+        Uopt.some @@ Piece.kind @@ Uopt.unsafe_value direct_capture
+      else Uopt.none in
     self, capture, is_en_passant, castle_side
 
   (* Accumulate a list of legal moves. *)
