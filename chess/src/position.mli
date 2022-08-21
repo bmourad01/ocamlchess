@@ -383,7 +383,7 @@ module Child : sig
       performed on. Otherwise, returns [None]. *)
   val castle_side : child -> Castling_rights.side option
 
-  (** Returns [true] id the move gives check to the opponent, *)
+  (** Returns [true] if the move gives check to the opponent. *)
   val gives_check : child -> bool
 
   (** Returns the bitboard of enemy pieces (relative to the parent position)
@@ -407,7 +407,11 @@ val promotion_moves : t -> Move.t list
 val quiet_moves : t -> Move.t list
 
 (** [gives_check pos m] returns [true] if the move [m] gives check for
-    position [pos]. It is assumed that [m] is legal. *)
+    position [pos].
+
+    If [Move.src m] does not point to a piece of the active color, then
+    the result is [false].
+*)
 val gives_check : t -> Move.t -> bool
 
 (** [children pos] returns the result of applying all legal moves of
