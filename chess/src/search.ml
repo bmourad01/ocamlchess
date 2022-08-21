@@ -580,6 +580,8 @@ module Order = struct
     let move_history m =
       let i = State.history_idx m in
       let h = Array.unsafe_get move_history i in
+      (* We "squish" the history score so that it fits between bad captures
+         and castling moves. *)
       ((h * history_scale) + move_history_max - 1) / move_history_max in
     score_aux moves ~f:(fun m ->
         if is_hash m then inf
@@ -609,6 +611,11 @@ module Order = struct
           if p <> 0 then p else match See.go m with
             | Some value -> value
             | None -> 0))
+
+  (* Score the moves for quiescence search, when we generate
+     quiet check evasions. *)
+  let qescore (st : state) pos moves = score_aux moves ~f:(fun m ->
+      Array.unsafe_get st.move_history @@ State.history_idx m)
 end
 
 (* Helpers for the search. *)
@@ -761,11 +768,7 @@ module Quiescence = struct
     match Order.qscore moves ~check:init ~ttentry with
     | Some it -> Some (it, false)
     | None when not check -> None
-    | None ->
-      (* We're in check, but our only responses are quiet moves, so just
-         generate all evasions. *)
-      let it = Order.score st moves ~ply ~pos ~ttentry in
-      Some (it, true)
+    | None -> Some (Order.qescore st pos moves, true)
 
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~pv =
