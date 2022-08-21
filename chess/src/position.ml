@@ -541,12 +541,17 @@ let is_insufficient_material pos =
     pos.king = active + inactive || begin
       let kb = pos.king + pos.bishop in
       let kn = pos.king + pos.knight in
-      (* Lone king on either side. Check if the other player has no bishops
-         AND at most two knights. *)
-      if ((pos.king & active) + (pos.bishop & inactive)) = active then
+      let ka = (pos.king & active) = active in
+      let ki = (pos.king & inactive) = inactive in
+      (* Lone king vs king + knight or bishop. *)
+      if ka && (kb & inactive) = inactive then
         Int.(count (kn & inactive) < 3)
-      else if ((pos.king & inactive) + (pos.bishop & active)) = inactive then
+      else if ki && (kb & active) = active then
         Int.(count (kn & active) < 3)
+      else if ka && (kn & inactive) = inactive then
+        Int.(count (kb & inactive) < 2)
+      else if ki && (kn & active) = active then
+        Int.(count (kb & active) < 2)
       else
         (* Both sides have king+bishop or king+knight. *)
         let akb = (kb & active) = active && Int.equal 2 @@ count active in

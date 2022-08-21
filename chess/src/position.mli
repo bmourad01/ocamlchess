@@ -37,11 +37,7 @@ val queen : t -> Bitboard.t
 val king : t -> Bitboard.t
 
 (** [pinned pos c] returns the bitboard representing all pinned pieces for
-    the king of color [c] in position [pos].
-
-    If the piece's color is opposite of [c], then it is blocking a
-    discovered check.
-*)
+    the king of color [c] in position [pos]. *)
 val pinned : t -> Piece.color -> Bitboard.t
 
 (** [pinners pos c] returns the bitboard for pieces of color [c] that are
