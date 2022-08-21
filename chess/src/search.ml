@@ -12,6 +12,9 @@ let[@inline][@specialise] (>>?) x f = match x with
   | None -> f ()
   | Some _ -> x
 
+let b2i = Bool.to_int
+let b2in = Fn.compose b2i not
+
 module Limits = struct
   type t = {
     infinite : bool;
@@ -165,7 +168,7 @@ module Tt = struct
   *)
   type t = entry Oa.t
 
-  let create ?(len = 0x80000) () =
+  let create ?(len = 0x100000) () =
     if len <= 0 then
       invalid_argf
         "Invalid transposition table length %d, must be greater than zero"
@@ -193,17 +196,17 @@ module Tt = struct
     else if is_mated score then score - ply
     else score
 
-  (* Store the evaluation results for the position.
+  (* Decide whether to keep or replace an existing entry. *)
+  let keep (e : entry) depth bound pv =
+    let ex = b2i @@ equal_bound bound Exact in
+    depth + 2 * b2i pv <= e.depth - ex
 
-     If an entry already exists for this slot, regardless of whether the
-     Zobrist key matches or not, we will replace it if the depth values
-     are comparable.
-  *)
-  let store tt pos ~ply ~depth ~score ~eval ~best ~bound =
+  (* Store the evaluation results for the position. *)
+  let store tt pos ~ply ~depth ~score ~eval ~best ~bound ~pv =
     let key = Position.hash pos in
     let i = slot tt key in
     match Oa.unsafe_get tt i with
-    | Some entry when entry.Entry.depth > depth -> ()
+    | Some e when keep e depth bound pv -> ()
     | None | Some _ ->
       let e = Entry.Fields.create ~key ~depth ~score ~eval ~best ~bound in
       Oa.unsafe_set_some tt i e
@@ -556,12 +559,13 @@ module Order = struct
 
   (* Score the moves for normal search. Priority (from best to worst):
 
-     1. Moves that were cached in the TT as PV or CUT nodes.
+     1. Moves that were cached in the TT.
      2. Captures that produced a non-negative SEE score.
-     3. Killer moves.
-     4. Castling moves.
-     5. Move history score (the "distance" heuristic).
-     6. Captures that produced a negative SEE score.
+     3. Promotions.
+     4. Killer moves.
+     5. Castling moves.
+     6. Move history score (the "distance" heuristic).
+     7. Captures that produced a negative SEE score.
   *)
   let score st moves ~ply ~pos ~ttentry =
     let killer1 = State.killer1 st ply in
@@ -655,10 +659,10 @@ module Search = struct
     Tt.lookup st.tt ~pos ~depth ~ply ~alpha ~beta ~pv
 
   (* Cache an evaluation. *)
-  let store (st : state) t pos ~depth ~ply ~score =
+  let store (st : state) t pos ~depth ~ply ~score ~pv =
     let eval = Uopt.of_option @@ State.lookup_eval st ply in
     Tt.store st.tt pos ~ply ~depth ~score ~eval
-      ~best:t.best ~bound:t.bound
+      ~best:t.best ~bound:t.bound ~pv
 
   let has_reached_limits st =
     let elapsed = State.elapsed st in
@@ -707,9 +711,6 @@ module Search = struct
   let end_of_line pos ~check = if check then 0 else Eval.go pos
 end
 
-let b2i = Bool.to_int
-let b2in = Fn.compose b2i not
-
 (* Quiescence search is used when we reach our maximum depth for the main
    search. The goal is then to keep searching only "noisy" positions, until
    we reach one that is "quiet", and then return our evaluation. *)
@@ -742,7 +743,7 @@ module Quiescence = struct
         if Option.is_none ttentry then
           Tt.store st.tt pos ~ply ~depth ~score
             ~eval:(Uopt.some eval) ~best:Uopt.none
-            ~bound:Lower;
+            ~bound:Lower ~pv:false;
         First score
       end else if delta pos score alpha then First score
       else Second ((if pv then max score alpha else alpha), Some eval)
@@ -793,7 +794,7 @@ module Quiescence = struct
           let finish _ = t.score in
           let f = child st t ~beta ~ply ~pv ~check ~quiet_evasion in
           let score = Iterator.fold_until it ~init:(ref 0) ~finish ~f in
-          Search.store st t pos ~depth ~ply ~score;
+          Search.store st t pos ~depth ~ply ~score ~pv;
           score
 
   (* Search a child of the current node. *)
@@ -893,7 +894,7 @@ module Main = struct
             ~check ~pv ~improving ~ttentry in
         let score = Iterator.fold_until it ~init:0 ~finish ~f in
         if not @@ State.has_excluded st ply then
-          Search.store st t pos ~depth ~ply ~score;
+          Search.store st t pos ~depth ~ply ~score ~pv;
         score
 
   (* If we're not in a PV search and we're not in check, then try a
@@ -1087,7 +1088,7 @@ module Main = struct
         let depth = depth - (probcut_min_depth - 2) in
         let eval = Uopt.of_option @@ State.lookup_eval st ply in
         Tt.store st.tt pos ~ply ~depth ~score ~eval
-          ~best:(Uopt.some m) ~bound:Lower;
+          ~best:(Uopt.some m) ~bound:Lower ~pv:false;
         Stop (Some score)
       else if st.stopped then Stop None
       else Continue ()
