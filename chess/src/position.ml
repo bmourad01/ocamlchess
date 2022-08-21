@@ -1428,11 +1428,10 @@ module Movegen = struct
         let open Bb.Syntax in
         let capture = Pre.pawn_capture sq a.pos.active in
         let diag = capture & a.inactive_board in
-        let pw = a.en_passant_pawn in
-        if Uopt.is_some pw then
-          let ep, pw = Uopt.(unsafe_value a.pos.en_passant, unsafe_value pw) in
-          if ep @ capture then en_passant sq ep pw diag a
-          else diag
+        if Uopt.is_some a.en_passant_pawn then
+          let ep = Uopt.unsafe_value a.pos.en_passant  in
+          let pw = Uopt.unsafe_value a.en_passant_pawn in
+          if ep @ capture then en_passant sq ep pw diag a else diag
         else diag
 
       let[@inline] promote src dst =
@@ -1515,11 +1514,7 @@ module Movegen = struct
     let[@inline] bishop sq a = make sq a @@ Bishop.slide sq a
     let[@inline] rook   sq a = make sq a @@ Rook.slide   sq a
     let[@inline] queen  sq a = make sq a @@ Queen.slide  sq a
-
-    let[@inline] king sq a =
-      let open King in
-      let open Bb.Syntax in
-      move sq a + castle a
+    let[@inline] king   sq a = Bb.(King.(move sq a + castle a))
   end
 
   (* Calculate the side that we're castling on, if any. *)
