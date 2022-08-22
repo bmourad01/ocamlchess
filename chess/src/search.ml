@@ -671,18 +671,20 @@ end
 (* Helpers for the search. *)
 module Search = struct
   (* The results for a single ply. *)
-  type t = {
+  type 'a t = {
     mutable best  : Child.t Uopt.t;
     mutable alpha : int;
     mutable score : int;
     mutable bound : Tt.bound;
+    mutable state : 'a;
   }
 
-  let create ?(alpha = -inf) ?score () = {
+  let create ?(alpha = -inf) ?score state = {
     best = Uopt.none;
     alpha;
     score = Option.value score ~default:(-inf);
     bound = Upper;
+    state;
   }
 
   let update_quiet st m ~ply ~depth =
@@ -844,19 +846,20 @@ module Quiescence = struct
         match order st moves pos ~ply ~check ~init ~ttentry with
         | None -> Option.value_exn score
         | Some (it, quiet_evasion) ->
-          let t = Search.create ~alpha ?score () in
-          let finish _ = t.score in
+          (* The `state` field is the number of quiet evasions that have
+             occurred so far. *)
+          let t = Search.create ~alpha ?score 0 in
+          let finish () = t.score in
           let f = child st t ~beta ~ply ~pv ~check ~quiet_evasion in
-          let score = Iterator.fold_until it ~init:(ref 0) ~finish ~f in
+          let score = Iterator.fold_until it ~init:() ~finish ~f in
           Search.store st t pos ~depth ~ply ~score ~pv;
           score
 
   (* Search a child of the current node. *)
-  and child st t ~beta ~ply ~pv ~check ~quiet_evasion = fun qe (m, order) ->
+  and child st t ~beta ~ply ~pv ~check ~quiet_evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if should_skip t m ~qe ~order ~check ~quiet_evasion
-    then Continue qe
-    else begin
+    if should_skip t m ~order ~check ~quiet_evasion then Continue ()
+    else
       let pos = Child.self m in
       State.set_move st ply m;
       State.push_history st pos;
@@ -869,10 +872,9 @@ module Quiescence = struct
       State.pop_history st pos;
       if Search.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
       else if st.stopped then Stop t.score
-      else Continue qe
-    end
+      else Continue ()
 
-  and should_skip t m ~qe ~order ~check ~quiet_evasion =
+  and should_skip t m ~order ~check ~quiet_evasion =
     t.score > mated max_ply && begin
       (* If we didn't generate quiet check evasions, then ignore moves
          with negative SEE values. *)
@@ -880,8 +882,8 @@ module Quiescence = struct
       (* If we're in check, then allow only one non-capturing evasion
          to be searched. *)
       (check && not (Child.is_capture m) && begin
-          let result = !qe > 1 in
-          incr qe;
+          let result = t.state > 1 in
+          t.state <- t.state + 1;
           result
         end)
     end
@@ -1112,12 +1114,12 @@ module Main = struct
       Order.pcscore moves ~ttentry |> Option.bind ~f:(fun it ->
           let eval = State.lookup_eval_unsafe st ply in
           let f = probcut_child st pos ~eval ~depth ~ply ~beta_cut in
-          Iterator.fold_until it ~init:() ~finish:(fun () -> None) ~f)
+          Iterator.fold_until it ~init:None ~finish:Fn.id ~f)
     else None
 
-  and probcut_child st pos ~eval ~depth ~ply ~beta_cut = fun () (m, order) ->
+  and probcut_child st pos ~eval ~depth ~ply ~beta_cut = fun k (m, order) ->
     let open Continue_or_stop in
-    if probcut_skip st m ~eval ~beta_cut ~ply ~order then Continue ()
+    if probcut_skip st m ~eval ~beta_cut ~ply ~order then Continue None
     else
       let alpha = -beta_cut in
       let beta = -beta_cut + 1 in
@@ -1144,7 +1146,7 @@ module Main = struct
           ~bound:Lower ~pv:false;
         Stop (Some score)
       else if st.stopped then Stop None
-      else Continue ()
+      else Continue None
 
   (* Excluded moves as well as moves whose SEE values are below our
      threshold should be skipped. Note that we convert the score to
