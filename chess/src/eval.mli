@@ -16,9 +16,6 @@ module Material : sig
   val queen_eg : int
 end
 
-(** Returns true if the position has approached endgame. *)
-val is_endgame : Position.t -> bool
-
 (** Returns a score for a position.
 
     The score represents the relative advantage of the active player.

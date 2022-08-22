@@ -137,6 +137,11 @@ let[@inline] has_pawn_threat pos sq =
   let cap = Pre.pawn_capture sq @@ Piece.Color.opposite pos.active in
   Bb.((cap & pos.pawn & active_board pos) <> empty)
 
+let[@inline] has_non_pawn_material pos c =
+  let open Bb in
+  let us = board_of_color pos c in
+  ((pos.knight + pos.bishop + pos.rook + pos.queen) & us) <> empty
+
 (* Piece lookup *)
 
 let which_color pos sq =

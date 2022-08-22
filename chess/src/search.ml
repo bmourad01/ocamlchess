@@ -782,7 +782,9 @@ module Quiescence = struct
   *)
   let delta =
     let margin = Eval.Material.queen_mg in
-    fun pos eval alpha -> eval + margin < alpha && not (Eval.is_endgame pos)
+    fun pos eval alpha ->
+      eval + margin < alpha &&
+      Position.(has_non_pawn_material pos @@ active pos)
 
   let static_eval st pos ~ply ~(ttentry : Tt.entry option) = match ttentry with
     | None when ply <= 0 -> Eval.go pos
@@ -965,7 +967,7 @@ module Main = struct
     | None -> None
     | Some _ when pv -> None
     | Some score ->
-      razor st pos moves ~score ~alpha ~ply ~depth ~pv >>? fun () ->
+      razor st pos moves ~score ~alpha ~ply ~depth >>? fun () ->
       rfp ~depth ~score ~beta ~improving >>? fun () ->
       nmp st pos ~score ~beta ~ply ~depth >>? fun () ->
       probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
@@ -979,7 +981,8 @@ module Main = struct
       | First score -> Stop score
       | Second _ when st.stopped -> Stop t.score
       | Second ext ->
-        let r = lmr st m ~i ~beta ~ply ~depth ~check ~pv ~improving in
+        let r = lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving in
+        let r = if ext > 0 then max 0 (r - 1) else r in
         let pos = Child.self m in
         State.set_move st ply m;
         State.inc_nodes st;
@@ -1063,7 +1066,7 @@ module Main = struct
     && score >= State.lookup_eval_unsafe st ply
     && depth >= nmp_min_depth
     && not (State.has_excluded st ply)
-    && not (Eval.is_endgame pos)
+    && Position.(has_non_pawn_material pos @@ active pos)
     && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
       let r = if depth <= 6 then 2 else 3 in
       State.null_move st ply;
@@ -1085,10 +1088,10 @@ module Main = struct
      lower than alpha, then drop down to quiescence search to see if
      the position can be improved.
   *)
-  and razor st pos moves ~score ~alpha ~ply ~depth ~pv =
+  and razor st pos moves ~score ~alpha ~ply ~depth =
     if depth <= razor_max_depth && score + razor_margin depth < alpha then
-      let score = Quiescence.with_moves st pos moves ~ply ~pv
-          ~check:false ~alpha:(alpha - 1) ~beta:alpha in
+      let score = Quiescence.with_moves st pos moves ~ply
+          ~pv:false ~check:false ~alpha:(alpha - 1) ~beta:alpha in
       Option.some_if (score < alpha) score
     else None
 
@@ -1117,6 +1120,8 @@ module Main = struct
           Iterator.fold_until it ~init:None ~finish:Fn.id ~f)
     else None
 
+  (* Confirm the move with quiescence search before dropping down to the
+     full search. *)
   and probcut_child st pos ~eval ~depth ~ply ~beta_cut = fun k (m, order) ->
     let open Continue_or_stop in
     if probcut_skip st m ~eval ~beta_cut ~ply ~order then Continue None
@@ -1127,19 +1132,16 @@ module Main = struct
       State.set_move st ply m;
       State.push_history st child;
       State.inc_nodes st;
-      (* Confirm with quiescence search first. *)
       let score = Int.neg @@ Quiescence.go st child
           ~alpha ~beta ~ply:(ply + 1) ~pv:false in
       let score =
         if score >= beta_cut then
-          (* Do the full search. *)
           let depth = depth - (probcut_min_depth - 1) in
           Int.neg @@ go st child ~alpha ~beta ~depth
             ~ply:(ply + 1) ~pv:false
         else score in
       State.pop_history st child;
       if score >= beta_cut then
-        (* Save this cutoff in the TT. *)
         let depth = depth - (probcut_min_depth - 2) in
         Tt.store st.tt pos ~ply ~depth ~score
           ~best:(Uopt.some m) ~eval:(Uopt.some eval)
@@ -1224,16 +1226,16 @@ module Main = struct
 
      - Any time we're in check
      - Any time we're searching PV node in a PVS search
-     - Capture moves
-     - Moves that give check
+     - Captures
+     - Promotions
      - Killer moves
+     - Countermoves
   *)
-  and lmr st m ~i ~beta ~ply ~depth ~check ~pv ~improving =
+  and lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving =
     if not (check || pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && is_quiet m
-    && not @@ State.is_killer st m ply then
+    && order < Order.countermove_offset then
       let t = Bb.count @@ Child.new_threats m in
       max 0 (1 + b2in improving - t)
     else 0

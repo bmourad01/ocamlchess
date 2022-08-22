@@ -142,6 +142,10 @@ val piece_at_square_exn : t -> Square.t -> Piece.t
     square on position [pos]. *)
 val collect_all : t -> (Square.t * Piece.t) list
 
+(** [has_non_pawn_material pos c] returns [true] if the player of color [c]
+    has non-pawn material in position [pos]. *)
+val has_non_pawn_material : t -> Piece.color -> bool
+
 (** This submodule is concerned with checking the validity of a given
     position (it may not be exhaustive!). *)
 module Valid : sig

@@ -512,8 +512,6 @@ module Mop_up = struct
     0, if material >= margin then go pos c else 0
 end
 
-let is_endgame pos = Phase.weight pos > 150
-
 (* Overall evaluation of the position.
 
    This is a linear combination of weighted features, which serves as a
