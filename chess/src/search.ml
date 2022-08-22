@@ -541,6 +541,7 @@ end
    to be the best, and then search those first, hoping that the worse
    moves get pruned more effectively. *)
 module Order = struct
+  let hash_offset = inf
   let good_capture_offset = 100
   let bad_capture_offset = -100
   let promote_offset = 96
@@ -623,7 +624,7 @@ module Order = struct
            captures and castling moves. *)
         (((h * history_scale) + max - 1) / max) + history_offset in
     score_aux moves ~f:(fun m ->
-        if is_hash m then inf
+        if is_hash m then hash_offset
         else match See.go m with
           | Some see when see >= 0 -> good_capture_offset + see
           | Some see -> bad_capture_offset + see
@@ -644,7 +645,7 @@ module Order = struct
     List.filter moves ~f |> function
     | [] -> None
     | moves -> Some (score_aux moves ~f:(fun m ->
-        if is_hash m then inf
+        if is_hash m then hash_offset
         else
           let p = promote_by_value m in
           if p <> 0 then p else match See.go m with
@@ -655,6 +656,16 @@ module Order = struct
      quiet check evasions. *)
   let qescore (st : state) pos moves = score_aux moves ~f:(fun m ->
       Array.unsafe_get st.move_history @@ State.history_idx m)
+
+  (* Score the moves for ProbCut. *)
+  let pcscore moves ~ttentry =
+    let is_hash = is_hash ttentry in
+    let f m = Child.is_capture m || is_hash m in
+    List.filter moves ~f |> function
+    | [] -> None
+    | moves -> Some (score_aux moves ~f:(fun m ->
+        if is_hash m then hash_offset
+        else Option.value_exn (See.go m)))
 end
 
 (* Helpers for the search. *)
@@ -1097,18 +1108,17 @@ module Main = struct
     let beta_cut = beta + probcut_margin improving in
     if depth >= probcut_min_depth
     && not (is_mate beta || is_mated beta)
-    && probcut_tt ~ply ~depth ~beta_cut ~ttentry
-    && Threats.(count @@ get pos @@ Position.active pos) > 0 then
-      let finish () = None in
-      let f = probcut_child st pos ~depth ~ply ~beta_cut in
-      match Order.qscore moves ~ttentry ~check:true with
-      | Some it -> Iterator.fold_until it ~init:() ~finish ~f
-      | None -> None
+    && probcut_tt ~ply ~depth ~beta_cut ~ttentry then
+      Order.pcscore moves ~ttentry |> Option.bind ~f:(fun it ->
+          let eval = State.lookup_eval_unsafe st ply in
+          let f = probcut_child st pos ~eval ~depth ~ply ~beta_cut in
+          Iterator.fold_until it ~init:() ~finish:(fun () -> None) ~f)
     else None
 
-  and probcut_child st pos ~depth ~ply ~beta_cut = fun () (m, _) ->
+  and probcut_child st pos ~eval ~depth ~ply ~beta_cut = fun () (m, order) ->
     let open Continue_or_stop in
-    if not @@ State.is_excluded st ply m then
+    if not (State.is_excluded st ply m)
+    && (order = Order.hash_offset || order * 100 >= beta_cut - eval) then
       let alpha = -beta_cut in
       let beta = -beta_cut + 1 in
       let child = Child.self m in
@@ -1129,9 +1139,9 @@ module Main = struct
       if score >= beta_cut then
         (* Save this cutoff in the TT. *)
         let depth = depth - (probcut_min_depth - 2) in
-        let eval = Uopt.of_option @@ State.lookup_eval st ply in
-        Tt.store st.tt pos ~ply ~depth ~score ~eval
-          ~best:(Uopt.some m) ~bound:Lower ~pv:false;
+        Tt.store st.tt pos ~ply ~depth ~score
+          ~best:(Uopt.some m) ~eval:(Uopt.some eval)
+          ~bound:Lower ~pv:false;
         Stop (Some score)
       else if st.stopped then Stop None
       else Continue ()
