@@ -1117,8 +1117,8 @@ module Main = struct
 
   and probcut_child st pos ~eval ~depth ~ply ~beta_cut = fun () (m, order) ->
     let open Continue_or_stop in
-    if not (State.is_excluded st ply m)
-    && (order = Order.hash_offset || order * 100 >= beta_cut - eval) then
+    if probcut_skip st m ~eval ~beta_cut ~ply ~order then Continue ()
+    else
       let alpha = -beta_cut in
       let beta = -beta_cut + 1 in
       let child = Child.self m in
@@ -1145,7 +1145,16 @@ module Main = struct
         Stop (Some score)
       else if st.stopped then Stop None
       else Continue ()
-    else Continue ()
+
+  (* Excluded moves as well as moves whose SEE values are below our
+     threshold should be skipped. Note that we convert the score to
+     centipawns.
+  *)
+  and probcut_skip st m ~eval ~beta_cut ~ply ~order =
+    State.is_excluded st ply m || begin
+      order <> Order.hash_offset &&
+      order * 100 < beta_cut - eval
+    end
 
   (* If the evaluation was cached then make sure that it doesn't refute
      our hypothesis. *)
