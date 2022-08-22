@@ -41,26 +41,16 @@ type state = {
   mutable side       : Piece.color;
 }
 
-(* Maximum number of pieces in a legal position. *)
-let swap_len = 32
-
 let[@inline] init is_en_passant from dst pos victim =
-  let state = {
-    from;
-    attackers = attackers pos dst @@ Position.all_board pos;
-    occupation =
-      (* Special case for en passant captures. *)
-      if is_en_passant then
-        Bb.(full -- Option.value_exn (Position.en_passant_pawn pos))
-      else Bb.(full -- dst);
-    target_val =
-      (* Start with the value of the initial attacker. *)
-      Piece.(Kind.value @@ kind @@ Position.piece_at_square_exn pos from);
-    depth = 0;
-    side = Position.active pos;
-  } in
-  let swap = Array.create ~len:swap_len @@ Piece.Kind.value victim in
-  state, swap
+  let side = Position.active pos in
+  let attackers = attackers pos dst @@ Position.all_board pos in
+  let occupation =
+    if is_en_passant
+    then Bb.(full -- Option.value_exn (Position.en_passant_pawn pos))
+    else Bb.(full -- dst); in
+  let p = Position.piece_at_square_exn pos from in
+  let target_val = Piece.(Kind.value @@ kind p) in
+  {from; attackers; occupation; target_val; depth = 0; side}
 
 (* Simple negamax search with a branching factor of 1. *)
 let[@inline] rec evaluate swap depth =
@@ -72,51 +62,52 @@ let[@inline] rec evaluate swap depth =
     evaluate swap depth
   else Array.unsafe_get swap 0
 
-let[@inline] see m pos is_en_passant victim =
+(* We're using `Base.Array.exists`, which starts from the end
+   of the list. *)
+let[@inline] lva_order pos = [|
+  Position.king   pos, Piece.King;
+  Position.queen  pos, Piece.Queen;
+  Position.rook   pos, Piece.Rook;
+  Position.bishop pos, Piece.Bishop;
+  Position.knight pos, Piece.Knight;
+  Position.pawn   pos, Piece.Pawn;
+|]
+
+(* Calculate the mask for attackers on this turn. Pinned pieces shouldn't
+   be able to attack if the pinners haven't moved yet. *)
+let[@inline] attacker_mask pos all us st =
+  let mask = Bb.(st.attackers & us) in
+  let pinners = Position.pinners pos @@ Piece.Color.opposite st.side in
+  if Bb.((all & st.occupation & pinners) <> empty)
+  then Bb.(mask - Position.pinned pos st.side)
+  else mask
+
+(* Get the least valuable piece that is currently able to attack the
+   square.
+
+   Note that if we try to attack with the king, it can only be when the
+   opposite side to move has no attackers left.
+*)
+let[@inline] lva pos all order st =
+  let us = Position.board_of_color pos st.side in
+  let mask = attacker_mask pos all us st in
+  let them = Bb.(all - us) in
+  Bb.(mask <> empty) && Array.exists order ~f:(function
+      | _, Piece.King when Bb.((st.attackers & them) <> empty) -> false
+      | b, k -> match Bb.(first_set (mask & b)) with
+        | None -> false
+        | Some sq ->
+          st.target_val <- Piece.Kind.value k;
+          st.from <- sq;
+          true)
+
+let see m pos is_en_passant victim =
   let src = Move.src m in
   let dst = Move.dst m in
-  let st, swap = init is_en_passant src dst pos victim in
-  let[@inline] update_swap () =
-    let s1 = Array.unsafe_get swap (st.depth - 1) in
-    Array.unsafe_set swap st.depth (st.target_val - s1) in
+  let st = init is_en_passant src dst pos victim in
+  let swap = Array.create ~len:Square.count @@ Piece.Kind.value victim in
   let all = Position.all_board pos in
-  let lva =
-    (* `Base.Array.exists` starts from the last element in the array...
-       go figure. *)
-    let order = [|
-      Position.king   pos, Piece.King;
-      Position.queen  pos, Piece.Queen;
-      Position.rook   pos, Piece.Rook;
-      Position.bishop pos, Piece.Bishop;
-      Position.knight pos, Piece.Knight;
-      Position.pawn   pos, Piece.Pawn;
-    |] in
-    (* Get the least valuable piece that is currently able to attack the
-       square. *)
-    fun[@inline] () ->
-      let pinners = Position.pinners pos @@ Piece.Color.opposite st.side in
-      let pinned = Position.pinned pos st.side in
-      let us = Position.board_of_color pos st.side in
-      let them = Bb.(all - us) in
-      let mask = Bb.(st.attackers & us) in
-      let mask =
-        (* Pinned pieces shouldn't be able to attack if the pinners haven't
-           moved yet. *)
-        if Bb.((all & st.occupation & pinners) <> empty)
-        then Bb.(mask - pinned)
-        else mask in
-      Bb.(mask <> empty) && Array.exists order ~f:(function
-          (* We can't attack with the king if our opponent still has pieces left
-             to exchange. Since we've used up our remaining pieces, we terminate
-             the evaluation here. *)
-          | _, Piece.King when Bb.((st.attackers & them) <> empty) -> false
-          | b, k -> match Bb.(first_set (mask & b)) with
-            | None -> false
-            | Some sq ->
-              st.target_val <- Piece.Kind.value k;
-              st.from <- sq;
-              true) in
-  (* Main loop. *)
+  let order = lva_order pos in
   let[@inline] rec loop () =
     (* Remove the attacker from the board. *)
     st.attackers <- Bb.(st.attackers -- st.from);
@@ -126,12 +117,12 @@ let[@inline] see m pos is_en_passant victim =
     let sliders = sliders pos dst Bb.(all & st.occupation) in
     let mask = Position.board_of_color pos st.side in
     st.attackers <- Bb.((st.attackers + (sliders & mask)) & st.occupation);
-    (* Other side to move. *)
+    (* Next iteration. *)
     st.side <- Piece.Color.opposite st.side;
     st.depth <- st.depth + 1;
-    (* Find the least valuable attacker, if they exist. *)
-    update_swap ();
-    if lva () then loop () in
+    let v = st.target_val - Array.unsafe_get swap (st.depth - 1) in
+    Array.unsafe_set swap st.depth v;
+    if lva pos all order st then loop () in
   loop ();
   (* Evaluate the material gains/losses. *)
   evaluate swap st.depth
