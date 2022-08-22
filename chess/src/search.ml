@@ -1226,7 +1226,7 @@ module Main = struct
 
      - Any time we're in check
      - Any time we're searching PV node in a PVS search
-     - Captures
+     - Good captures
      - Promotions
      - Killer moves
      - Countermoves
