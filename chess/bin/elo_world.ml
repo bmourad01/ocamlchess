@@ -78,6 +78,21 @@ module Equalizer = struct
     visited_black : int Map.M(Square).t;
   }
 
+  let init_visited parent state =
+    let visited_white =
+      if Map.is_empty state.visited_white then
+        Position.collect_color parent White |>
+        List.fold ~init:state.visited_white ~f:(fun m (sq, _) ->
+            Map.set m ~key:sq ~data:1)
+      else state.visited_white in
+    let visited_black =
+      if Map.is_empty state.visited_black then
+        Position.collect_color parent Black |>
+        List.fold ~init:state.visited_black ~f:(fun m (sq, _) ->
+            Map.set m ~key:sq ~data:1)
+      else state.visited_black in
+    {state with visited_white; visited_black}
+
   let least_moved moved moves = best moves ~eval:(fun m ->
       match Map.find moved @@ Move.src @@ Child.move m with
       | Some n -> Some (-n)
@@ -125,6 +140,7 @@ module Equalizer = struct
 
   let choice state moves =
     let parent = Child.parent @@ List.hd_exn moves in
+    let state = init_visited parent state in
     let active = Position.active parent in
     let visited = match active with
       | White -> state.visited_white
@@ -153,28 +169,14 @@ module Equalizer = struct
     m, state
 
   let state =
-    let moved = Map.empty (module Square) in
-    let visited_white = Map.of_alist_exn (module Square) [
-        Square.a1, 1; Square.b1, 1; Square.c1, 1; Square.d1, 1;
-        Square.e1, 1; Square.f1, 1; Square.g1, 1; Square.h1, 1;
-        Square.a2, 1; Square.b2, 1; Square.c2, 1; Square.d2, 1;
-        Square.e2, 1; Square.f2, 1; Square.g2, 1; Square.h2, 1;
-      ] in
-    let visited_black = Map.of_alist_exn (module Square) [
-        Square.a7, 1; Square.b7, 1; Square.c7, 1; Square.d7, 1;
-        Square.e7, 1; Square.f7, 1; Square.g7, 1; Square.h7, 1;
-        Square.a8, 1; Square.b8, 1; Square.c8, 1; Square.d8, 1;
-        Square.e8, 1; Square.f8, 1; Square.g8, 1; Square.h8, 1;
-      ] in
-    {moved; visited_white; visited_black}
+    let empty = Map.empty (module Square) in
+    {moved = empty; visited_white = empty; visited_black = empty}
 
   let name = "equalizer"
   let create = thunk @@ Player.create ~choice ~state ~name
       ~desc:"The player that prefers to move pieces that have been moved the \
              fewest number of times, then prefers to move to squares that \
-             have been visited the least number of times. The behavior of \
-             this player is undefined when not playing from the default \
-             starting position."
+             have been visited the least number of times."
 end
 
 module Generous = struct
