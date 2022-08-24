@@ -1860,9 +1860,12 @@ module See = struct
     let side = pos.active in
     let attackers = attackers pos dst @@ all_board pos in
     let occupation =
-      if is_en_passant
-      then Bb.(full -- Option.value_exn (en_passant_pawn pos))
-      else Bb.(full -- dst); in
+      let sq =
+        if is_en_passant then
+          en_passant_pawn_aux pos.active @@
+          Uopt.unsafe_value pos.en_passant
+        else dst in
+      Bb.(full -- sq) in
     let p = piece_at_square_exn pos from in
     let target_val = Piece.(Kind.value @@ kind p) in
     {from; attackers; occupation; target_val; depth = 0; side}
