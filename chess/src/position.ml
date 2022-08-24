@@ -44,13 +44,13 @@ module T = struct
     mutable fullmove     : int;
     mutable hash         : Zobrist.key;
     mutable pawn_hash    : Zobrist.key;
-    mutable num_checkers : int Lazy.t;
+    mutable checkers     : Bb.t Lazy.t;
     mutable checks       : checks Lazy.t;
   } [@@deriving fields]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
-  let[@inline] num_checkers pos = Lazy.force pos.num_checkers
-  let[@inline] in_check pos = num_checkers pos > 0
+  let[@inline] checkers pos = Lazy.force pos.checkers
+  let[@inline] in_check pos = Bb.(checkers pos <> empty)
 
   (* We make an explicit copy because our move generator will return
      a new position (thus adhering to a functional style). *)
@@ -70,7 +70,7 @@ module T = struct
     fullmove     = pos.fullmove;
     hash         = pos.hash;
     pawn_hash    = pos.pawn_hash;
-    num_checkers = pos.num_checkers;
+    checkers     = pos.checkers;
     checks       = pos.checks;
   }
 end
@@ -436,20 +436,6 @@ module Analysis = struct
       {wpinned; bpinned; wpinners; bpinners; wsquares; bsquares}
     end
 
-  (* Calculate the set of inactive pieces that are checking the king. *)
-  let[@inline] checkers pos ~inactive_board =
-    let open Bb in
-    let checks = Lazy.force pos.checks in
-    let squares = match pos.active with
-      | Piece.White -> checks.wsquares
-      | Piece.Black -> checks.bsquares in
-    let q = pos.queen in
-    let p = Array.unsafe_get squares Piece.Kind.pawn   & pos.pawn in
-    let n = Array.unsafe_get squares Piece.Kind.knight & pos.knight in
-    let b = Array.unsafe_get squares Piece.Kind.bishop & (pos.bishop + q) in
-    let r = Array.unsafe_get squares Piece.Kind.rook   & (pos.rook + q) in
-    (p + n + b + r) & inactive_board
-
   (* For each pinned piece, calculate a pin mask to restrict its movement. *)
   let[@inline] pin_masks pos ~king_sq =
     let init = Map.empty (module Square) in
@@ -503,7 +489,7 @@ module Analysis = struct
     (* Pinned pieces. *)
     let pin_masks = pin_masks pos ~king_sq in
     (* Pieces checking our king. *)
-    let checkers = checkers pos ~inactive_board in
+    let checkers = checkers pos in
     (* Number of checkers is important for how we can decide to get out of
        check. *)
     let num_checkers = Bb.count checkers in
@@ -521,10 +507,19 @@ end
 
 (* Miscellaneous rules *)
 
-let calculate_num_checkers pos =
-  set_num_checkers pos @@ lazy begin
-    let inactive_board = inactive_board pos in
-    Bb.count @@ Analysis.checkers pos ~inactive_board
+let calculate_checkers pos =
+  let open Bb in
+  set_checkers pos @@ lazy begin
+    let checks = Lazy.force pos.checks in
+    let squares = match pos.active with
+      | Piece.White -> checks.wsquares
+      | Piece.Black -> checks.bsquares in
+    let q = pos.queen in
+    let p = Array.unsafe_get squares Piece.Kind.pawn   & pos.pawn in
+    let n = Array.unsafe_get squares Piece.Kind.knight & pos.knight in
+    let b = Array.unsafe_get squares Piece.Kind.bishop & (pos.bishop + q) in
+    let r = Array.unsafe_get squares Piece.Kind.rook   & (pos.rook + q) in
+    (p + n + b + r) & inactive_board pos
   end
 
 let is_insufficient_material pos =
@@ -731,8 +726,7 @@ module Valid = struct
       else E.return ()
 
     let check_checkers pos =
-      let inactive_board = inactive_board pos in
-      let checkers = Analysis.checkers pos ~inactive_board in
+      let checkers = checkers pos in
       let num_checkers = Bb.count checkers in
       if num_checkers >= 3
       then E.fail @@ Invalid_number_of_checkers (pos.active, num_checkers)
@@ -1078,12 +1072,12 @@ module Fen = struct
       parse_halfmove halfmove >>= fun halfmove ->
       parse_fullmove fullmove >>= fun fullmove ->
       let pos = Fields.create ~hash:0L ~pawn_hash:0L
-          ~num_checkers:(lazy 0) ~checks:(lazy empty_checks)
+          ~checkers:(lazy Bb.empty) ~checks:(lazy empty_checks)
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove in
       set_hash pos @@ Hash.of_position pos;
       set_pawn_hash pos @@ Hash.of_pawns pos;
-      calculate_num_checkers pos;
+      calculate_checkers pos;
       Analysis.calculate_checks pos;
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
@@ -1561,7 +1555,7 @@ module Movegen = struct
       Makemove.Fields_of_info.create
         ~en_passant ~en_passant_pawn ~piece
         ~castle_side ~direct_capture;
-      calculate_num_checkers self;
+      calculate_checkers self;
       calculate_checks self;
       self
     end in
@@ -1778,9 +1772,7 @@ module San = struct
   let pp ppf child =
     let src, dst, promote = Move.decomp @@ Child.move child in
     let pos = Child.self child in
-    let num_checkers =
-      let inactive_board = inactive_board pos in
-      Bb.count @@ Analysis.checkers pos ~inactive_board in
+    let num_checkers = Bb.count @@ checkers pos in
     let checkmate = num_checkers <> 0 && List.is_empty @@ children pos in
     begin match Child.castle_side child with
       (* Castling *)

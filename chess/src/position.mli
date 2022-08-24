@@ -331,11 +331,11 @@ module Threats : sig
   include Base.Comparable.S with type t := t
 end
 
-(** [num_checkers pos] returns the number of pieces that are checking the
-    king for the active player of position [pos]. *)
-val num_checkers : t -> int
+(** [checkers pos] returns the bitboard of inactive pieces that are checking
+    the active king of position [pos]. *)
+val checkers : t -> Bitboard.t
 
-(** [in_check pos] is shorthand for [num_checkers pos > 0]. *)
+(** [in_check pos] is shorthand for [Bitboard.(checkers pos <> 0)]. *)
 val in_check : t -> bool
 
 (** [is_insufficient_material pos] returns [true] if the game may result in a
