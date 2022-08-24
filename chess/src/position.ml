@@ -81,34 +81,32 @@ let[@inline] inactive pos = Piece.Color.opposite pos.active
 
 let[@inline] pinned pos c =
   let checks = Lazy.force pos.checks in
-  match c with
-  | Piece.White -> checks.wpinned
-  | Piece.Black -> checks.bpinned
+  let a = (Obj.magic checks : Bb.t array) in
+  let i = Piece.Color.to_int c in
+  Array.unsafe_get a i
 
 let[@inline] pinners pos c =
   let checks = Lazy.force pos.checks in
-  match c with
-  | Piece.White -> checks.wpinners
-  | Piece.Black -> checks.bpinners
+  let a = (Obj.magic checks : Bb.t array) in
+  let i = Piece.Color.to_int c in
+  Array.unsafe_get a (i + 2)
 
 (* Bitboard accessors *)
 
 let[@inline] all_board pos = Bb.(pos.white + pos.black)
 
-let[@inline] board_of_color pos = function
-  | Piece.White -> pos.white
-  | Piece.Black -> pos.black
+let[@inline] board_of_color pos c =
+  let a = ((Obj.magic (pos : t)) : Bb.t array) in
+  let i = Piece.Color.to_int c in
+  Array.unsafe_get a i
 
 let[@inline] active_board pos = board_of_color pos pos.active
 let[@inline] inactive_board pos = board_of_color pos @@ inactive pos
 
-let[@inline] board_of_kind pos = function
-  | Piece.Pawn -> pos.pawn
-  | Piece.Knight -> pos.knight
-  | Piece.Bishop -> pos.bishop
-  | Piece.Rook -> pos.rook
-  | Piece.Queen -> pos.queen
-  | Piece.King -> pos.king
+let[@inline] board_of_kind pos k =
+  let a = ((Obj.magic (pos : t)) : Bb.t array) in
+  let i = Piece.Kind.to_int k in
+  Array.unsafe_get a (i + 2)
 
 let[@inline] board_of_piece pos p =
   let c, k = Piece.decomp p in
