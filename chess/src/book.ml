@@ -16,33 +16,6 @@ type t = {
 
 let filename book = book.filename
 
-let i8 b i o = Char.to_int @@ Bytes.unsafe_get b (i + o)
-
-let i64_be b o =
-  let open Int64 in
-  let i8 b i o = of_int @@ i8 b i o in
-  let b0 = i8 b 0 o in
-  let b1 = i8 b 1 o in
-  let b2 = i8 b 2 o in
-  let b3 = i8 b 3 o in
-  let b4 = i8 b 4 o in
-  let b5 = i8 b 5 o in
-  let b6 = i8 b 6 o in
-  let b7 = i8 b 7 o in
-  (b0 lsl 56) lor
-  (b1 lsl 48) lor
-  (b2 lsl 40) lor
-  (b3 lsl 32) lor
-  (b4 lsl 24) lor
-  (b5 lsl 16) lor
-  (b6 lsl  8) lor
-  (b7 lsl  0)
-
-let i16_be b o =
-  let b0 = i8 b 0 o in
-  let b1 = i8 b 1 o in
-  (b0 lsl 8) lor b1
-
 (* Moves are stored compactly within a 16-bit integer:
 
    +--------+-----------------+----------+----------+----------+----------+
@@ -85,24 +58,25 @@ let decode_move i =
    - `weight` is the measurement of how "good" the response was.
    - `depth` and `score` are unused.
 *)
+let[@inline] read_entry buf o =
+  let key = Bigstring.get_int64_t_be buf ~pos:o in
+  let move = decode_move @@ Bigstring.get_int16_be buf ~pos:(o + 8) in
+  let weight = Bigstring.get_int16_be buf ~pos:(o + 10) in
+  let depth = Bigstring.get_int16_be buf ~pos:(o + 12) in
+  let score = Bigstring.get_int16_be buf ~pos:(o + 14) in
+  key, {move; weight; depth; score}
+
 let read file =
   let book = Hashtbl.create (module Int64) in
-  let len = entry_size in
-  let buf = Bytes.create len in
-  let rec read () = match In_channel.input file ~buf ~pos:0 ~len with
-    | n when n = len ->
-      let key = i64_be buf 0 in
-      let move = decode_move @@ i16_be buf 8 in
-      let weight = i16_be buf 10 in
-      let depth = i16_be buf 12 in
-      let score = i16_be buf 14 in
-      Hashtbl.add_multi book ~key ~data:{move; weight; depth; score};
-      read ()
-    | 0 -> book
-    | n ->
-      failwithf "Invalid length of book file, must be divisible \
-                 by %d (%d bytes remaining)" len n () in
-  read ()
+  let buf = Bigstring.of_string @@ In_channel.input_all file in
+  let len = Bigstring.length buf in
+  let o = ref 0 in
+  while !o < len do
+    let key, data = read_entry buf !o in
+    Hashtbl.add_multi book ~key ~data;
+    o := !o + entry_size
+  done;
+  book
 
 let create filename =
   let table = In_channel.with_file filename ~binary:true ~f:read in
