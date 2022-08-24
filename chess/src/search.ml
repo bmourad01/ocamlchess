@@ -1226,16 +1226,19 @@ module Main = struct
 
      - Any time we're in check
      - Any time we're searching PV node in a PVS search
-     - Good captures
+     - Captures
      - Promotions
      - Killer moves
      - Countermoves
+     - Giving check
   *)
   and lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving =
     if not (check || pv)
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order < Order.countermove_offset then
+    && order > Order.bad_capture_offset
+    && order < Order.countermove_offset
+    && not (Child.gives_check m) then
       let t = Bb.count @@ Child.new_threats m in
       max 0 (1 + b2in improving - t)
     else 0
