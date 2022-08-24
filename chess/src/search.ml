@@ -7,6 +7,7 @@ module Pre = Precalculated
 module Child = Position.Child
 module Threats = Position.Threats
 module Oa = Option_array
+module See = Position.See
 
 let[@inline][@specialise] (>>?) x f = match x with
   | None -> f ()
