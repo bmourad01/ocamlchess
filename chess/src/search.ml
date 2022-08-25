@@ -197,7 +197,8 @@ module Tt = struct
     else if is_mated score then score - ply
     else score
 
-  (* Decide whether to keep or replace an existing entry. *)
+  (* Decide whether we should keep an existing entry, based on the
+     parameters of the new entry. *)
   let keep (e : entry) depth bound pv =
     let ex = b2i @@ equal_bound bound Exact in
     depth + 2 * b2i pv <= e.depth - ex
