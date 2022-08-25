@@ -690,7 +690,7 @@ module Search = struct
   }
 
   let update_quiet st m ~ply ~depth =
-    if not @@ Child.is_capture m then begin
+    if is_quiet m then begin
       State.update_killer st ply m;
       State.update_move_history st m depth;
       State.update_countermove st ply m;
