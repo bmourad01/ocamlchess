@@ -983,7 +983,6 @@ module Main = struct
       | Second _ when st.stopped -> Stop t.score
       | Second ext ->
         let r = lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving in
-        let r = if ext > 0 then max 0 (r - 1) else r in
         let pos = Child.self m in
         State.set_move st ply m;
         State.inc_nodes st;
@@ -1221,31 +1220,36 @@ module Main = struct
 
   (* Late move reduction.
 
-     For moves that are likely to fail low, reduce the depth of the search.
-     However, to avoid losing precision, we have to skip under the following
-     conditions:
+     For moves that are ordered later in the list, try reducing the depth
+     of the search. We should avoid doing this for the first couple of
+     moves, or if the depth is too low.
+
+     Note that singular extensions will only happen for TT moves, which
+     are always ordered first, so we don't need to worry about it interacting
+     with the results of LMR.
+
+     Additionally, we want to avoid reducing on moves that are typically
+     forcing (or forced), which includes:
 
      - Any time we're in check
-     - Any time we're searching PV node in a PVS search
-     - Captures
+     - Good captures
      - Promotions
      - Killer moves
      - Countermoves
      - Giving check
   *)
   and lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving =
-    if not (check || pv)
+    if not check
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order > Order.bad_capture_offset
     && order < Order.countermove_offset
     && not (Child.gives_check m) then
       let t = Bb.count @@ Child.new_threats m in
-      max 0 (1 + b2in improving - t)
+      1 + b2in improving - t
     else 0
 
   and lmr_min_depth = 3
-  and lmr_min_index = 1
+  and lmr_min_index = 2
 
   (* Principal variation search.
 
