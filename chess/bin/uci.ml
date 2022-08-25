@@ -215,7 +215,6 @@ let uci =
   let opt name t = Option.{name; typ = Options.to_uci t} in
   fun () ->
     List.iter id ~f:(fun cmd -> Format.printf "%a\n%!" pp cmd);
-    Format.printf "\n%!";
     Hashtbl.iteri Options.tbl ~f:(fun ~key:name ~data:Options.(E (t, _)) ->
         Format.printf "%a\n%!" Option.pp @@ opt name t);
     Format.printf "%a\n%!" pp Uciok
