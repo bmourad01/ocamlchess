@@ -1514,7 +1514,6 @@ module Movegen = struct
     let[@inline] king   sq a = Bb.(King.(move sq a + castle a))
   end
 
-  (* Calculate the side that we're castling on, if any. *)
   let[@inline] castle_side piece src dst =
     if Piece.is_king piece then
       let file = Square.file src in
@@ -1526,29 +1525,26 @@ module Movegen = struct
       else Uopt.none
     else Uopt.none
 
-  (* Actually runs the makemove routine and returns relevant info. *)
   let[@inline] run_makemove pos ~src ~dst ~promote ~piece ~en_passant_pawn =
-    (* Are we capturing on the en passant square? *)
     let is_en_passant = Piece.is_pawn piece && is_en_passant_square pos dst in
-    (* The side we're castling on, if any. *)
     let castle_side = castle_side piece src dst in
-    (* All captures that are not en passant. *)
     let direct_capture =
       if is_en_passant then Uopt.none
       else piece_at_square_uopt pos dst in
-    (* Calculate the new position. *)
+    let capture =
+      if is_en_passant then Uopt.some Piece.Pawn
+      else if Uopt.is_some direct_capture then
+        Uopt.some @@ Piece.kind @@ Uopt.unsafe_value direct_capture
+      else Uopt.none in
+    (* We will defer running makemove until the new position is actually
+       needed. Unsurprisingly, this gives a significant speedup during
+       alpha-beta search. *)
     let self = lazy begin
-      (* Create a unique copy of the position, which we are free to mutate. *)
       let self = copy pos in
-      (* The en passant square, which we only care about if a threat is
-         possible. *)
       let en_passant =
         if Uopt.is_some en_passant_pawn then pos.en_passant else Uopt.none in
-      (* The pawn "in front" of the en passant square, which we only care
-         about if we are capturing it on this move. *)
       let en_passant_pawn =
         if is_en_passant then en_passant_pawn else Uopt.none in
-      (* Make the move! *)
       Makemove.go src dst promote self @@
       Makemove.Fields_of_info.create
         ~en_passant ~en_passant_pawn ~piece
@@ -1557,15 +1553,8 @@ module Movegen = struct
       calculate_checks self;
       self
     end in
-    (* The captured piece kind. *)
-    let capture =
-      if is_en_passant then Uopt.some Piece.Pawn
-      else if Uopt.is_some direct_capture then
-        Uopt.some @@ Piece.kind @@ Uopt.unsafe_value direct_capture
-      else Uopt.none in
     self, capture, is_en_passant, castle_side
 
-  (* Accumulate a list of legal moves. *)
   let[@inline] accum_makemove acc move ~parent ~en_passant_pawn ~piece =
     let src, dst, promote = Move.decomp move in
     let self, capture, is_en_passant, castle_side =
@@ -1573,8 +1562,6 @@ module Movegen = struct
     Child.Fields.create
       ~move ~parent ~self ~capture ~is_en_passant ~castle_side :: acc
 
-  (* If we're promoting, then the back rank should be the only
-     available squares. *)
   let[@inline] is_promote_rank b = function
     | Piece.White -> Bb.((b & rank_8) = b)
     | Piece.Black -> Bb.((b & rank_1) = b)
@@ -1654,7 +1641,8 @@ module Movegen = struct
       f a.king_sq Piece.King ~init:[] ~a
 end
 
-let legal_moves pos = Movegen.(go bb_to_moves) @@ Analysis.create pos
+let legal_moves pos =
+  Movegen.(go bb_to_moves) @@ Analysis.create pos
 
 let capture_moves pos =
   Movegen.(go_captures bb_to_moves) @@ Analysis.create pos
