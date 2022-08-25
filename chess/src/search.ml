@@ -690,7 +690,7 @@ module Search = struct
   }
 
   let update_quiet st m ~ply ~depth =
-    if is_quiet m then begin
+    if not @@ Child.is_capture m then begin
       State.update_killer st ply m;
       State.update_move_history st m depth;
       State.update_countermove st ply m;
@@ -698,6 +698,7 @@ module Search = struct
 
   (* Return true if we fail high. *)
   let cutoff ?(q = false) st t m ~score ~beta ~ply ~depth ~pv =
+    let result = ref false in
     if score > t.score then begin
       t.score <- score;
       if score > t.alpha then begin
@@ -709,10 +710,11 @@ module Search = struct
         end else begin
           update_quiet st m ~ply ~depth;
           t.bound <- Lower;
+          result := true
         end
       end
     end;
-    Tt.equal_bound t.bound Lower
+    !result
 
   let qcutoff = cutoff ~q:true ~depth:0
 
