@@ -1,7 +1,10 @@
 #include <caml/mlvalues.h>
 
-/* Cast two 64-bit numbers to 128-bit numbers, multiply them together, and grab
-   the high 64 bits as the result.
+/* Cast two 64-bit numbers to 128-bit numbers, multiply them together, and
+   grab the high 64 bits as the result.
+
+   We use this for indexing into the transposition table. The idea is taken
+   straight from Stockfish.
 
    On an AMD64 machine, this is already computed for us in hardware:
 
