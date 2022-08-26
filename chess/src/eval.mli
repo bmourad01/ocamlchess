@@ -1,6 +1,21 @@
 (** This module implements the algorithm for statically evaluating Chess
     positions. *)
 
+(** This submodule exposes functionality for determining the current phase
+    of the game. *)
+module Phase : sig
+  (** The maximum phase weight value  *)
+  val maximum : int
+  
+  (** Returns the phase weight of the position. This is based on the total
+      count of the non-pawn material on the board (excluding kings). *)
+  val weight : Position.t -> int
+
+  (** Returns [true] if the non-pawn material on the board (excluding kings)
+      is sufficiently low; thus, the position is in the endgame phase. *)
+  val is_endgame : Position.t -> bool
+end
+
 (** This submodule exposes weights used in material evaluations, for both
     middle and endgame positions. *)
 module Material : sig

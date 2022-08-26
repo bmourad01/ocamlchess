@@ -20,21 +20,25 @@ module Phase = struct
     rook_phase   * 4 +
     queen_phase  * 2
 
-  let max_phase = 256
+  let maximum = 256
 
+  let[@inline] weighted_count pos k p =
+    p * (Bb.count @@ Position.board_of_kind pos k)
+  
   (* Determine the current phase weight of the game. *)
   let[@inline] weight pos =
-    let f k p  = Bb.(count (Position.board_of_kind pos k)) * p in
-    let knight = f Knight knight_phase in
-    let bishop = f Bishop bishop_phase in
-    let rook   = f Rook   rook_phase   in
-    let queen  = f Queen  queen_phase  in
+    let knight = weighted_count pos Knight knight_phase in
+    let bishop = weighted_count pos Bishop bishop_phase in
+    let rook   = weighted_count pos Rook   rook_phase   in
+    let queen  = weighted_count pos Queen  queen_phase  in
     let weight = total_phase - knight - bishop - rook - queen in
-    ((weight * max_phase) + (total_phase / 2)) / total_phase
+    ((weight * maximum) + (total_phase / 2)) / total_phase
 
   (* Interpolate between opening and endgame scores. *)
   let[@inline] interpolate weight start end_ =
-    ((start * (max_phase - weight)) + (end_ * weight)) / max_phase
+    ((start * (maximum - weight)) + (end_ * weight)) / maximum
+
+  let[@inline] is_endgame pos = weight pos >= 160
 end
 
 (* Evaluates a particular feature of the position from a given player's
