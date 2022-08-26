@@ -1,5 +1,5 @@
-#include <limits.h>
 #include <caml/mlvalues.h>
+#include <limits.h>
 
 /* Cast two 64-bit numbers to 128-bit numbers, multiply them together, and
    grab the high 64 bits as the result.
