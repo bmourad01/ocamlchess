@@ -626,11 +626,13 @@ module Order = struct
             | _ -> 0 in
     let move_history =
       let max = State.move_history_max st pos in
+      let maxf = Float.of_int max in
       fun m ->
         (* We "squish" the history score so that it fits between bad
            captures and castling moves. *)
         let h = State.move_history st m in
-        (((h * history_scale) + max - 1) / max) + history_offset in
+        let m = (h * history_scale) + max - 1 in
+        Float.(to_int (of_int m / maxf)) + history_offset in
     score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
         else match See.go m with
