@@ -259,7 +259,11 @@ let is_noisy ?(check = true) m =
   Move.is_promote @@ Child.move m ||
   (check && Child.gives_check m)
 
-let is_quiet ?(check = true) = Fn.non @@ is_noisy ~check
+let is_quiet ?(check = true) =
+  Fn.non @@ is_noisy ~check
+
+let same_move a b =
+  Child.is_move a @@ Child.move b
 
 (* Our state for the entirety of the search. *)
 module State = struct
@@ -342,15 +346,15 @@ module State = struct
 
   (* Is `m` a killer move? *)
   let is_killer st m ply = match killer1 st ply with
-    | Some k when Child.same k m -> true
+    | Some k when same_move k m -> true
     | _ -> match killer2 st ply with
-      | Some k -> Child.same k m
+      | Some k -> same_move k m
       | None -> false
 
   (* Update the killer move for a particular ply. *)
   let update_killer st ply m =
     match killer1 st ply with
-    | Some k when Child.same k m -> ()
+    | Some k when same_move k m -> ()
     | None -> Oa.set_some st.killer1 ply m
     | Some k ->
       Oa.set_some st.killer2 ply k;
@@ -560,7 +564,7 @@ module Order = struct
       if Uopt.is_none best then fun _ -> false
       else
         let best = Uopt.unsafe_value best in
-        fun m -> Child.same best m
+        fun m -> same_move best m
 
   let promote_by_value m =
     Child.move m |> Move.promote |>
@@ -611,11 +615,11 @@ module Order = struct
       let k2 = State.killer2 st ply in
       let cm = State.countermove st pos ply in
       fun m -> match k1 with
-        | Some k when Child.same m k -> killer1_offset
+        | Some k when same_move m k -> killer1_offset
         | _ -> match k2 with
-          | Some k when Child.same m k -> killer2_offset
+          | Some k when same_move m k -> killer2_offset
           | _ -> match cm with
-            | Some c when Child.same m c -> countermove_offset
+            | Some c when same_move m c -> countermove_offset
             | _ -> 0 in
     let move_history =
       let max = State.move_history_max st pos in
@@ -1202,7 +1206,7 @@ module Main = struct
       && depth >= se_min_depth
       && not (State.has_excluded st ply)
       && Uopt.is_some entry.best
-      && Child.same m (Uopt.unsafe_value entry.best)
+      && same_move m (Uopt.unsafe_value entry.best)
       && entry.depth >= se_min_ttdepth depth then
         let target = ttscore - depth * 3 in
         let depth = (depth - 1) / 2 in
