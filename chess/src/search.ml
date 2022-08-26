@@ -180,11 +180,11 @@ module Tt = struct
 
   external mul_hi64 :
     (int64[@unboxed]) ->
-    (int[@untagged]) ->
+    (int64[@unboxed]) ->
     (int[@untagged]) =
     "ocamlchess_mul_hi64" "ocamlchess_mul_hi64_unboxed" [@@noalloc]
 
-  let slot tt key = mul_hi64 key @@ Oa.length tt
+  let slot tt key = mul_hi64 key @@ Int64.of_int @@ Oa.length tt
 
   let find tt pos =
     let key = Position.hash pos in
