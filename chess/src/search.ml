@@ -360,17 +360,20 @@ module State = struct
       Oa.set_some st.killer2 ply k;
       Oa.set_some st.killer1 ply m
 
-  let history_idx m =
+  let move_history_idx m =
     let c = Piece.Color.to_int @@ Position.active @@ Child.parent m in
     let m = Child.move m in
     let src = Square.to_int @@ Move.src m in
     let dst = Square.to_int @@ Move.dst m in
     ((src lsl 1) lor c) * Square.count + dst
 
+  let move_history st m =
+    Array.unsafe_get st.move_history @@ move_history_idx m
+
   (* Update the move history heuristic. *)
   let update_move_history st m depth =
     if depth > 0 then begin
-      let i = history_idx m in
+      let i = move_history_idx m in
       let d = Array.unsafe_get st.move_history i + (depth * depth) in
       Array.unsafe_set st.move_history i d;
       match Position.active @@ Child.parent m with
@@ -624,10 +627,9 @@ module Order = struct
     let move_history =
       let max = State.move_history_max st pos in
       fun m ->
-        let i = State.history_idx m in
-        let h = Array.unsafe_get st.move_history i in
         (* We "squish" the history score so that it fits between bad
            captures and castling moves. *)
+        let h = State.move_history st m in
         (((h * history_scale) + max - 1) / max) + history_offset in
     score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
@@ -658,10 +660,10 @@ module Order = struct
             | Some value -> value
             | None -> 0))
 
-  (* Score the moves for quiescence search, when we generate
+  (* Score the moves for quiescence search when we generate
      quiet check evasions. *)
-  let qescore (st : state) pos moves = score_aux moves ~f:(fun m ->
-      Array.unsafe_get st.move_history @@ State.history_idx m)
+  let qescore (st : state) pos moves =
+    score_aux moves ~f:(State.move_history st)
 
   (* Score the moves for ProbCut. *)
   let pcscore moves ~ttentry =
