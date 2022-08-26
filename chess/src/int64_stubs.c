@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <caml/mlvalues.h>
 
 /* Cast two 64-bit numbers to 128-bit numbers, multiply them together, and
@@ -17,7 +18,7 @@
 */
 
 intnat ocamlchess_mul_hi64_unboxed(uint64_t a, uint64_t b) {
-#if defined(IS_64BIT)
+#if (__WORDSIZE == 64)
   return ((__uint128_t)a * (__uint128_t)b) >> 64;
 #else
   uint64_t al = (uint32_t)a;
