@@ -66,13 +66,13 @@ let[@inline] read_entry buf o =
   let score = Bigstring.get_int16_be buf ~pos:(o + 14) in
   key, {move; weight; depth; score}
 
-let read file =
+let read filename file =
   let book = Hashtbl.create (module Int64) in
   let buf = Bigstring.of_string @@ In_channel.input_all file in
   let len = Bigstring.length buf in
   if Int.rem len entry_size <> 0 then
-    invalid_argf "Invalid size of book %d, must be divisible by %d"
-      len entry_size ()
+    invalid_argf "Invalid size %d of book %s, must be divisible by %d"
+      len filename entry_size ()
   else
     let o = ref 0 in
     while !o < len do
@@ -83,7 +83,7 @@ let read file =
     book
 
 let create filename =
-  let table = In_channel.with_file filename ~binary:true ~f:read in
+  let table = In_channel.with_file filename ~binary:true ~f:(read filename) in
   let compare x y = compare y.weight x.weight in
   Hashtbl.map_inplace table ~f:(List.sort ~compare);
   {filename; table}
