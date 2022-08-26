@@ -788,7 +788,7 @@ module Quiescence = struct
     let margin = Eval.Material.queen_mg in
     fun pos eval alpha ->
       eval + margin < alpha &&
-      Position.(has_non_pawn_material pos @@ active pos)
+      not (Eval.Phase.is_endgame pos)
 
   let static_eval st pos ~ply ~(ttentry : Tt.entry option) = match ttentry with
     | None when ply <= 0 -> Eval.go pos
@@ -1069,7 +1069,7 @@ module Main = struct
     && score >= State.lookup_eval_unsafe st ply
     && depth >= nmp_min_depth
     && not (State.has_excluded st ply)
-    && Position.(has_non_pawn_material pos @@ active pos)
+    && not (Eval.Phase.is_endgame pos)
     && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
       let r = if depth <= 6 then 2 else 3 in
       State.null_move st ply;
