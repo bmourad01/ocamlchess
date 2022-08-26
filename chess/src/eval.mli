@@ -1,12 +1,16 @@
-(** This module implements the algorithm for statically evaluating Chess
-    positions. *)
+(** This module implements an algorithm for statically evaluating Chess
+    positions.
+
+    It is essentially a linear combination of various features of a Chess
+    position, each of which are weighted by hardcoded coefficients.
+*)
 
 (** This submodule exposes functionality for determining the current phase
     of the game. *)
 module Phase : sig
   (** The maximum phase weight value  *)
   val maximum : int
-  
+
   (** Returns the phase weight of the position. This is based on the total
       count of the non-pawn material on the board (excluding kings). *)
   val weight : Position.t -> int
