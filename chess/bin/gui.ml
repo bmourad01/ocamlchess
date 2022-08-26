@@ -197,6 +197,8 @@ let print_new_pos new_pos prev moves =
       Format.printf "Static Exchange Evaluation: %d\n%!" see);
   Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "Gives check: %b\n%!" @@ Position.gives_check (Child.parent mv) m;
+  Format.printf "Phase weight: %d/%d\n%!"
+    (Eval.Phase.weight new_pos) Eval.Phase.maximum;
   Format.printf "\n%!"
 
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
@@ -287,6 +289,8 @@ let run pos ~white ~black ~delay =
   Format.printf "Initial position: %a\n%!" Position.pp pos;
   Format.printf "Hash: %016LX\n%!" @@ Position.hash pos;
   Format.printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
+  Format.printf "Phase weight: %d/%d\n%!"
+    (Eval.Phase.weight pos) Eval.Phase.maximum;
   Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "\n%!";
   let window_name = Format.sprintf "ocamlchess: %s vs. %s" white_name black_name in
