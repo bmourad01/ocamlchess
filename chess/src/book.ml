@@ -70,13 +70,17 @@ let read file =
   let book = Hashtbl.create (module Int64) in
   let buf = Bigstring.of_string @@ In_channel.input_all file in
   let len = Bigstring.length buf in
-  let o = ref 0 in
-  while !o < len do
-    let key, data = read_entry buf !o in
-    Hashtbl.add_multi book ~key ~data;
-    o := !o + entry_size
-  done;
-  book
+  if Int.rem len entry_size <> 0 then
+    invalid_argf "Invalid size of book %d, must be divisible by %d"
+      len entry_size ()
+  else
+    let o = ref 0 in
+    while !o < len do
+      let key, data = read_entry buf !o in
+      Hashtbl.add_multi book ~key ~data;
+      o := !o + entry_size
+    done;
+    book
 
 let create filename =
   let table = In_channel.with_file filename ~binary:true ~f:read in
