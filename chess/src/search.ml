@@ -200,8 +200,9 @@ module Tt = struct
   (* Decide whether we should keep an existing entry, based on the
      parameters of the new entry. *)
   let keep (e : entry) depth bound pv =
+    let pv = b2i pv * 2 in
     let ex = b2i @@ equal_bound bound Exact in
-    depth + 2 * b2i pv <= e.depth - ex
+    depth + pv + ex <= e.depth
 
   (* Store the evaluation results for the position. *)
   let store tt pos ~ply ~depth ~score ~eval ~best ~bound ~pv =
