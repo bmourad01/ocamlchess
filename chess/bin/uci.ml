@@ -8,13 +8,13 @@ module Child = Position.Child
 module State = struct
   module T = struct
     type t = {
-      pos     : Position.t;
-      history : (Zobrist.key, int) Hashtbl.t;
-      tt      : Search.tt;
-      stop    : unit promise option;
-      ponder  : unit promise option;
-      debug   : bool;
-      book    : Book.t option;
+      pos       : Position.t;
+      frequency : (Zobrist.key, int) Hashtbl.t;
+      tt        : Search.tt;
+      stop      : unit promise option;
+      ponder    : unit promise option;
+      debug     : bool;
+      book      : Book.t option;
     } [@@deriving fields]
   end
 
@@ -22,14 +22,14 @@ module State = struct
   include Monad.State.Make(T)(Monad.Ident)
   include Monad.State.T1(T)(Monad.Ident)
 
-  (* Update the position and history. If this is a new game, then
-     clear the history and TT. *)
+  (* Update the position and frequency. If this is a new game, then
+     clear the frequency and TT. *)
   let set_position ?(new_game = false) pos = update @@ fun st ->
     if new_game then begin
-      Hashtbl.clear st.history;
+      Hashtbl.clear st.frequency;
       Search.Tt.clear st.tt;
     end;
-    Position.hash pos |> Hashtbl.update st.history ~f:(function
+    Position.hash pos |> Hashtbl.update st.frequency ~f:(function
         | None -> 1 | Some n -> n + 1);
     {st with pos}
 
@@ -296,9 +296,9 @@ module Search_thread = struct
     Format.printf "%a\n%!" Uci.Send.pp @@ Bestmove bestmove
 
   (* The main search routine, should be run in a separate thread. *)
-  let search ~root ~limits ~history ~tt ~stop ~ponder =
+  let search ~root ~limits ~frequency ~tt ~stop ~ponder =
     let result = try
-        Search.go () ~root ~limits ~history ~tt ~ponder
+        Search.go () ~root ~limits ~frequency ~tt ~ponder
           ~iter:(info_of_result root tt)
       with exn ->
         Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
@@ -323,9 +323,9 @@ module Search_thread = struct
           "Error: tried to start a new search while the previous one is \
            still running")
 
-  let start ~root ~limits ~history ~tt ~stop ~ponder =
+  let start ~root ~limits ~frequency ~tt ~stop ~ponder =
     Atomic.set t @@ Option.return @@
-    Thread.create (fun () -> search ~root ~limits ~history ~tt ~stop ~ponder) ()
+    Thread.create (fun () -> search ~root ~limits ~frequency ~tt ~stop ~ponder) ()
 end
 
 module Go = struct
@@ -415,9 +415,9 @@ module Go = struct
       let limits = new_limits t (Position.active root) stop in
       (* Start the search. *)
       State.new_ponder_when t.ponder >>= fun ponder ->
-      State.(gets history) >>= fun history ->
+      State.(gets frequency) >>= fun frequency ->
       State.(gets tt) >>| fun tt ->
-      Search_thread.start ~root ~limits ~history ~tt ~stop ~ponder
+      Search_thread.start ~root ~limits ~frequency ~tt ~stop ~ponder
 end
 
 let stop = State.update @@ function
@@ -459,17 +459,16 @@ let rec loop () = match In_channel.(input_line stdin) with
       | false -> return ()
       | true -> loop ()
 
-(* Default history has the starting position. *)
-let history = Hashtbl.of_alist_exn (module Int64) [
+(* Default frequency has the starting position. *)
+let frequency = Hashtbl.of_alist_exn (module Int64) [
     Position.(hash start), 1;
   ]
 
 let exec () =
   let st =
     Monad.State.exec (loop ()) @@
-    State.Fields.create
+    State.Fields.create ~frequency
       ~pos:Position.start
-      ~history
       ~tt:(Search.Tt.create ())
       ~stop:None
       ~ponder:None

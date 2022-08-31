@@ -24,7 +24,7 @@ module Phase = struct
 
   let[@inline] weighted_count pos k p =
     p * (Bb.count @@ Position.board_of_kind pos k)
-  
+
   (* Determine the current phase weight of the game. *)
   let[@inline] weight pos =
     let knight = weighted_count pos Knight knight_phase in

@@ -177,7 +177,7 @@ type result = Result.t
 
     - [root]: the position to start the search from.
     - [limits]: the search limits.
-    - [history]: the history of how many times a position, indexed by 
+    - [frequency]: the histogram of how many times a position, indexed by 
       its Zobrist key, has occurred. A local copy of this table is made
       for the duration of the search, so there is no risk of mutating
       the existing entries.
@@ -195,7 +195,7 @@ val go :
   ?ponder:unit Bap_future.Std.future option ->
   root:Position.t ->
   limits:limits ->
-  history:(Zobrist.key, int) Base.Hashtbl.t ->
+  frequency:(Zobrist.key, int) Base.Hashtbl.t ->
   tt:tt ->
   unit ->
   result

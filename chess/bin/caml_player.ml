@@ -3,7 +3,7 @@ open Chess
 
 let limits = ref None
 
-let update_history m pos =
+let update_frequency m pos =
   Position.hash pos |> Hashtbl.update m ~f:(function
       | Some n -> n + 1 | None -> 1)
 
@@ -34,31 +34,31 @@ let print_res res =
 
 let book = ref None
 
-let try_book in_book root history =
+let try_book in_book root frequency =
   if not in_book then None
   else Option.bind !book ~f:(fun book ->
       match Book.lookup book root with
       | Ok m ->
         Format.printf "Book move: %a\n\n%!" Position.San.pp m;
         let new_pos = Position.Child.self m in
-        update_history history new_pos;
+        update_frequency frequency new_pos;
         Some m
       | Error err ->
         Format.printf "%a; using search\n\n%!" Book.Error.pp err;
         None)
 
-let choice (history, tt, in_book) moves =
+let choice (frequency, tt, in_book) moves =
   let root = Position.Child.parent @@ List.hd_exn moves in
-  update_history history root;
-  match try_book in_book root history with
-  | Some m -> m, (history, tt, true)
+  update_frequency frequency root;
+  match try_book in_book root frequency with
+  | Some m -> m, (frequency, tt, true)
   | None ->
     let limits = Option.value_exn !limits in
-    let res = Search.go ~root ~limits ~history ~tt ~iter:print_res () in
+    let res = Search.go ~root ~limits ~frequency ~tt ~iter:print_res () in
     let m = Search.Result.best_exn res in
     let new_pos = Position.Child.self m in
-    update_history history new_pos;
-    m, (history, tt, false)
+    update_frequency frequency new_pos;
+    m, (frequency, tt, false)
 
 let name = "caml"
 

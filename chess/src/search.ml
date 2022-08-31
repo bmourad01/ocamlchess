@@ -272,7 +272,7 @@ module State = struct
     limits                     : limits;
     root                       : Position.t;
     check                      : bool;
-    history                    : (Zobrist.key, int) Hashtbl.t;
+    frequency                  : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
     evals                      : int Oa.t;
@@ -298,15 +298,15 @@ module State = struct
   let move_history_size = Piece.Color.count * Square.(count * count)
   let countermove_size = (1 lsl Piece.bits) * Square.count
 
-  let create ~limits ~root ~history ~tt ~iter ~ponder =
+  let create ~limits ~root ~frequency ~tt ~iter ~ponder =
     (* Make sure that the root position is in our history. *)
-    let history = Hashtbl.copy history in
-    Position.hash root |> Hashtbl.update history ~f:(function
+    let frequency = Hashtbl.copy frequency in
+    Position.hash root |> Hashtbl.update frequency ~f:(function
         | Some n -> n | None -> 1); {
       limits;
       root;
       check = Position.in_check root;
-      history;
+      frequency;
       tt;
       start_time = Time.now ();
       evals = Oa.create ~len:max_ply;
@@ -409,14 +409,14 @@ module State = struct
 
   let stop st = st.stopped <- true
 
-  let push_history st pos =
+  let push_freq st pos =
     Position.hash pos |>
-    Hashtbl.update st.history ~f:(function
+    Hashtbl.update st.frequency ~f:(function
         | Some n -> n + 1 | None -> 1)
 
-  let pop_history st pos =
+  let pop_freq st pos =
     Position.hash pos |>
-    Hashtbl.change st.history ~f:(function
+    Hashtbl.change st.frequency ~f:(function
         | None | Some 1 -> None
         | Some n -> Some (n - 1))
 
@@ -757,13 +757,13 @@ module Search = struct
     result
 
   (* Will playing this position likely lead to a repetition draw? *)
-  let check_repetition history pos =
-    Position.hash pos |> Hashtbl.find history |>
+  let check_repetition (st :  state) pos =
+    Position.hash pos |> Hashtbl.find st.frequency |>
     Option.value_map ~default:false ~f:(fun n -> n > 2)
 
   (* Will the position lead to a draw? *)
-  let drawn (st : state) pos =
-    check_repetition st.history pos ||
+  let drawn st pos =
+    check_repetition st pos ||
     Position.halfmove pos >= 100 ||
     Position.is_insufficient_material pos
 
@@ -877,14 +877,14 @@ module Quiescence = struct
     else
       let pos = Child.self m in
       State.set_move st ply m;
-      State.push_history st pos;
+      State.push_freq st pos;
       State.inc_nodes st;
       let score = Int.neg @@ go st pos ~pv
           ~init:false
           ~ply:(ply + 1)
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
-      State.pop_history st pos;
+      State.pop_freq st pos;
       if Search.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
       else if st.stopped then Stop t.score
       else Continue ()
@@ -998,7 +998,9 @@ module Main = struct
         let pos = Child.self m in
         State.set_move st ply m;
         State.inc_nodes st;
+        State.push_freq st pos;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
+        State.pop_freq st pos;
         if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
         else if st.stopped then Stop t.score
         else Continue (i + 1)
@@ -1142,7 +1144,7 @@ module Main = struct
       let beta = -beta_cut + 1 in
       let child = Child.self m in
       State.set_move st ply m;
-      State.push_history st child;
+      State.push_freq st child;
       State.inc_nodes st;
       let score = Int.neg @@ Quiescence.go st child
           ~alpha ~beta ~ply:(ply + 1) ~pv:false in
@@ -1152,7 +1154,7 @@ module Main = struct
           Int.neg @@ go st child ~alpha ~beta ~depth
             ~ply:(ply + 1) ~pv:false
         else score in
-      State.pop_history st child;
+      State.pop_freq st child;
       if score >= beta_cut then
         let depth = depth - (probcut_min_depth - 2) in
         Tt.store st.tt pos ~ply ~depth ~score
@@ -1271,13 +1273,10 @@ module Main = struct
   *)
   and pvs st t pos ~i ~r ~beta ~ply ~depth ~pv =
     let[@specialise] go ?(r = 0) alpha ~pv =
-      State.push_history st pos;
-      let score = go st pos ~pv ~alpha
-          ~beta:(-t.alpha)
-          ~ply:(ply + 1)
-          ~depth:(depth - r - 1) in
-      State.pop_history st pos;
-      -score in
+      Int.neg @@ go st pos ~pv ~alpha
+        ~beta:(-t.alpha)
+        ~ply:(ply + 1)
+        ~depth:(depth - r - 1) in
     (* Zero and full window for alpha. *)
     let zw = -t.alpha - 1 and fw = -beta in
     if pv then
@@ -1456,10 +1455,10 @@ let mate_in_zero limits = match Limits.mate limits with
   | Some n -> n = 0
   | None -> false
 
-let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~history ~tt () =
+let go ?(iter = ignore) ?(ponder = None) ~root ~limits ~frequency ~tt () =
   match moves root limits with
   | [] -> no_moves root iter
   | _ when mate_in_zero limits -> no_moves root iter ~mzero:true
   | moves ->
-    let st = State.create ~root ~limits ~history ~tt ~iter ~ponder in
+    let st = State.create ~root ~limits ~frequency ~tt ~iter ~ponder in
     iterdeep st moves
