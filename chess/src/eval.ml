@@ -171,6 +171,8 @@ module King_pawn_shield = struct
 
     let idx c sq = c + sq * Piece.Color.count
 
+    (* Incentivize the king to hide behind the unmoved pawns in the opening
+       stages of the game. *)
     let masks =
       let tbl =
         let len = Piece.Color.count * Square.count in
@@ -180,8 +182,8 @@ module King_pawn_shield = struct
         let sq = !!(Square.of_int_exn i) in
         let w = (sq << 8) + ((sq << 7) - file_h) + ((sq << 9) - file_a) in
         let b = (sq >> 8) + ((sq >> 7) - file_a) + ((sq >> 9) - file_h) in
-        tbl.(idx Piece.Color.white i) <- w & (rank_2 + rank_3);
-        tbl.(idx Piece.Color.black i) <- b & (rank_7 + rank_6);
+        tbl.(idx Piece.Color.white i) <- w & rank_2;
+        tbl.(idx Piece.Color.black i) <- b & rank_7;
       done;
       tbl
 
@@ -192,27 +194,28 @@ module King_pawn_shield = struct
   end
 
   module Open_file = struct
-    let start_weight = -20
+    let start_weight = -11
     let end_weight = 6
 
+    (* In the opening stages of the game, the king should move away from
+       open files. *)
     let[@inline] go king_sq p =
       let file = Square.file king_sq in
       let i = max 0 (file - 1) in
-      let j = min Square.File.count (file + 1) in
+      let j = min (Square.File.count - 1) (file + 1) in
       let n =
-        Sequence.range i j |>
+        Sequence.range i j ~stop:`inclusive |>
         Sequence.map ~f:Bb.file_exn |>
         Sequence.count ~f:(fun f -> Bb.((f & p) = empty)) in
       n * start_weight, n * end_weight
   end
 
   let evaluate = evaluate @@ fun pos c ->
-    let b = Position.board_of_color pos c in
+    let open Bb.Syntax in
     let p = Position.pawn pos in
-    let king = Bb.(b & Position.king pos) in
-    let pawn = Bb.(b & p) in
-    let king_sq = Bb.first_set_exn king in
-    add2 (Shield.go king_sq c pawn) (Open_file.go king_sq p)
+    let b = Position.board_of_color pos c in
+    let king_sq = Bb.first_set_exn (b & Position.king pos) in
+    add2 (Shield.go king_sq c (b & p)) (Open_file.go king_sq p)
 end
 
 (* Pawn structure. *)
