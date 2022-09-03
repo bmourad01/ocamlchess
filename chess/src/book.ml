@@ -1,4 +1,5 @@
 open Core_kernel
+open Monads.Std
 
 type entry = {
   move   : Move.t;
@@ -78,7 +79,7 @@ let read filename file =
     Sequence.iter ~f:(fun o ->
         let key, data = read_entry buf o in
         Hashtbl.add_multi book ~key ~data);
-    book
+  book
 
 let create filename =
   let table = In_channel.with_file filename ~binary:true ~f:(read filename) in
