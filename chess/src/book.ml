@@ -108,30 +108,35 @@ end
 
 type error = Error.t
 
+(* Special case for castling moves. Other engines/tools sometimes represent
+   them by using the extremal files for the destination squares instead of
+   the actual squares that the king will move to. *)
+let fix_castle pos move piece =
+  if not @@ Piece.is_king piece then Some move
+  else if not @@ Move.is_promote move then
+    let src = Move.src move in
+    let dst = Move.dst move in
+    let move = match Position.active pos with
+      | White when Square.(src = e1 && dst = h1) ->
+        Move.create src Square.g1
+      | White when Square.(src = e1 && dst = a1) ->
+        Move.create src Square.c1
+      | Black when Square.(src = e8 && dst = h8) ->
+        Move.create src Square.g8
+      | Black when Square.(src = e8 && dst = a8) ->
+        Move.create src Square.c8
+      | _ -> move in
+    Some move
+  else None
+
 let make_move pos move =
-  let src, dst, promote = Move.decomp move in
-  let move = match Piece.kind @@ Position.piece_at_square_exn pos src with
-    | King -> begin
-        (* Special case for castling moves. The Polyglot format uses
-           the extremal files as the destination squares instead of 
-           the actual squares that the king will move to. *)
-        assert (Option.is_none promote);
-        match Position.active pos with
-        | White when Square.(src = e1 && dst = h1) ->
-          Move.create src Square.g1
-        | White when Square.(src = e1 && dst = a1) ->
-          Move.create src Square.c1
-        | Black when Square.(src = e8 && dst = h8) ->
-          Move.create src Square.g8
-        | Black when Square.(src = e8 && dst = a8) ->
-          Move.create src Square.c8
-        | _ -> move
-      end
-    | _ -> move in
-  Position.make_move pos move
+  let open Monad.Option.Syntax in
+  Move.src move |> Position.piece_at_square pos >>=
+  fix_castle pos move >>= Position.make_move pos
+
+open Error
 
 let lookup ?(skip_illegal = false) ?(random = true) book pos =
-  let open Error in
   match Hashtbl.find book.table @@ Position.hash pos with
   | None | Some [] -> Error (Position_not_found pos)
   | Some entries ->
