@@ -46,10 +46,10 @@ end
 type go = Position.t -> Piece.color -> int * int
 
 (* Calculate both opening and endgame advantage from white's perspective. *)
-let[@specialise] evaluate (go : go) pos =
+let[@inline][@specialise] evaluate (go : go) pos =
   sub2 (go pos White) (go pos Black)
 
-let[@specialise] perspective c neg x = match c with
+let[@inline][@specialise] perspective c neg x = match c with
   | Piece.White -> x
   | Piece.Black -> neg x
 
@@ -165,33 +165,54 @@ module King_danger = struct
 end
 
 module King_pawn_shield = struct
-  let start_weight = 4
-  let end_weight = -1
+  module Shield = struct
+    let start_weight = 4
+    let end_weight = -1
 
-  let idx c sq = c + sq * Piece.Color.count
+    let idx c sq = c + sq * Piece.Color.count
 
-  let masks =
-    let tbl =
-      let len = Piece.Color.count * Square.count in
-      Array.create ~len Bb.empty in
-    for i = 0 to Square.count - 1 do
-      let open Bb in
-      let sq = !!(Square.of_int_exn i) in
-      let w = (sq << 8) + ((sq << 7) - file_h) + ((sq << 9) - file_a) in
-      let b = (sq >> 8) + ((sq >> 7) - file_a) + ((sq >> 9) - file_h) in
-      tbl.(idx Piece.Color.white i) <- w & rank_2;
-      tbl.(idx Piece.Color.black i) <- b & rank_7;
-    done;
-    tbl
+    let masks =
+      let tbl =
+        let len = Piece.Color.count * Square.count in
+        Array.create ~len Bb.empty in
+      for i = 0 to Square.count - 1 do
+        let open Bb in
+        let sq = !!(Square.of_int_exn i) in
+        let w = (sq << 8) + ((sq << 7) - file_h) + ((sq << 9) - file_a) in
+        let b = (sq >> 8) + ((sq >> 7) - file_a) + ((sq >> 9) - file_h) in
+        tbl.(idx Piece.Color.white i) <- w & (rank_2 + rank_3);
+        tbl.(idx Piece.Color.black i) <- b & (rank_7 + rank_6);
+      done;
+      tbl
+
+    let[@inline] go king_sq c pawn =
+      let i = idx (Piece.Color.to_int c) (Square.to_int king_sq) in
+      let n = Bb.(count (pawn & Array.unsafe_get masks i)) in
+      n * start_weight, n * end_weight
+  end
+
+  module Open_file = struct
+    let start_weight = -20
+    let end_weight = 6
+
+    let[@inline] go king_sq p =
+      let file = Square.file king_sq in
+      let i = max 0 (file - 1) in
+      let j = min Square.File.count (file + 1) in
+      let n =
+        Sequence.range i j |>
+        Sequence.map ~f:Bb.file_exn |>
+        Sequence.count ~f:(fun f -> Bb.((f & p) = empty)) in
+      n * start_weight, n * end_weight
+  end
 
   let evaluate = evaluate @@ fun pos c ->
     let b = Position.board_of_color pos c in
+    let p = Position.pawn pos in
     let king = Bb.(b & Position.king pos) in
-    let pawn = Bb.(b & Position.pawn pos) in
+    let pawn = Bb.(b & p) in
     let king_sq = Bb.first_set_exn king in
-    let i = idx (Piece.Color.to_int c) (Square.to_int king_sq) in
-    let score = Bb.(count (pawn & Array.unsafe_get masks i)) in
-    score * start_weight, score * end_weight
+    add2 (Shield.go king_sq c pawn) (Open_file.go king_sq p)
 end
 
 (* Pawn structure. *)
@@ -288,7 +309,7 @@ module Pawns = struct
      performance improvement. *)
   let table = Hashtbl.create (module Int64)
 
-  let go pos c = List.fold ~init:(0, 0) ~f:add2 [
+  let go pos c = (List.fold [@unrolled 3]) ~init:(0, 0) ~f:add2 [
       Passed.go pos c;
       Doubled.go pos c;
       Isolated.go pos c;
@@ -552,7 +573,7 @@ module Threats = struct
     let queen_end = 12
 
     let[@inline] go pos t =
-      let rook = Bb.(count (t & Position.rook pos)) in
+      let rook  = Bb.(count (t & Position.rook pos)) in
       let queen = Bb.(count (t & Position.queen pos)) in
       let start = rook_start * rook + queen_start * queen in
       let end_  = rook_end   * rook + queen_end   * queen in
@@ -585,7 +606,7 @@ module Hanging = struct
   let end_weight = 17
 
   (* Give a bonus for attacking undefended pieces. *)
-  let evaluate = evaluate  @@ fun pos c ->
+  let evaluate = evaluate @@ fun pos c ->
     let c' = Piece.Color.opposite c in
     let them = Position.board_of_color pos c' in
     let attack = Position.Attacks.all pos c in
@@ -604,7 +625,7 @@ let go pos =
   let material = Material.evaluate pos in
   let king_danger = ref 0, ref 0 in
   let mobility = Mobility.evaluate king_danger pos in
-  let start, end_ = List.fold ~init:(0, 0) ~f:add2 [
+  let start, end_ = (List.fold [@unrolled 11]) ~init:(0, 0) ~f:add2 [
       material;
       mobility;
       Rook_open_file.evaluate pos;
