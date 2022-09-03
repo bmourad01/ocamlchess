@@ -517,6 +517,83 @@ module Mop_up = struct
     0, if material >= margin then go pos c else 0
 end
 
+module Threats = struct
+  module Threats = Position.Threats
+
+  module Pawn = struct
+    let minor_start = 10
+    let minor_end = 12
+    let rook_start = 11
+    let rook_end = 13
+    let queen_start = 14
+    let queen_end = 18
+
+    let[@inline] go pos t =
+      let n = Position.knight pos in
+      let b = Position.bishop pos in
+      let minor = Bb.(count (t & (n + b))) in
+      let rook  = Bb.(count (t & Position.rook pos)) in
+      let queen = Bb.(count (t & Position.queen pos)) in
+      let start =
+        minor_start * minor +
+        rook_start  * rook +
+        queen_start * queen in
+      let end_ =
+        minor_end * minor +
+        rook_end  * rook  +
+        queen_end * queen in
+      start, end_
+  end
+
+  module Minor = struct
+    let rook_start = 6
+    let rook_end = 10
+    let queen_start = 8
+    let queen_end = 12
+
+    let[@inline] go pos t =
+      let rook = Bb.(count (t & Position.rook pos)) in
+      let queen = Bb.(count (t & Position.queen pos)) in
+      let start = rook_start * rook + queen_start * queen in
+      let end_  = rook_end   * rook + queen_end   * queen in
+      start, end_
+  end
+
+  module Rook = struct
+    let queen_start = 4
+    let queen_end = 8
+
+    let[@inline] go pos t =
+      let queen = Bb.(count (t & Position.queen pos)) in
+      queen_start * queen, queen_end * queen
+  end
+
+  (* Give a bonus when we threaten to capture an enemy piece of
+     higher value. *)
+  let evaluate = evaluate @@ fun pos c ->
+    let t = (Threats.get [@inlined]) pos c in
+    let pawn_start,  pawn_end  = Pawn.go  pos @@ Threats.pawn  t in
+    let minor_start, minor_end = Minor.go pos @@ Threats.minor t in
+    let rook_start,  rook_end  = Rook.go  pos @@ Threats.rook  t in
+    let start = pawn_start + minor_start + rook_start in
+    let end_  = pawn_end   + minor_end   + rook_end   in
+    start, end_
+end
+
+module Hanging = struct
+  let start_weight = 34
+  let end_weight = 17
+
+  (* Give a bonus for attacking undefended pieces. *)
+  let evaluate = evaluate  @@ fun pos c ->
+    let c' = Piece.Color.opposite c in
+    let them = Position.board_of_color pos c' in
+    let attack = Position.Attacks.all pos c in
+    let defend = Position.Attacks.all pos c' in
+    let weak = Bb.(count (them & (attack - defend))) in
+    weak * start_weight, weak * end_weight
+end
+
 (* Overall evaluation of the position.
 
    This is a linear combination of weighted features, which serves as a
@@ -537,5 +614,7 @@ let go pos =
       Pawns.evaluate pos;
       Placement.evaluate pos;
       Mop_up.evaluate (snd material) pos;
+      Threats.evaluate pos;
+      Hanging.evaluate pos;
     ] |> perspective (Position.active pos) neg2 in
   Phase.interpolate phase_weight start end_
