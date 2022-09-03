@@ -121,20 +121,21 @@ module Mobility = struct
 end
 
 module Rook_open_file = struct
-  let start_weight = 5
-  let end_weight = 10
+  let start_weight = 18
+  let end_weight = 8
+
+  let files = Array.init Square.File.count ~f:Bb.file_exn
 
   (* Count the rooks on open files. This can also be measured by the
      mobility score, but we also give a bonus here. *)
   let evaluate = evaluate @@ fun pos c ->
-    let all = Position.all_board pos in
+    let pawn = Position.pawn pos in
     let us = Position.board_of_color pos c in
     let rook = Bb.(us & Position.rook pos) in
-    let score =
-      List.init Square.File.count ~f:Bb.file_exn |>
-      List.fold ~init:0 ~f:(fun acc f ->
-          let b = Bb.(f & rook) in
-          acc + Bool.to_int Bb.(b <> empty && b = (f & all))) in
+    let score = Array.fold files ~init:0 ~f:(fun acc f ->
+        if Bb.((f & rook) <> empty)
+        && Bb.((f & pawn) = empty)
+        then acc + 1 else acc) in
     score * start_weight, score * end_weight
 end
 
