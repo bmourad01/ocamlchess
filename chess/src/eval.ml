@@ -165,7 +165,7 @@ end
 
 module King_pawn_shield = struct
   let start_weight = 4
-  let end_weight = 0
+  let end_weight = -1
 
   let idx c sq = c + sq * Piece.Color.count
 
