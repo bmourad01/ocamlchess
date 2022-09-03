@@ -155,7 +155,7 @@ module Bishop_pair = struct
 end
 
 module King_danger = struct
-  let start_weight = -20
+  let start_weight = -25
   let end_weight = -1
 
   (* Count the squares surrounding the king that are attacked. *)
