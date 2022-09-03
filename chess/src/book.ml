@@ -74,11 +74,10 @@ let read filename file =
     invalid_argf "Invalid size %d of book %s, must be divisible by %d"
       len filename entry_size ()
   else
-    let n = len / entry_size in
-    for i = 0 to n - 1 do
-      let key, data = read_entry buf (i * entry_size) in
-      Hashtbl.add_multi book ~key ~data;
-    done;
+    Sequence.range 0 len ~stride:entry_size |>
+    Sequence.iter ~f:(fun o ->
+        let key, data = read_entry buf o in
+        Hashtbl.add_multi book ~key ~data);
     book
 
 let create filename =
