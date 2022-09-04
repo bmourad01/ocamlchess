@@ -57,6 +57,11 @@ val queen : Square.t -> Bitboard.t -> Bitboard.t
     square [sq]. *)
 val king : Square.t -> Bitboard.t
 
+(** [attacks sq occupied c k] returns the attacks bitboard at square [sq]
+    for the piece of color [c] and kind [k], given the set of [occupied]
+    squares. *)
+val attacks : Square.t -> Bitboard.t -> Piece.color -> Piece.kind -> Bitboard.t
+
 (** [castle cr c s] returns the corresponding squares for color [c] to castle
     on side [s], with respect to castling rights [cr]. These squares only
     cover movement for the king. *)

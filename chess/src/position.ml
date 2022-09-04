@@ -309,19 +309,11 @@ module Attacks = struct
   let[@inline] king ?(ignore_same = true) pos c =
     gen pos c King Pre.king ~ignore_same
 
-  let[@inline] pre_of_kind sq occupied c = function
-    | Piece.Pawn   -> Pre.pawn_capture sq c
-    | Piece.Knight -> Pre.knight sq
-    | Piece.Bishop -> Pre.bishop sq occupied
-    | Piece.Rook   -> Pre.rook sq occupied
-    | Piece.Queen  -> Pre.queen sq occupied
-    | Piece.King   -> Pre.king sq
-
   let[@inline] aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
     let open Bb.Syntax in
     let occupied = occupied pos c king_danger in
     collect_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
-        if f k then acc + pre_of_kind sq occupied c k else acc) |>
+        if f k then acc + Pre.attacks sq occupied c k else acc) |>
     fun b -> if ignore_same then ignore_color pos c b else b
 
   let[@inline] all ?(ignore_same = true) ?(king_danger = false) pos c =
@@ -483,7 +475,7 @@ module Analysis = struct
     let inactive_attacks =
       let occupied = Bb.(occupied -- king_sq) in
       List.fold inactive_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
-          Bb.(acc + Attacks.pre_of_kind sq occupied inactive k)) in
+          Bb.(acc + Pre.attacks sq occupied inactive k)) in
     (* Pinned pieces. *)
     let pin_masks = pin_masks pos ~king_sq in
     (* Pieces checking our king. *)
@@ -579,7 +571,7 @@ let gives_check pos m =
         | Some k ->
           (* Promotion check. *)
           let k = Move.Promote.to_piece_kind k in
-          ksq @ Attacks.pre_of_kind dst (all -- src -- dst) c k
+          ksq @ Pre.attacks dst (all -- src -- dst) c k
         | None -> match k with
           | Piece.Pawn when is_en_passant_square pos dst ->
             (* En passant check. *)

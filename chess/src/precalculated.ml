@@ -265,6 +265,14 @@ let[@inline] rook sq occupied =
 let[@inline] queen sq occupied = Bb.(bishop sq occupied + rook sq occupied)
 let[@inline] king sq = Array.unsafe_get Simple.king @@ Square.to_int sq
 
+let[@inline] attacks sq occupied c : Piece.kind -> Bb.t = function
+  | Pawn   -> pawn_capture sq c
+  | Knight -> knight sq
+  | Bishop -> bishop sq occupied
+  | Rook   -> rook sq occupied
+  | Queen  -> queen sq occupied
+  | King   -> king sq
+
 let castle_tbl =
   let open Bb in
   let wk = Square.(!!f1 + !!g1) in
