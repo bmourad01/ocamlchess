@@ -8,6 +8,8 @@ let[@inline] sub2 (w, x) (y, z) = w - y, x - z
 let[@inline] scale2 (x, y) z = x * z, y * z
 let[@inline] neg2 x = scale2 x (-1)
 
+let files = Array.init Square.File.count ~f:Bb.file_exn
+
 module Phase = struct
   let knight_phase = 1
   let bishop_phase = 1
@@ -66,11 +68,11 @@ module Material = struct
   let queen_eg = 900
 
   let weights = Piece.[|
-      Pawn,   (pawn_mg, pawn_eg);
+      Pawn,   (pawn_mg,   pawn_eg);
       Knight, (knight_mg, knight_eg);
       Bishop, (bishop_mg, bishop_eg);
-      Rook,   (rook_mg, rook_eg);
-      Queen,  (queen_mg, queen_eg);
+      Rook,   (rook_mg,   rook_eg);
+      Queen,  (queen_mg,  queen_eg);
     |]
 
   (* Count the material on the board. *)
@@ -121,8 +123,6 @@ end
 module Rook_open_file = struct
   let start_weight = 18
   let end_weight = 8
-
-  let files = Array.init Square.File.count ~f:Bb.file_exn
 
   (* Count the rooks on open files. This can also be measured by the
      mobility score, but we also give a bonus here. *)
@@ -333,16 +333,12 @@ module Pawns = struct
     let go pos c =
       let us = Position.board_of_color pos c in
       let pawn = Bb.(us & Position.pawn pos) in
-      let score =
-        List.init Square.File.count ~f:ident |>
-        List.fold ~init:0 ~f:(fun acc i ->
-            (* Check if there are any pawns on the neighboring files
-               that could potentially form a pawn chain. *)
-            let f = Bb.file_exn i in
-            let nf = Array.unsafe_get neighbor_files i in
-            let isolated =
-              Bb.(((f & pawn) <> empty) && ((nf & pawn) = empty)) in
-            acc + Bool.to_int isolated) in
+      let score = Array.foldi files ~init:0 ~f:(fun i acc f ->
+          (* Check if there are any pawns on the neighboring files
+             that could potentially form a pawn chain. *)
+          let nf = Array.unsafe_get neighbor_files i in
+          if Bb.((f & pawn) <> empty && (nf & pawn) = empty)
+          then acc + 1 else acc) in
       score * start_weight, score * end_weight
   end
 
