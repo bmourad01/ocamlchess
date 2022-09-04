@@ -331,14 +331,15 @@ module Pawns = struct
       |]
 
     let go pos c =
+      let open Bb in
       let us = Position.board_of_color pos c in
-      let pawn = Bb.(us & Position.pawn pos) in
+      let pawn = us & Position.pawn pos in
       let score = Array.foldi files ~init:0 ~f:(fun i acc f ->
           (* Check if there are any pawns on the neighboring files
              that could potentially form a pawn chain. *)
-          let nf = Array.unsafe_get neighbor_files i in
-          if Bb.((f & pawn) <> empty && (nf & pawn) = empty)
-          then acc + 1 else acc) in
+          if (f & pawn) <> empty
+          && (Array.unsafe_get neighbor_files i & pawn) = empty
+          then succ acc else acc) in
       score * start_weight, score * end_weight
   end
 
