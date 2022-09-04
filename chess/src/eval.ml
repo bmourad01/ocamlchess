@@ -81,16 +81,20 @@ module Material = struct
 end
 
 module Mobility = struct
-  let start_weight = 4
-  let end_weight = 1
+  type weight = {
+    kind   : Piece.kind;
+    start  : int;
+    end_   : int;
+    center : int;
+  }
 
-  (* Pair each kind with its bonus for controlling the center squares. We skip
-     evaluating mobility for pawn and king. *)
-  let kinds = Piece.[|
-      Knight, 3;
-      Bishop, 4;
-      Rook,   1;
-      Queen,  2;
+  let weights =
+    let w kind start end_ center = {kind; start; end_; center} in
+    Piece.[|
+      w Knight 4 1 3;
+      w Bishop 3 0 4;
+      w Rook   5 6 1;
+      w Queen  1 3 2;
     |]
 
   (* Weighted sum of the "mobility" of the material. Also, collect the number
@@ -103,21 +107,15 @@ module Mobility = struct
     let king_sq = Bb.(first_set_exn (them & Position.king pos)) in
     let box = Pre.king king_sq in
     let king_danger = match c with White -> bk | Black -> wk in
-    let score = Array.fold kinds ~init:0 ~f:(fun init (k, center_bonus) ->
-        let f = match k with
-          | Pawn   -> assert false
-          | Knight -> Pre.knight
-          | Bishop -> fun sq -> Pre.bishop sq occupied
-          | Rook   -> fun sq -> Pre.rook   sq occupied
-          | Queen  -> fun sq -> Pre.queen  sq occupied
-          | King   -> assert false in
-        Bb.(Position.board_of_kind pos k & us) |>
-        Bb.fold ~init ~f:(fun score sq ->
-            let b = Bb.(f sq - us) in
-            king_danger := !king_danger + Bb.(count (b & box));
-            Bb.(count (b & center)) * center_bonus +
-            Bb.(count (b - center)))) in
-    score * start_weight, score * end_weight
+    Array.fold weights ~init:(0, 0) ~f:(fun acc w ->
+        let score =
+          Bb.(Position.board_of_kind pos w.kind & us) |>
+          Bb.fold ~init:0 ~f:(fun score sq ->
+              let b = Bb.(Pre.attacks sq occupied c w.kind - us) in
+              king_danger := !king_danger + Bb.(count (b & box));
+              Bb.(count (b & center)) * w.center +
+              Bb.(count (b - center))) in
+        add2 acc (score * w.start, score * w.end_))
 end
 
 module Rook_open_file = struct
