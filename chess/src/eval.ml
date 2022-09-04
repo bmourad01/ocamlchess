@@ -137,6 +137,47 @@ module Rook_open_file = struct
     score * start_weight, score * end_weight
 end
 
+module Rook_on_seventh = struct
+  let start_weight = 12
+  let end_weight = 17
+
+  (* Give a bonus for having a rook on the seventh rank, but only
+     if the enemy king is on the eighth rank or there are enemy
+     pawns on the seventh rank. *)
+  let evaluate = evaluate @@ fun pos c ->
+    let c' = Piece.Color.opposite c in
+    let us = Position.board_of_color pos c in
+    let them = Position.board_of_color pos c' in
+    let rook = Position.rook pos in
+    let king = Position.king pos in
+    let pawn = Position.pawn pos in
+    let r7, r8 =
+      if Piece.Color.(c = White)
+      then Bb.(rank_7, rank_8)
+      else Bb.(rank_2, rank_1) in
+    let b =
+      Bool.to_int
+        Bb.((r7 & rook & us) <> empty &&
+            ((r7 & pawn & them) <> empty ||
+             (r8 & king & them) <> empty)) in
+    b * start_weight, b * end_weight
+end
+
+module Rooks_connected = struct
+  let start_weight = 12
+  let end_weight = 6
+
+  (* Give a small bonus for having connected rooks. *)
+  let evaluate = evaluate @@ fun pos c ->
+    let open Bb in
+    let all = Position.all_board pos in
+    let us = Position.board_of_color pos c in
+    let rook = Position.rook pos & us in
+    let b = Bool.to_int @@ exists rook ~f:(fun sq ->
+        (Pre.rook sq all & rook) <> empty) in
+    b * start_weight, b * end_weight
+end
+
 module Bishop_pair = struct
   let start_weight = 12
   let end_weight = 18
@@ -626,10 +667,12 @@ let go pos =
   let material = Material.evaluate pos in
   let king_danger = ref 0, ref 0 in
   let mobility = Mobility.evaluate king_danger pos in
-  let start, end_ = (List.fold [@unrolled 11]) ~init:(0, 0) ~f:add2 [
+  let start, end_ = (List.fold [@unrolled 13]) ~init:(0, 0) ~f:add2 [
       material;
       mobility;
       Rook_open_file.evaluate pos;
+      Rook_on_seventh.evaluate pos;
+      Rooks_connected.evaluate pos;
       Bishop_pair.evaluate pos;
       King_danger.evaluate king_danger pos;
       King_pawn_shield.evaluate pos;
