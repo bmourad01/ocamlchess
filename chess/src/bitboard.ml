@@ -167,7 +167,7 @@ let find b ~f =
   let[@inline] rec aux b =
     if b <> empty then
       let sq = next_square b in
-      if f @@ next_square b then Some sq else aux @@ clear_fast_fwd b
+      if f sq then Some sq else aux @@ clear_fast_fwd b
     else None in
   aux b
 
@@ -177,6 +177,22 @@ let find_rev b ~f =
       let sq = next_square_rev b in
       if f sq then Some sq else aux @@ clear b sq
     else None in
+  aux b
+
+let exists b ~f =
+  let[@inline] rec aux b =
+    b <> empty && begin
+      f (next_square b) ||
+      aux (clear_fast_fwd b)
+    end in
+  aux b
+
+let exists_rev b ~f =
+  let[@inline] rec aux b =
+    b <> empty && begin
+      let sq = next_square_rev b in
+      f sq || aux @@ clear b sq
+    end in
   aux b
 
 let first_set_exn b =

@@ -198,6 +198,14 @@ val find : t -> f:(Square.t -> bool) -> Square.t option
     which satisfies [f sq], if it exists. *)
 val find_rev : t -> f:(Square.t -> bool) -> Square.t option
 
+(** [exists b ~f] returns [true] if there exists a square of [b] that
+    satisfies [f], starting from a1. *)
+val exists : t -> f:(Square.t -> bool) -> bool
+
+(** [exists_rev b ~f] returns [true] if there exists a square of [b] that
+    satisfies [f], starting from h8. *)
+val exists_rev : t -> f:(Square.t -> bool) -> bool
+
 (** [to_list b] returns the list of squares set in [b], in ascending order. *)
 val to_list : t -> Square.t list
 
