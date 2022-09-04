@@ -644,16 +644,17 @@ module Threats = struct
 end
 
 module Hanging = struct
-  let start_weight = 34
-  let end_weight = 17
+  let start_weight = 30
+  let end_weight = 15
 
-  (* Give a bonus for attacking undefended pieces. *)
+  (* Give a bonus for attacking undefended non-pawn material. *)
   let evaluate = evaluate @@ fun pos c ->
     let c' = Piece.Color.opposite c in
     let them = Position.board_of_color pos c' in
+    let pawn = Position.pawn pos in
     let attack = Position.Attacks.all pos c in
     let defend = Position.Attacks.all pos c' in
-    let weak = Bb.(count (them & (attack - defend))) in
+    let weak = Bb.(count ((them - pawn) & (attack - defend))) in
     weak * start_weight, weak * end_weight
 end
 
