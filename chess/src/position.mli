@@ -308,7 +308,7 @@ type threats [@@deriving compare, equal, sexp]
     In our parlance, a threat is distinguished from a check, and can be one
     of the following:
 
-    - A pawn is attacking any other piece (besides the enemy king).
+    - A pawn is attacking a minor or major piece.
     - A knight or bishop (minor) is attacking a rook and/or queen (major).
     - A rook is attacking a queen.
 
