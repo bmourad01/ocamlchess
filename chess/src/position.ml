@@ -280,9 +280,8 @@ module Attacks = struct
   let white_idx = attacks_len - 2
   let black_idx = white_idx + 1
 
-  let kinds = Piece.[|Pawn; Knight; Bishop; Rook; Queen; King|]
-
   let calculate pos = set_attacks pos @@ lazy begin
+      let open Bb.Syntax in
       let occupied = all_board pos in
       let a = Array.init attacks_len ~f:(fun i ->
           if i < white_idx then
@@ -290,13 +289,25 @@ module Attacks = struct
             let k = Piece.Kind.of_int_exn (i lsr 1) in
             Piece.create c k |> collect_piece pos |>
             List.fold ~init:Bb.empty ~f:(fun acc sq ->
-                Bb.(acc + Pre.attacks sq occupied c k))
+                acc + Pre.attacks sq occupied c k)
           else Bb.empty) in
-      let[@inline] all c =
-        (Array.fold [@unrolled 6]) kinds ~init:Bb.empty ~f:(fun acc k ->
-            Bb.(acc + (Array.unsafe_get a @@ attacks_idx c k))) in
-      Array.unsafe_set a white_idx @@ all White;
-      Array.unsafe_set a black_idx @@ all Black;
+      let[@inline] g c k = Array.unsafe_get a @@ attacks_idx c k in
+      let white =
+        g White Pawn +
+        g White Knight +
+        g White Bishop +
+        g White Rook +
+        g White Queen +
+        g White King in
+      let black =
+        g Black Pawn +
+        g Black Knight +
+        g Black Bishop +
+        g Black Rook +
+        g Black Queen +
+        g Black King in
+      Array.unsafe_set a white_idx white;
+      Array.unsafe_set a black_idx black;
       a
     end
 
