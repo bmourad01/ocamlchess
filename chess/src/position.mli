@@ -303,7 +303,20 @@ end
 type threats [@@deriving compare, equal, sexp]
 
 (** This submodule provides a way to calculate information about threatened
-    pieces. *)
+    pieces.
+
+    In our parlance, a threat is distinguished from a check, and can be one
+    of the following:
+
+    - A pawn is attacking any other piece (besides the enemy king).
+    - A knight or bishop (minor) is attacking a rook and/or queen (major).
+    - A rook is attacking a queen.
+
+    In all cases, a piece of lower value is threatening to capture a piece
+    of higher value. Such positions are usually forcing, meaning they
+    require the opponent to respond in a limited number of ways to the
+    threat in order to avoid a serious disadvantage.
+*)
 module Threats : sig
   (** [get pos c] calculates the threats of position [pos] coming from the
       player of color [c]. *)
@@ -348,9 +361,7 @@ val is_insufficient_material : t -> bool
 type child
 
 module Child : sig
-  (** [same x y] returns [true] if [x] and [y] refer to the same move.
-      This is determined by comparing the hashes of both the [parent] and 
-      [new_position] for [x] and [y], respectively. *)
+  (** [same x y] returns [true] if [x] and [y] refer to the same move. *)
   val same : child -> child -> bool
 
   (** The actual move that was made. *)
@@ -390,8 +401,8 @@ module Child : sig
   (** Returns [true] if the move gives check to the opponent. *)
   val gives_check : child -> bool
 
-  (** Returns the bitboard of enemy pieces (relative to the parent position)
-      that are under threat as a result of the move. *)
+  (** Returns the bitboard of enemy pieces of greater value that are
+      threatened as a result of the move. Does not include checks. *)
   val new_threats : child -> Bitboard.t
 
   type t = child
