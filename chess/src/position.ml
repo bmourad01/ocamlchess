@@ -1863,12 +1863,12 @@ module See = struct
   (* We're using `Base.Array.exists`, which starts from the end
      of the list. *)
   let[@inline] lva_order pos = [|
-    pos.king,   Piece.King;
-    pos.queen,  Piece.Queen;
-    pos.rook,   Piece.Rook;
-    pos.bishop, Piece.Bishop;
-    pos.knight, Piece.Knight;
-    pos.pawn,   Piece.Pawn;
+    pos.king;
+    pos.queen;
+    pos.rook;
+    pos.bishop;
+    pos.knight;
+    pos.pawn;
   |]
 
   (* Calculate the mask for attackers on this turn. Pinned pieces shouldn't
@@ -1889,10 +1889,12 @@ module See = struct
   let[@inline] lva pos all order st =
     let us = board_of_color pos st.side in
     let mask = attacker_mask pos all us st in
+    Bb.(mask <> empty) &&
     let them = Bb.(all - us) in
-    Bb.(mask <> empty) && Array.exists order ~f:(function
-        | _, Piece.King when Bb.((st.attackers & them) <> empty) -> false
-        | b, k -> match Bb.(first_set (mask & b)) with
+    (Array.existsi [@specialised]) order ~f:(fun i b ->
+        match Piece.Kind.(of_int_exn (count - 1 - i)) with
+        | King when Bb.((st.attackers & them) <> empty) -> false
+        | k -> match Bb.(first_set (mask & b)) with
           | None -> false
           | Some sq ->
             st.target_val <- Piece.Kind.value k;
