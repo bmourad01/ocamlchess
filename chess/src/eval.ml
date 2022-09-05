@@ -194,8 +194,8 @@ module Bishop_pair = struct
 end
 
 module King_danger = struct
-  let start_weight = -25
-  let end_weight = -1
+  let start_weight = -22
+  let end_weight = 3
 
   (* Count the squares surrounding the king that are attacked. *)
   let evaluate (wk, bk) = evaluate @@ fun _ -> function
@@ -641,17 +641,16 @@ module Threats = struct
 end
 
 module Hanging = struct
-  let start_weight = 30
-  let end_weight = 15
+  let start_weight = 20
+  let end_weight = 14
 
-  (* Give a bonus for attacking undefended non-pawn material. *)
+  (* Give a bonus for attacking undefended material. *)
   let evaluate = evaluate @@ fun pos c ->
     let c' = Piece.Color.opposite c in
     let them = Position.board_of_color pos c' in
-    let pawn = Position.pawn pos in
     let attack = Position.Attacks.all pos c in
     let defend = Position.Attacks.all pos c' in
-    let weak = Bb.(count ((them - pawn) & (attack - defend))) in
+    let weak = Bb.(count (them & (attack - defend))) in
     weak * start_weight, weak * end_weight
 end
 
