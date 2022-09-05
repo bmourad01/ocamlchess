@@ -33,30 +33,30 @@ module T = struct
   let attacks_idx c k =
     let c = Piece.Color.to_int c in
     let k = Piece.Kind.to_int k in
-    c + k * Piece.Color.count
+    (k lsl 1) lor c
 
   (* We'll use mutable fields since, when applying moves, this has a
      performance advantage over a typical state monad pattern (where
      we are making a new copy every time we update a field). *)
   type t = {
-    mutable white        : Bb.t;
-    mutable black        : Bb.t;
-    mutable pawn         : Bb.t;
-    mutable knight       : Bb.t;
-    mutable bishop       : Bb.t;
-    mutable rook         : Bb.t;
-    mutable queen        : Bb.t;
-    mutable king         : Bb.t;
-    mutable active       : Piece.color;
-    mutable castle       : Cr.t;
-    mutable en_passant   : Square.t Uopt.t;
-    mutable halfmove     : int;
-    mutable fullmove     : int;
-    mutable hash         : Zobrist.key;
-    mutable pawn_hash    : Zobrist.key;
-    mutable checkers     : Bb.t Lazy.t;
-    mutable checks       : checks Lazy.t;
-    mutable attacks      : Bb.t array Lazy.t;
+    mutable white      : Bb.t;
+    mutable black      : Bb.t;
+    mutable pawn       : Bb.t;
+    mutable knight     : Bb.t;
+    mutable bishop     : Bb.t;
+    mutable rook       : Bb.t;
+    mutable queen      : Bb.t;
+    mutable king       : Bb.t;
+    mutable active     : Piece.color;
+    mutable castle     : Cr.t;
+    mutable en_passant : Square.t Uopt.t;
+    mutable halfmove   : int;
+    mutable fullmove   : int;
+    mutable hash       : Zobrist.key;
+    mutable pawn_hash  : Zobrist.key;
+    mutable checkers   : Bb.t Lazy.t;
+    mutable checks     : checks Lazy.t;
+    mutable attacks    : Bb.t array Lazy.t;
   } [@@deriving fields]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
