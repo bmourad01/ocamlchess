@@ -348,7 +348,7 @@ end
     the active king of position [pos]. *)
 val checkers : t -> Bitboard.t
 
-(** [in_check pos] is shorthand for [Bitboard.(checkers pos <> 0)]. *)
+(** [in_check pos] returns [true] if [checkers pos] is not empty. *)
 val in_check : t -> bool
 
 (** [is_insufficient_material pos] returns [true] if the game may result in a
