@@ -53,7 +53,9 @@ module Cccp = struct
   let push moves = best moves ~eval:(fun m ->
       let active = Position.active @@ Child.parent m in
       let pos = Child.self m in
-      Some (Bb.count @@ Position.Attacks.all pos active))
+      let a = Position.Attacks.all pos active in
+      let b = Position.board_of_color pos active in
+      Some Bb.(count (a - b)))
 
   let choice _ moves =
     let moves = match checkmate moves with

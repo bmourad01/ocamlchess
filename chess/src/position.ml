@@ -25,6 +25,16 @@ module T = struct
     bsquares = Array.create Bb.empty ~len:Piece.Kind.count;
   }
 
+  (* The last two entries are the composite board of each color.  *)
+  let attacks_len =
+    Piece.Color.count * Piece.Kind.count +
+    Piece.Color.count
+
+  let attacks_idx c k =
+    let c = Piece.Color.to_int c in
+    let k = Piece.Kind.to_int k in
+    c + k * Piece.Color.count
+
   (* We'll use mutable fields since, when applying moves, this has a
      performance advantage over a typical state monad pattern (where
      we are making a new copy every time we update a field). *)
@@ -46,6 +56,7 @@ module T = struct
     mutable pawn_hash    : Zobrist.key;
     mutable checkers     : Bb.t Lazy.t;
     mutable checks       : checks Lazy.t;
+    mutable attacks      : Bb.t array Lazy.t;
   } [@@deriving fields]
 
   let[@inline] en_passant pos = Uopt.to_option pos.en_passant
@@ -72,6 +83,7 @@ module T = struct
     pawn_hash    = pos.pawn_hash;
     checkers     = pos.checkers;
     checks       = pos.checks;
+    attacks      = pos.attacks;
   }
 end
 
@@ -265,69 +277,44 @@ let same_hash pos1 pos2 = Int64.(pos1.hash = pos2.hash)
 (* Attack patterns. *)
 
 module Attacks = struct
-  (* Useful when excluding squares that are occupied by our color. *)
-  let[@inline] ignore_color pos c b = Bb.(b - board_of_color pos c)
+  let white_idx = attacks_len - 2
+  let black_idx = white_idx + 1
 
-  (* Generate for a particular color and kind *)
-  let[@inline] gen ?(ignore_same = true) pos c k f =
-    let open Bb.Syntax in
-    Piece.create c k |> board_of_piece pos |> Bb.fold
-      ~init:Bb.empty ~f:(fun acc sq -> acc + f sq) |>
-    fun b -> if ignore_same then ignore_color pos c b else b
+  let kinds = Piece.[|Pawn; Knight; Bishop; Rook; Queen; King|]
 
-  let[@inline] pawn ?(ignore_same = true) pos c =
-    gen pos c Pawn ~ignore_same @@ fun sq -> Pre.pawn_capture sq c
+  let calculate pos = set_attacks pos @@ lazy begin
+      let occupied = all_board pos in
+      let a = Array.init attacks_len ~f:(fun i ->
+          if i < white_idx then
+            let c = Piece.Color.of_int_exn (i land 0b1) in
+            let k = Piece.Kind.of_int_exn (i lsr 1) in
+            Piece.create c k |> collect_piece pos |>
+            List.fold ~init:Bb.empty ~f:(fun acc sq ->
+                Bb.(acc + Pre.attacks sq occupied c k))
+          else Bb.empty) in
+      let[@inline] all c =
+        (Array.fold [@unrolled 6]) kinds ~init:Bb.empty ~f:(fun acc k ->
+            Bb.(acc + (Array.unsafe_get a @@ attacks_idx c k))) in
+      Array.unsafe_set a white_idx @@ all White;
+      Array.unsafe_set a black_idx @@ all Black;
+      a
+    end
 
-  let[@inline] knight ?(ignore_same = true) pos c =
-    gen pos c Knight Pre.knight ~ignore_same
+  let[@inline] get pos c k =
+    let i = attacks_idx c k in
+    let a = Lazy.force pos.attacks in
+    Array.unsafe_get a i
 
-  (* Get the occupied squares for the board.
+  let[@inline] pawn   pos c = get pos c Pawn
+  let[@inline] knight pos c = get pos c Knight
+  let[@inline] bishop pos c = get pos c Bishop
+  let[@inline] rook   pos c = get pos c Rook
+  let[@inline] queen  pos c = get pos c Queen
+  let[@inline] king   pos c = get pos c King
 
-     `king_danger` indicates that the king of the opposite color should be'
-     ignored, so that sliding attacks can "see through" the inactive king.
-     This is useful when the king is blocking the attack of a sliding piece.
-  *)
-  let[@inline] occupied pos c king_danger =
-    let open Bb.Syntax in
-    if king_danger then
-      let p = Piece.(create (Color.opposite c) King) in
-      all_board pos - board_of_piece pos p
-    else all_board pos
-
-  let[@inline] bishop ?(ignore_same = true) ?(king_danger = false) pos c =
-    let occupied = occupied pos c king_danger in
-    gen pos c Bishop ~ignore_same @@ fun sq -> Pre.bishop sq occupied
-
-  let[@inline] rook ?(ignore_same = true) ?(king_danger = false) pos c =
-    let occupied = occupied pos c king_danger in
-    gen pos c Rook ~ignore_same @@ fun sq -> Pre.rook sq occupied
-
-  let[@inline] queen ?(ignore_same = true) ?(king_danger = false) pos c =
-    let occupied = occupied pos c king_danger in
-    gen pos c Queen ~ignore_same @@ fun sq -> Pre.queen sq occupied
-
-  let[@inline] king ?(ignore_same = true) pos c =
-    gen pos c King Pre.king ~ignore_same
-
-  let[@inline] aux ?(ignore_same = true) ?(king_danger = false) pos c ~f =
-    let open Bb.Syntax in
-    let occupied = occupied pos c king_danger in
-    collect_color pos c |> List.fold ~init:Bb.empty ~f:(fun acc (sq, k) ->
-        if f k then acc + Pre.attacks sq occupied c k else acc) |>
-    fun b -> if ignore_same then ignore_color pos c b else b
-
-  let[@inline] all ?(ignore_same = true) ?(king_danger = false) pos c =
-    aux pos c ~ignore_same ~king_danger ~f:(fun _ -> true)
-
-  let[@inline] sliding ?(ignore_same = true) ?(king_danger = false) pos c =
-    aux pos c ~ignore_same ~king_danger ~f:(function
-        | Piece.(Bishop | Rook | Queen) -> true
-        | _ -> false)
-
-  let[@inline] non_sliding ?(ignore_same = true) pos c =
-    aux pos c ~ignore_same ~f:(function
-        | Piece.(Bishop | Rook | Queen) -> false
-        | _ -> true)
+  let[@inline] all pos c =
+    let a = Lazy.force pos.attacks in
+    Array.unsafe_get a (white_idx + Piece.Color.to_int c)
 end
 
 module Threats = struct
@@ -710,7 +697,7 @@ module Valid = struct
   module Checks = struct
     let check_inactive_in_check pos =
       let b = inactive_board pos in
-      let attacks = Attacks.all pos pos.active ~ignore_same:true in
+      let attacks = Attacks.all pos pos.active in
       if Bb.((b & pos.king & attacks) <> empty)
       then E.fail @@ Inactive_in_check (inactive pos)
       else E.return ()
@@ -1061,14 +1048,18 @@ module Fen = struct
       parse_en_passant en_passant >>= fun en_passant ->
       parse_halfmove halfmove >>= fun halfmove ->
       parse_fullmove fullmove >>= fun fullmove ->
-      let pos = Fields.create ~hash:0L ~pawn_hash:0L
-          ~checkers:(lazy Bb.empty) ~checks:(lazy empty_checks)
+      let pos =
+        let checkers = lazy Bb.empty in
+        let checks = lazy empty_checks in
+        let attacks = lazy [||] in
+        Fields.create ~hash:0L ~pawn_hash:0L ~checkers ~checks ~attacks
           ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
           ~active ~castle ~en_passant ~halfmove ~fullmove in
       set_hash pos @@ Hash.of_position pos;
       set_pawn_hash pos @@ Hash.of_pawns pos;
       calculate_checkers pos;
       Analysis.calculate_checks pos;
+      Attacks.calculate pos;
       if validate then validate_and_map pos else E.return pos
     | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
 
@@ -1543,6 +1534,7 @@ module Movegen = struct
         ~castle_side ~direct_capture;
       calculate_checkers self;
       calculate_checks self;
+      Attacks.calculate self;
       self
     end in
     self, capture, is_en_passant, castle_side

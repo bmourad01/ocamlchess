@@ -242,61 +242,38 @@ val pp : Format.formatter -> t -> unit
 (** The starting position. *)
 val start : t
 
-(** This submodule provides helper functions related to generating attacked
+(** This submodule provides helper functions related to looking up attacked
     squares for a particular color.
 
-    The following common parameters among each function are described as
-    follows:
-
-    - [ignore_same]: if this is [false] then the pieces of the same color
-      as the attacker in question are included in the set of attacked
-      squares. By default, it is [true].
-
-    - [king_danger]: if this is [true], then sliding attacks (bishop, rook,
-      and queen) will pretend that the enemy king's square is unoccupied,
-      thus the attacks will "see through" the king. By default, it is [false].
+    Note that the results include squares that contain pieces of the same
+    color as the attacker (thus these are "defended" squares).
 *)
 module Attacks : sig
-  (** [pawn pos c ~ignore_same] returns the set of attacked squares by
-      pawns of color [c] for position [pos]. *)
-  val pawn : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
+  (** [get pos c k] returns the set of attacked squares by pieces of kind [k]
+      and color [c]. *)
+  val get : t -> Piece.color -> Piece.kind -> Bitboard.t
 
-  (** [knight pos c ~ignore_same] returns the set of attacked squares by
-      knights of color [c] for position [pos]. *)
-  val knight : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
+  (** [pawn pos c] is [get pos c Pawn]. *)
+  val pawn : t -> Piece.color -> Bitboard.t
 
-  (** [bishop pos c ~ignore_same ~king_danger] returns the set of attacked
-      squares by bishops of color [c] for position [pos]. *)
-  val bishop :
-    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [knight pos c] is [get pos c Knight]. *)
+  val knight : t -> Piece.color -> Bitboard.t
 
-  (** [rook pos c ~ignore_same ~king_danger] returns the set of attacked
-      squares by rooks of color [c] for position [pos]. *)
-  val rook :
-    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [bishop pos c] is [get pos c Bishop]. *)
+  val bishop : t -> Piece.color -> Bitboard.t
 
-  (** [queen pos c ~ignore_same ~king_danger] returns the set of attacked
-      squares by queens of color [c] for position [pos]. *)
-  val queen :
-    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [rook pos c] is [get pos c Rook]. *)
+  val rook : t -> Piece.color -> Bitboard.t
 
-  (** [king pos c ~ignore_same] returns the set of attacked squares by kings
-      of color [c] for position [pos]. *)
-  val king : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
+  (** [queen pos c] is [get pos c Queen]. *)
+  val queen : t -> Piece.color -> Bitboard.t
 
-  (** [all pos c ~ignore_same ~king_danger] returns the set of attacked
-      squares by all pieces of color [c] for position [pos]. *)
-  val all :
-    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
+  (** [king pos c] is [get pos c King]. *)
+  val king : t -> Piece.color -> Bitboard.t
 
-  (** [sliding pos c ~ignore_same ~king_danger] returns the set of attacked
-      squares by all sliding pieces of color [c] for position [pos]. *)
-  val sliding :
-    ?ignore_same:bool -> ?king_danger:bool -> t -> Piece.color -> Bitboard.t
-
-  (** [non_sliding pos c ~ignore_same] returns the set of attacked squares
-      by all non-sliding pieces of color [c] for position [pos]. *)
-  val non_sliding : ?ignore_same:bool -> t -> Piece.color -> Bitboard.t
+  (** [all pos c ] returns the set of attacked squares by all pieces of color
+      [c] for position [pos]. *)
+  val all : t -> Piece.color -> Bitboard.t
 end
 
 (** Information about threatened pieces. *)
