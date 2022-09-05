@@ -397,8 +397,7 @@ module Analysis = struct
           pinned, pinners
         else acc)
 
-  let calculate_checks pos =
-    set_checks pos @@ lazy begin
+  let calculate_checks pos = set_checks pos @@ lazy begin
       let occupied = all_board pos in
       let wksq = Bb.(first_set_exn (pos.king & pos.white)) in
       let bksq = Bb.(first_set_exn (pos.king & pos.black)) in
@@ -450,8 +449,9 @@ module Analysis = struct
 
   (* Populate info needed for generating legal moves. *)
   let[@inline] create pos =
+    let open Bb.Syntax in
     (* First, find our king. *)
-    let king_sq = Bb.(first_set_exn (pos.king & active_board pos)) in
+    let king_sq = Bb.first_set_exn (pos.king & active_board pos) in
     (* Square of the en passant pawn. For purposes of analysis, we only care
        if this pawn is actually threatened with an en passant capture. *)
     let en_passant_pawn =
@@ -467,13 +467,14 @@ module Analysis = struct
     let active_board = active_board pos in
     let inactive_board = inactive_board pos in
     let inactive_pieces = collect_color pos inactive in
-    (* We're considering attacked squares only for king moves. These squares
-       should include inactive pieces which may block an inactive attack, since
-       it would be illegal for the king to attack those squares. *)
+    (* We're considering attacked squares only for king moves. For sliding
+       moves, we pretend that the king is removed from the board. Thus,
+       when calculating king moves we will be able to exclude moves where
+       the king doesn't escape from the attack ray (if he is in check). *)
     let inactive_attacks =
-      let occupied = Bb.(occupied -- king_sq) in
+      let occupied = occupied -- king_sq in
       List.fold inactive_pieces ~init:Bb.empty ~f:(fun acc (sq, k) ->
-          Bb.(acc + Pre.attacks sq occupied inactive k)) in
+          acc + Pre.attacks sq occupied inactive k) in
     (* Pinned pieces. *)
     let pin_masks = pin_masks pos ~king_sq in
     (* Pieces checking our king. *)
@@ -495,9 +496,8 @@ end
 
 (* Miscellaneous rules *)
 
-let calculate_checkers pos =
-  let open Bb in
-  set_checkers pos @@ lazy begin
+let calculate_checkers pos = set_checkers pos @@ lazy begin
+    let open Bb in
     let checks = Lazy.force pos.checks in
     let squares = match pos.active with
       | Piece.White -> checks.wsquares
