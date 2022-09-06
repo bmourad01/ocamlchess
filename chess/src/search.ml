@@ -558,7 +558,8 @@ module Order = struct
   let killer1_offset = 95
   let killer2_offset = 94
   let countermove_offset = 93
-  let castle_offset = 92
+  let check_offset = 92
+  let castle_offset = 91
   let history_offset = -90
   let history_scale = 180
 
@@ -570,12 +571,7 @@ module Order = struct
         let best = Uopt.unsafe_value best in
         fun m -> same_move best m
 
-  let promote_by_value m =
-    Child.move m |> Move.promote |>
-    Option.value_map ~default:0 ~f:(fun k ->
-        Piece.Kind.value @@ Move.Promote.to_piece_kind k)
-
-  let promote_by_offset m =
+  let promote m =
     let open Move.Promote in
     Child.move m |> Move.promote |>
     Option.value_map ~default:0 ~f:(function
@@ -640,11 +636,12 @@ module Order = struct
           | Some see when see >= 0 -> good_capture_offset + see
           | Some see -> bad_capture_offset + see
           | None ->
-            let promote = promote_by_offset m in
+            let promote = promote m in
             if promote <> 0 then promote
             else
               let refute = refutation m in
               if refute <> 0 then refute
+              else if Child.gives_check m then check_offset
               else match Child.castle_side m with
                 | Some _ -> castle_offset
                 | None -> move_history m)
@@ -657,11 +654,13 @@ module Order = struct
     | [] -> None
     | moves -> Some (score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
-        else
-          let p = promote_by_value m in
-          if p <> 0 then p else match See.go m with
-            | Some value -> value
-            | None -> 0))
+        else match See.go m with
+          | Some see when see >= 0 -> good_capture_offset + see
+          | Some see -> bad_capture_offset + see
+          | None ->
+            let promote = promote m in
+            if promote <> 0 then promote
+            else 0))
 
   (* Score the moves for quiescence search when we generate
      quiet check evasions. *)
@@ -873,8 +872,9 @@ module Quiescence = struct
   (* Search a child of the current node. *)
   and child st t ~beta ~ply ~pv ~check ~quiet_evasion = fun () (m, order) ->
     let open Continue_or_stop in
-    if should_skip t m ~order ~check ~quiet_evasion then Continue ()
-    else
+    should_skip t m ~order ~check ~quiet_evasion |> function
+    | true -> Continue ()
+    | false ->
       let pos = Child.self m in
       State.set_move st ply m;
       State.push_freq st pos;
@@ -893,7 +893,7 @@ module Quiescence = struct
     t.score > mated max_ply && begin
       (* If we didn't generate quiet check evasions, then ignore moves
          with negative SEE values. *)
-      (not quiet_evasion && order < 0) ||
+      (not quiet_evasion && order <= Order.bad_capture_offset) ||
       (* If we're in check, then allow only one non-capturing evasion
          to be searched. *)
       (check && not (Child.is_capture m) && begin
