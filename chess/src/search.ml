@@ -558,8 +558,7 @@ module Order = struct
   let killer1_offset = 95
   let killer2_offset = 94
   let countermove_offset = 93
-  let check_offset = 92
-  let castle_offset = 91
+  let castle_offset = 92
   let history_offset = -90
   let history_scale = 180
 
@@ -641,7 +640,6 @@ module Order = struct
             else
               let refute = refutation m in
               if refute <> 0 then refute
-              else if Child.gives_check m then check_offset
               else match Child.castle_side m with
                 | Some _ -> castle_offset
                 | None -> move_history m)
@@ -657,10 +655,7 @@ module Order = struct
         else match See.go m with
           | Some see when see >= 0 -> good_capture_offset + see
           | Some see -> bad_capture_offset + see
-          | None ->
-            let promote = promote m in
-            if promote <> 0 then promote
-            else 0))
+          | None -> promote m))
 
   (* Score the moves for quiescence search when we generate
      quiet check evasions. *)
