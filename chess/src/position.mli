@@ -249,8 +249,11 @@ val start : t
     color as the attacker (thus these are "defended" squares).
 *)
 module Attacks : sig
-  (** [get pos c k] returns the set of attacked squares by pieces of kind [k]
-      and color [c]. *)
+  (** [piece pos p] returns the set of attacked squares by all pieces
+      matching [p]. *)
+  val piece : t -> Piece.t -> Bitboard.t
+
+  (** [get pos c k] is equivalent to [piece pos (Piece.create c k)]. *)
   val get : t -> Piece.color -> Piece.kind -> Bitboard.t
 
   (** [pawn pos c] is [get pos c Pawn]. *)

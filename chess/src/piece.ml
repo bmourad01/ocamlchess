@@ -2,11 +2,11 @@ open Core_kernel
 
 let color_bits = 1
 let kind_bits = 3
-let bits = color_bits + kind_bits
+let bits = kind_bits + color_bits
 
 module Bits = struct
-  let color_mask = 0b1_000
-  let kind_mask = 0b0_111
+  let color_mask = 0b000_1
+  let kind_mask = 0b111_0
 
   module Color = struct
     let white = 0b0
@@ -27,23 +27,23 @@ module Bits = struct
 
   (* Valid encodings *)
   module Pieces = struct
-    let white_pawn   = (white lsl kind_bits) lor pawn
-    let white_knight = (white lsl kind_bits) lor knight
-    let white_bishop = (white lsl kind_bits) lor bishop
-    let white_rook   = (white lsl kind_bits) lor rook
-    let white_queen  = (white lsl kind_bits) lor queen
-    let white_king   = (white lsl kind_bits) lor king
-    let black_pawn   = (black lsl kind_bits) lor pawn
-    let black_knight = (black lsl kind_bits) lor knight
-    let black_bishop = (black lsl kind_bits) lor bishop
-    let black_rook   = (black lsl kind_bits) lor rook
-    let black_queen  = (black lsl kind_bits) lor queen
-    let black_king   = (black lsl kind_bits) lor king
+    let white_pawn   = (pawn   lsl color_bits) lor white
+    let white_knight = (knight lsl color_bits) lor white
+    let white_bishop = (bishop lsl color_bits) lor white
+    let white_rook   = (rook   lsl color_bits) lor white
+    let white_queen  = (queen  lsl color_bits) lor white
+    let white_king   = (king   lsl color_bits) lor white
+    let black_pawn   = (pawn   lsl color_bits) lor black
+    let black_knight = (knight lsl color_bits) lor black
+    let black_bishop = (bishop lsl color_bits) lor black
+    let black_rook   = (rook   lsl color_bits) lor black
+    let black_queen  = (queen  lsl color_bits) lor black
+    let black_king   = (king   lsl color_bits) lor black
   end
 
   (* Extract the bits *)
-  let[@inline] color p = p lsr  kind_bits
-  let[@inline] kind p  = p land kind_mask
+  let[@inline] color p = p land color_mask
+  let[@inline] kind  p = p lsr  color_bits
 end
 
 type color = White | Black [@@deriving compare, equal, hash, sexp]
@@ -144,15 +144,15 @@ let[@inline] kind p = Kind.of_int_unsafe @@ Bits.kind p
 let[@inline] decomp p = color p, kind p
 
 let[@inline] create color kind =
-  (Color.to_int color lsl kind_bits) lor Kind.to_int kind
+  Color.to_int color lor (Kind.to_int kind lsl color_bits)
 
 let[@inline] with_color p c = create c (kind p)
 let[@inline] with_kind p k = create (color p) k
 
 (* Testing membership *)
 
-let[@inline] is_white p = p land Bits.color_mask = 0b0_000
-let[@inline] is_black p = p land Bits.color_mask = 0b1_000
+let[@inline] is_white p = p land Bits.color_mask = 0b000_0
+let[@inline] is_black p = p land Bits.color_mask = 0b000_1
 
 let[@inline] is_pawn   p = Bits.(kind p = pawn)
 let[@inline] is_knight p = Bits.(kind p = knight)
