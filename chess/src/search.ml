@@ -296,7 +296,7 @@ module State = struct
   let pv_size = max_ply + 2
   let killer_size = max_ply
   let move_history_size = Piece.Color.count * Square.(count * count)
-  let countermove_size = (1 lsl Piece.bits) * Square.count
+  let countermove_size = Piece.Color.count * Piece.Kind.count * Square.count
 
   let create ~limits ~root ~frequency ~tt ~iter ~ponder =
     (* Make sure that the root position is in our history. *)
