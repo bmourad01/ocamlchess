@@ -83,8 +83,8 @@ static wchar_t piece_unicode(int color, int kind) {
 #define Make_square(x, y) ((unsigned int)(((y) << 3) | (x)))
 #define Move_src(m) (Int_val(m) & 0b111111)
 #define Move_dst(m) ((Int_val(m) >> 6) & 0b111111)
-#define Piece_color(p) ((Int_val(p) >> 3) & 0b1)
-#define Piece_kind(p) (Int_val(p) & 0b111)
+#define Piece_color(p) (Int_val(p) & 0b1)
+#define Piece_kind(p) ((Int_val(p) >> 1) & 0b111)
 
 /* Custom allocation for the SFML window object */
 
