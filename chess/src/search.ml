@@ -396,10 +396,10 @@ module State = struct
   *)
   let update_eval st ~ply ~eval =
     Oa.unsafe_set_some st.evals ply eval;
-    ply < 2 || match Oa.unsafe_get st.evals ply with
+    ply < 2 || match Oa.unsafe_get st.evals (ply - 2) with
     | Some e -> eval > e
     | None when ply < 4 -> true
-    | None -> match Oa.unsafe_get st.evals ply with
+    | None -> match Oa.unsafe_get st.evals (ply - 4) with
       | Some e -> eval > e
       | None -> true
 
