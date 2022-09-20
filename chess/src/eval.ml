@@ -242,11 +242,12 @@ module King_pawn_shield = struct
       let file = Square.file king_sq in
       let i = max 0 (file - 1) in
       let j = min (Square.File.count - 1) (file + 1) in
-      let n =
-        Sequence.range i j ~stop:`inclusive |>
-        Sequence.map ~f:Bb.file_exn |>
-        Sequence.count ~f:(fun f -> Bb.((f & p) = empty)) in
-      n * start_weight, n * end_weight
+      let n = ref 0 in
+      for c = i to j do
+        let f = Bb.file_exn c in
+        if Bb.((f & p) = empty) then incr n
+      done;
+      !n * start_weight, !n * end_weight
   end
 
   let evaluate = evaluate @@ fun pos c ->
