@@ -8,6 +8,8 @@ let[@inline] sub2 (w, x) (y, z) = w - y, x - z
 let[@inline] scale2 (x, y) z = x * z, y * z
 let[@inline] neg2 x = scale2 x (-1)
 
+let[@inline] (++) x y = add2 x y
+
 let files = Array.init Square.File.count ~f:Bb.file_exn
 
 module Phase = struct
@@ -349,11 +351,10 @@ module Pawns = struct
      performance improvement. *)
   let table = Hashtbl.create (module Int64)
 
-  let go pos c = (List.fold [@unrolled 3]) ~init:(0, 0) ~f:add2 [
-      Passed.go pos c;
-      Doubled.go pos c;
-      Isolated.go pos c;
-    ]
+  let go pos c =
+    Passed.go pos c ++
+    Doubled.go pos c ++
+    Isolated.go pos c
 
   (* Evaluate the overall pawn structure. *)
   let evaluate pos =
@@ -633,12 +634,9 @@ module Threats = struct
      higher value. *)
   let evaluate = evaluate @@ fun pos c ->
     let t = (Threats.get [@inlined]) pos c in
-    let pawn_start,  pawn_end  = Pawn.go  pos @@ Threats.pawn  t in
-    let minor_start, minor_end = Minor.go pos @@ Threats.minor t in
-    let rook_start,  rook_end  = Rook.go  pos @@ Threats.rook  t in
-    let start = pawn_start + minor_start + rook_start in
-    let end_  = pawn_end   + minor_end   + rook_end   in
-    start, end_
+    (Pawn.go  pos @@ Threats.pawn  t) ++
+    (Minor.go pos @@ Threats.minor t) ++
+    (Rook.go  pos @@ Threats.rook  t)
 end
 
 module Hanging = struct
@@ -665,19 +663,19 @@ let go pos =
   let material = Material.evaluate pos in
   let king_danger = ref 0, ref 0 in
   let mobility = Mobility.evaluate king_danger pos in
-  let start, end_ = (List.fold [@unrolled 13]) ~init:(0, 0) ~f:add2 [
-      material;
-      mobility;
-      Rook_open_file.evaluate pos;
-      Rook_on_seventh.evaluate pos;
-      Rooks_connected.evaluate pos;
-      Bishop_pair.evaluate pos;
-      King_danger.evaluate king_danger pos;
-      King_pawn_shield.evaluate pos;
-      Pawns.evaluate pos;
-      Placement.evaluate pos;
-      Mop_up.evaluate (snd material) pos;
-      Threats.evaluate pos;
-      Hanging.evaluate pos;
-    ] |> perspective (Position.active pos) neg2 in
+  let start, end_ = perspective (Position.active pos) neg2 begin
+      material ++
+      mobility ++
+      Rook_open_file.evaluate pos ++
+      Rook_on_seventh.evaluate pos ++
+      Rooks_connected.evaluate pos ++
+      Bishop_pair.evaluate pos ++
+      King_danger.evaluate king_danger pos ++
+      King_pawn_shield.evaluate pos ++
+      Pawns.evaluate pos ++
+      Placement.evaluate pos ++
+      Mop_up.evaluate (snd material) pos ++
+      Threats.evaluate pos ++
+      Hanging.evaluate pos
+    end in
   Phase.interpolate phase_weight start end_
