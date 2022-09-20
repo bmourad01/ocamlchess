@@ -1055,9 +1055,8 @@ module Main = struct
     end score
 
   and rfp_margin depth improving =
-    let m = Eval.Material.pawn_mg in
     let r = b2i improving in
-    m * (depth - r)
+    134 * (depth - r)
 
   and rfp_max_depth = 8
 
