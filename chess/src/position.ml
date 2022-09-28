@@ -1660,10 +1660,10 @@ let capture_children pos =
   Movegen.(go_captures bb_to_children) @@ Analysis.create pos
 
 let promotion_children pos =
-  Movegen.(go_captures bb_to_children) @@ Analysis.create pos
+  Movegen.(go_promotions bb_to_children) @@ Analysis.create pos
 
 let quiet_children pos =
-  Movegen.(go_captures bb_to_children) @@ Analysis.create pos
+  Movegen.(go_quiet bb_to_children) @@ Analysis.create pos
 
 let make_move pos m =
   children pos |> List.find ~f:(Fn.flip Child.is_move m)
