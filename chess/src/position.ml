@@ -5,89 +5,87 @@ module Pre = Precalculated
 module Bb = Bitboard
 module Cr = Castling_rights
 
-module T = struct
-  (* Metadata for calculating results related to checks. *)
-  type checks = {
-    wpinned  : Bb.t;
-    bpinned  : Bb.t;
-    wpinners : Bb.t;
-    bpinners : Bb.t;
-    wsquares : Bb.t array;
-    bsquares : Bb.t array;
-  }
+(* Metadata for calculating results related to checks. *)
+type checks = {
+  wpinned  : Bb.t;
+  bpinned  : Bb.t;
+  wpinners : Bb.t;
+  bpinners : Bb.t;
+  wsquares : Bb.t array;
+  bsquares : Bb.t array;
+}
 
-  let empty_checks = {
-    wpinned  = Bb.empty;
-    bpinned  = Bb.empty;
-    wpinners = Bb.empty;
-    bpinners = Bb.empty;
-    wsquares = Array.create Bb.empty ~len:Piece.Kind.count;
-    bsquares = Array.create Bb.empty ~len:Piece.Kind.count;
-  }
+let empty_checks = {
+  wpinned  = Bb.empty;
+  bpinned  = Bb.empty;
+  wpinners = Bb.empty;
+  bpinners = Bb.empty;
+  wsquares = Array.create Bb.empty ~len:Piece.Kind.count;
+  bsquares = Array.create Bb.empty ~len:Piece.Kind.count;
+}
 
-  (* The last two entries are the composite board of each color.  *)
-  let attacks_len =
-    Piece.Color.count * Piece.Kind.count +
-    Piece.Color.count
+(* The last two entries are the composite board of each color.  *)
+let attacks_len =
+  Piece.Color.count * Piece.Kind.count +
+  Piece.Color.count
 
-  let attacks_idx c k =
-    let c = Piece.Color.to_int c in
-    let k = Piece.Kind.to_int k in
-    (k lsl 1) lor c
+let attacks_idx c k =
+  let c = Piece.Color.to_int c in
+  let k = Piece.Kind.to_int k in
+  (k lsl 1) lor c
 
-  (* We'll use mutable fields since, when applying moves, this has a
-     performance advantage over a typical state monad pattern (where
-     we are making a new copy every time we update a field). *)
-  type t = {
-    mutable white      : Bb.t;
-    mutable black      : Bb.t;
-    mutable pawn       : Bb.t;
-    mutable knight     : Bb.t;
-    mutable bishop     : Bb.t;
-    mutable rook       : Bb.t;
-    mutable queen      : Bb.t;
-    mutable king       : Bb.t;
-    mutable active     : Piece.color;
-    mutable castle     : Cr.t;
-    mutable en_passant : Square.t Uopt.t;
-    mutable halfmove   : int;
-    mutable fullmove   : int;
-    mutable hash       : Zobrist.key;
-    mutable pawn_hash  : Zobrist.key;
-    mutable checkers   : Bb.t Lazy.t;
-    mutable checks     : checks Lazy.t;
-    mutable attacks    : Bb.t array Lazy.t;
-  } [@@deriving fields]
+(* We'll use mutable fields since, when applying moves, this has a
+   performance advantage over a typical state monad pattern (where
+   we are making a new copy every time we update a field). *)
+type t = {
+  mutable white      : Bb.t;
+  mutable black      : Bb.t;
+  mutable pawn       : Bb.t;
+  mutable knight     : Bb.t;
+  mutable bishop     : Bb.t;
+  mutable rook       : Bb.t;
+  mutable queen      : Bb.t;
+  mutable king       : Bb.t;
+  mutable active     : Piece.color;
+  mutable castle     : Cr.t;
+  mutable en_passant : Square.t Uopt.t;
+  mutable halfmove   : int;
+  mutable fullmove   : int;
+  mutable hash       : Zobrist.key;
+  mutable pawn_hash  : Zobrist.key;
+  mutable checkers   : Bb.t Lazy.t;
+  mutable checks     : checks Lazy.t;
+  mutable attacks    : Bb.t array Lazy.t;
+} [@@deriving fields]
 
-  let[@inline] en_passant pos = Uopt.to_option pos.en_passant
-  let[@inline] checkers pos = Lazy.force pos.checkers
-  let[@inline] in_check pos = Bb.(checkers pos <> empty)
+type position = t
 
-  (* We make an explicit copy because our move generator will return
-     a new position (thus adhering to a functional style). *)
-  let[@inline] copy pos = {
-    white        = pos.white;
-    black        = pos.black;
-    pawn         = pos.pawn;
-    knight       = pos.knight;
-    bishop       = pos.bishop;
-    rook         = pos.rook;
-    queen        = pos.queen;
-    king         = pos.king;
-    active       = pos.active;
-    castle       = pos.castle;
-    en_passant   = pos.en_passant;
-    halfmove     = pos.halfmove;
-    fullmove     = pos.fullmove;
-    hash         = pos.hash;
-    pawn_hash    = pos.pawn_hash;
-    checkers     = pos.checkers;
-    checks       = pos.checks;
-    attacks      = pos.attacks;
-  }
-end
+let[@inline] en_passant pos = Uopt.to_option pos.en_passant
+let[@inline] checkers pos = Lazy.force pos.checkers
+let[@inline] in_check pos = Bb.(checkers pos <> empty)
 
-include T
+(* We make an explicit copy because our move generator will return
+   a new position (thus adhering to a functional style). *)
+let[@inline] copy pos = {
+  white        = pos.white;
+  black        = pos.black;
+  pawn         = pos.pawn;
+  knight       = pos.knight;
+  bishop       = pos.bishop;
+  rook         = pos.rook;
+  queen        = pos.queen;
+  king         = pos.king;
+  active       = pos.active;
+  castle       = pos.castle;
+  en_passant   = pos.en_passant;
+  halfmove     = pos.halfmove;
+  fullmove     = pos.fullmove;
+  hash         = pos.hash;
+  pawn_hash    = pos.pawn_hash;
+  checkers     = pos.checkers;
+  checks       = pos.checks;
+  attacks      = pos.attacks;
+}
 
 let[@inline] inactive pos = Piece.Color.opposite pos.active
 
@@ -372,7 +370,7 @@ type threats = Threats.t [@@deriving compare, equal, sexp]
 module Analysis = struct
   module T = struct
     type t = {
-      pos                   : T.t;
+      pos                   : position;
       king_sq               : Square.t;
       en_passant_pawn       : Square.t Uopt.t;
       occupied              : Bb.t;
@@ -1322,18 +1320,14 @@ module Makemove = struct
 end
 
 module Child = struct
-  module T = struct
-    type t = {
-      move          : Move.t;
-      parent        : T.t;
-      self          : T.t Lazy.t;
-      capture       : Piece.kind Uopt.t;
-      is_en_passant : bool;
-      castle_side   : Cr.side Uopt.t;
-    } [@@deriving fields]
-  end
-
-  include T
+  type t = {
+    move          : Move.t;
+    parent        : position;
+    self          : position Lazy.t;
+    capture       : Piece.kind Uopt.t;
+    is_en_passant : bool;
+    castle_side   : Cr.side Uopt.t;
+  } [@@deriving fields]
 
   let self child = Lazy.force child.self
 
@@ -1958,10 +1952,12 @@ module See = struct
 end
 
 module Comparable = struct
-  type t = T.t
-
   (* This should work, with questionable efficiency. We can't use the
-     derivers since the record contains lazy fields. *)
+     derivers since the record contains lazy fields.
+
+     We could instead just compare the Zobrist hashes, but we run the
+     chance of a collision.
+  *)
   let compare x y = String.compare (Fen.to_string x) (Fen.to_string y)
   let equal x y = compare x y = 0
 
@@ -1973,4 +1969,8 @@ module Comparable = struct
 end
 
 include Comparable
-include Base.Comparable.Make(Comparable)
+
+include Base.Comparable.Make(struct
+    include Comparable
+    type t = position
+  end)
