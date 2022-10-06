@@ -55,7 +55,7 @@ module Result = struct
     | Resigned White -> Format.fprintf ppf "0-1%!"
     | Resigned Black -> Format.fprintf ppf "1-0%!"
     | Draw _ -> Format.fprintf ppf "1/2-1/2%!"
-    | Ongoing -> Format.fprintf ppf "%%!"
+    | Ongoing -> Format.fprintf ppf "*%!"
 end
 
 module T = struct
@@ -177,21 +177,24 @@ let pp ppf game =
   if Position.(game.start <> start) then
     Format.fprintf ppf "[FEN \"%a\"]\n%!" Position.pp game.start;
   Format.fprintf ppf "\n%!";
-  moves game |> List.fold ~init:(game.start, true) ~f:(fun (pos, full) m ->
-      let child = Position.make_move_exn pos m in
-      let parent = Child.parent child in
-      if full then
-        Format.fprintf ppf "%d.%!" @@ Position.fullmove parent;
-      let full =
-        (* We may have started this game from a position where black
-           moves first. *)
-        let active = Position.active parent in
-        if full && Piece.Color.(active = Black) then begin
-          Format.fprintf ppf "..%!"; full
-        end else not full in
-      Format.fprintf ppf "%a %!" Position.San.pp child;
-      Child.self child, full) |> ignore;
-  Format.fprintf ppf "%a\n%!" Result.pp game.result
+  moves game |> function
+  | [] -> ()
+  | moves ->
+    List.fold moves ~init:(game.start, true) ~f:(fun (pos, full) m ->
+        let child = Position.make_move_exn pos m in
+        let parent = Child.parent child in
+        if full then
+          Format.fprintf ppf "%d.%!" @@ Position.fullmove parent;
+        let full =
+          (* We may have started this game from a position where black
+             moves first. *)
+          let active = Position.active parent in
+          if full && Piece.Color.(active = Black) then begin
+            Format.fprintf ppf "..%!"; full
+          end else not full in
+        Format.fprintf ppf "%a %!" Position.San.pp child;
+        Child.self child, full) |> ignore;
+    Format.fprintf ppf "%a\n%!" Result.pp game.result
 
 let to_string = Format.asprintf "%a\n%!" pp
 
