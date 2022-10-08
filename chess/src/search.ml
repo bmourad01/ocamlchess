@@ -406,19 +406,11 @@ module State = struct
   let lookup_eval st ply = Oa.unsafe_get st.evals ply
   let lookup_eval_unsafe st ply = Oa.unsafe_get_some_exn st.evals ply
   let clear_eval st ply = Oa.unsafe_set_none st.evals ply
-
   let stop st = st.stopped <- true
+  let incr st pos = Hashtbl.incr st.frequency @@ Position.hash pos
 
-  let push_freq st pos =
-    Position.hash pos |>
-    Hashtbl.update st.frequency ~f:(function
-        | Some n -> n + 1 | None -> 1)
-
-  let pop_freq st pos =
-    Position.hash pos |>
-    Hashtbl.change st.frequency ~f:(function
-        | None | Some 1 -> None
-        | Some n -> Some (n - 1))
+  let decr st pos =
+    Hashtbl.decr ~remove_if_zero:true st.frequency @@ Position.hash pos
 
   let pondering st = match st.ponder with
     | Some p -> not @@ Future.is_decided p
@@ -872,14 +864,14 @@ module Quiescence = struct
     | false ->
       let pos = Child.self m in
       State.set_move st ply m;
-      State.push_freq st pos;
+      State.incr st pos;
       State.inc_nodes st;
       let score = Int.neg @@ go st pos ~pv
           ~init:false
           ~ply:(ply + 1)
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
-      State.pop_freq st pos;
+      State.decr st pos;
       if Search.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
       else if st.stopped then Stop t.score
       else Continue ()
@@ -993,9 +985,9 @@ module Main = struct
         let pos = Child.self m in
         State.set_move st ply m;
         State.inc_nodes st;
-        State.push_freq st pos;
+        State.incr st pos;
         let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
-        State.pop_freq st pos;
+        State.decr st pos;
         if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
         else if st.stopped then Stop t.score
         else Continue (i + 1)
@@ -1138,7 +1130,7 @@ module Main = struct
       let beta = -beta_cut + 1 in
       let child = Child.self m in
       State.set_move st ply m;
-      State.push_freq st child;
+      State.incr st child;
       State.inc_nodes st;
       let score = Int.neg @@ Quiescence.go st child
           ~alpha ~beta ~ply:(ply + 1) ~pv:false in
@@ -1148,7 +1140,7 @@ module Main = struct
           Int.neg @@ go st child ~alpha ~beta ~depth
             ~ply:(ply + 1) ~pv:false
         else score in
-      State.pop_freq st child;
+      State.decr st child;
       if score >= beta_cut then
         let depth = depth - (probcut_min_depth - 2) in
         Tt.store st.tt pos ~ply ~depth ~score

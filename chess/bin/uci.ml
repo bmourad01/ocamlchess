@@ -29,8 +29,7 @@ module State = struct
       Hashtbl.clear st.frequency;
       Search.Tt.clear st.tt;
     end;
-    Position.hash pos |> Hashtbl.update st.frequency ~f:(function
-        | None -> 1 | Some n -> n + 1);
+    Hashtbl.incr st.frequency @@ Position.hash pos;
     {st with pos}
 
   let play_move m = gets pos >>= fun pos ->

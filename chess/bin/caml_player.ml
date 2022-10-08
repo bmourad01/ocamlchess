@@ -3,9 +3,7 @@ open Chess
 
 let limits = ref None
 
-let update_frequency m pos =
-  Position.hash pos |> Hashtbl.update m ~f:(function
-      | Some n -> n + 1 | None -> 1)
+let incr m pos = Hashtbl.incr m @@ Position.hash pos
 
 let pp_pv ppf pv =
   let rec aux = function
@@ -41,7 +39,7 @@ let try_book in_book root frequency =
       | Ok m ->
         Format.printf "Book move: %a\n\n%!" Position.San.pp m;
         let new_pos = Position.Child.self m in
-        update_frequency frequency new_pos;
+        incr frequency new_pos;
         Some m
       | Error err ->
         Format.printf "%a; using search\n\n%!" Book.Error.pp err;
@@ -49,7 +47,7 @@ let try_book in_book root frequency =
 
 let choice (frequency, tt, in_book) moves =
   let root = Position.Child.parent @@ List.hd_exn moves in
-  update_frequency frequency root;
+  incr frequency root;
   match try_book in_book root frequency with
   | Some m -> m, (frequency, tt, true)
   | None ->
@@ -57,7 +55,7 @@ let choice (frequency, tt, in_book) moves =
     let res = Search.go ~root ~limits ~frequency ~tt ~iter:print_res () in
     let m = Search.Result.best_exn res in
     let new_pos = Position.Child.self m in
-    update_frequency frequency new_pos;
+    incr frequency new_pos;
     m, (frequency, tt, false)
 
 let name = "caml"
