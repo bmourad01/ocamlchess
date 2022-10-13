@@ -1,8 +1,6 @@
 open Core_kernel
 open Monads.Std
 
-module B = Stdlib.Bytes
-
 type entry = {
   move   : Move.t;
   weight : int;
@@ -62,23 +60,25 @@ let decode_move i =
    - `depth` and `score` are unused.
 *)
 let read filename file =
-  let book = Hashtbl.create (module Int64) in
-  let len = entry_size in
-  let buf = Bytes.create len in
-  let rec next () = match In_channel.input file ~buf ~pos:0 ~len with
-    | n when n = len -> entry ()
-    | 0 -> book
-    | n -> invalid_argf "Invalid length of book file, must be divisible \
-                         by %d (%d bytes remaining)" len n ()
-  and entry () =
-    let key = B.get_int64_be buf 0 in
-    let move = decode_move @@ B.get_int16_be buf 8 in
-    let weight = B.get_int16_be buf 10 in
-    let depth = B.get_int16_be buf 12 in
-    let score = B.get_int16_be buf 14 in
-    Hashtbl.add_multi book ~key ~data:{move; weight; depth; score};
-    next () in
-  next ()
+  let len = In_channel.length file in
+  if Int64.(equal 0L @@ rem len @@ of_int entry_size) then
+    let module Bytes = Stdlib.Bytes in
+    let book = Hashtbl.create (module Int64) in
+    let buf = Bytes.create entry_size in
+    let rec next () =
+      match In_channel.really_input file ~buf ~pos:0 ~len:entry_size with
+      | None -> book
+      | Some () ->
+        let key = Bytes.get_int64_be buf 0 in
+        let move = decode_move @@ Bytes.get_int16_be buf 8 in
+        let weight = Bytes.get_int16_be buf 10 in
+        let depth = Bytes.get_int16_be buf 12 in
+        let score = Bytes.get_int16_be buf 14 in
+        Hashtbl.add_multi book ~key ~data:{move; weight; depth; score};
+        next () in
+    next ()
+  else invalid_argf "Invalid length %Ld of book file, \
+                     must be divisible by %d" len entry_size ()
 
 let create filename =
   let table = In_channel.with_file filename ~binary:true ~f:(read filename) in
