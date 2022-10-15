@@ -459,7 +459,7 @@ module State = struct
 
   (* Update the move history heuristic. *)
   let update_move_history st m depth =
-    if depth > 0 then begin
+    if depth > 0 then
       let i = move_history_idx m in
       let d = Array.unsafe_get st.move_history i + (depth * depth) in
       Array.unsafe_set st.move_history i d;
@@ -468,7 +468,6 @@ module State = struct
         st.move_history_max_w <- max d st.move_history_max_w
       | Black ->
         st.move_history_max_b <- max d st.move_history_max_b
-    end
 
   let move_history_max st pos = match Position.active pos with
     | White -> st.move_history_max_w
@@ -606,6 +605,9 @@ module State = struct
         if Root_move.same_move rm m then Some rm else aux (i + 1)
       else None in
     aux pos
+
+  let best_root_move st = Array.unsafe_get st.root_moves 0
+  let current_root_move st = Array.unsafe_get st.root_moves st.pv_index
 end
 
 type state = State.t
@@ -825,14 +827,14 @@ module Search = struct
     State.find_root_move st m |>
     Option.iter ~f:(fun (rm : Root_move.t) ->
         Root_move.update_avg rm score;
-        if i = 0 || score > t.alpha then begin
+        if i = 0 || score > t.alpha then
+          let child_pv = Array.unsafe_get st.pv 1 in
           rm.score <- score;
           rm.seldepth <- st.seldepth;
-          let child_pv = Array.unsafe_get st.pv 1 in
           State.update_pv_aux rm.pv child_pv
-        end else rm.score <- (-inf))
+        else rm.score <- (-inf))
 
-  (* Return true if we fail high. *)
+  (* Update the results of the search and return true if we fail high. *)
   let cutoff ?(q = false) st t m ~score ~beta ~ply ~depth ~pv =
     let result = ref false in
     if score > t.score then begin
@@ -1454,7 +1456,7 @@ module Aspiration = struct
       Main.with_moves st st.root moves ~alpha ~beta ~depth
         ~check:st.check ~ply:0 ~pv:true in
     State.sort_root_moves st st.pv_index;
-    if not st.stopped then begin
+    if not st.stopped then
       let new_delta = delta * 2 in
       if score >= beta then
         let beta = min inf (score + delta) in
@@ -1463,7 +1465,6 @@ module Aspiration = struct
         let beta = (alpha + beta) / 2 in
         let alpha = max (-inf) (score - delta) in
         loop st moves depth ~alpha ~beta ~delta:new_delta
-    end
 
   let go st moves depth basis =
     if depth < min_depth then
@@ -1482,28 +1483,29 @@ end
 
 let result (st : state) ~time =
   let lines = State.extract_lines st in
-  let r = Result.Fields.create ~lines ~time
-      ~nodes:st.nodes ~depth:st.root_depth in
+  let nodes = st.nodes and depth = st.root_depth in
+  let r = Result.Fields.create ~lines ~time ~nodes ~depth in
   st.iter r;
   r
 
 let rec iterdeep (st : state) moves =
-  if st.pv_index < st.multi_pv then begin
+  if st.pv_index < st.multi_pv then
+    let rm = State.current_root_move st in
     State.new_line st;
-    let rm = Array.unsafe_get st.root_moves st.pv_index in
     Aspiration.go st moves st.root_depth rm.avg_score;
     let time = State.elapsed st in
     st.pv_index <- st.pv_index + 1;
     State.sort_root_moves st 0 ~last:st.pv_index;
-    if Limits.stopped st.limits then result st ~time
-    else iterdeep st moves
-  end else next st moves
+    if not @@ Limits.stopped st.limits
+    then iterdeep st moves
+    else result st ~time
+  else next st moves
 
 (* Decide whether to continue iterating. *)
 and next st moves =
   let time = State.elapsed st in
   let result = result st ~time in
-  let best = Array.unsafe_get st.root_moves 0 in
+  let best = State.best_root_move st in
   let score, _ = Root_move.real_score best in
   let mate = is_mate score in
   let mated = is_mated score in
