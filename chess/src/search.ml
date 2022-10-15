@@ -315,8 +315,10 @@ module Root_move = struct
   let same_move t m = same_move m @@ Oa.unsafe_get_some_exn t.pv 0
 
   let order x y = match compare y.score x.score with
-    | 0 -> compare y.prev_score x.prev_score
-    | n -> n
+    | n when n <> 0 -> n
+    | _ -> match compare y.prev_score x.prev_score with
+      | n when n <> 0 -> n
+      | _ -> compare y.avg_score x.avg_score
 
   let real_score t =
     let updated = t.score <> (-inf) in
