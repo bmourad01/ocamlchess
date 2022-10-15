@@ -52,3 +52,13 @@ See `ocamlchess gui --help` for more information.
 
 `ocamlchess perft <n>` will run the *perf*ormance *t*est up to depth `n`.
 See `ocamlchess perft --help` for more information.
+
+# Acknowledgements
+
+We would like to thank the following projects/resources, which have been used to aid the development of `ocamlchess`:
+
+- The [Chess Programming Wiki](https://www.chessprogramming.org/)
+- [Stockfish](https://github.com/official-stockfish/Stockfish)
+- [Inanis](https://github.com/Tearth/Inanis)
+- [mantissa](https://github.com/jtheardw/mantissa)
+- [wukongJS](https://github.com/maksimKorzh/wukongJS)
