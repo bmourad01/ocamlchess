@@ -589,10 +589,12 @@ module State = struct
       | Some last -> last in
     let len = max 0 (last - first) in
     if len > 1 then
-      let a = Array.create ~len @@ Array.unsafe_get st.root_moves first in
-      Array.blit ~src:st.root_moves ~src_pos:first ~dst:a ~dst_pos:0 ~len;
-      Array.stable_sort a ~compare:Root_move.order;
-      Array.blit ~src:a ~src_pos:0 ~dst:st.root_moves ~dst_pos:first ~len
+      let compare = Root_move.order in
+      if len < Array.length st.root_moves then
+        let a = Array.sub st.root_moves ~pos:first ~len in
+        Array.stable_sort a ~compare;
+        Array.blit ~src:a ~src_pos:0 ~dst:st.root_moves ~dst_pos:first ~len
+      else Array.stable_sort st.root_moves ~compare
 
   let find_root_move ?(pos = 0) st m =
     let rec aux i =
