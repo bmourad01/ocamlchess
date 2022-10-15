@@ -1087,9 +1087,17 @@ module Main = struct
         let f = child st t pos ~beta ~depth ~ply
             ~check ~pv ~improving ~ttentry in
         let score = Iterator.fold_until it ~init:0 ~finish ~f in
-        if not @@ State.has_excluded st ply then
-          Search.store st t pos ~depth ~ply ~score ~pv;
+        if should_store st ply then Search.store st t pos ~depth ~ply ~score ~pv;
         score
+
+  (* Don't store the results in the TT if:
+
+     - We're in a Singular Extension search.
+     - We're in the root position and we're searching a line that isn't
+       the PV.
+  *)
+  and should_store (st : state) ply =
+    not (State.has_excluded st ply || (ply = 0 && st.pv_index > 0))
 
   (* If we're not in a PV search and we're not in check, then try a
      variety of pruning heuristics before we search the children of
