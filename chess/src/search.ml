@@ -745,7 +745,7 @@ module Order = struct
            captures and castling moves. *)
         let h = State.move_history st m in
         let m = (h * history_scale) + max - 1 in
-        Float.(to_int (of_int m / maxf)) + history_offset in
+        Int.of_float_unchecked (Int.to_float m /. maxf) + history_offset in
     score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
         else match See.go m with
