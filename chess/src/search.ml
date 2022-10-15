@@ -584,16 +584,17 @@ module State = struct
           Oa.unsafe_set_some st.countermoves i m
 
   let sort_root_moves ?last st first =
+    let total = Array.length st.root_moves in
     let last = match last with
-      | None -> Array.length st.root_moves
-      | Some last -> last in
+      | Some last -> last
+      | None -> total in
     let len = max 0 (last - first) in
     if len > 1 then
       let compare = Root_move.order in
-      if len < Array.length st.root_moves then
+      if len < total then
         let a = Array.sub st.root_moves ~pos:first ~len in
         Array.stable_sort a ~compare;
-        Array.blit ~src:a ~src_pos:0 ~dst:st.root_moves ~dst_pos:first ~len
+        Array.unsafe_blit ~src:a ~src_pos:0 ~dst:st.root_moves ~dst_pos:first ~len
       else Array.stable_sort st.root_moves ~compare
 
   let find_root_move ?(pos = 0) st m =
