@@ -131,8 +131,29 @@ type tt = Tt.t
 
 (** The search result. *)
 module Result : sig
-  (** The search result. *)
+  (** A line of play that was selected by the search. *)
+  module Line : sig
+    type t
+
+    (** The sequence of moves that should be played (in order) for this line. *)
+    val pv : t -> Position.child list
+
+    (** The score assigned to this line. *)
+    val score : t -> Uci.Send.Info.score
+
+    (** The selective search depth in plies. This is the actual maximum depth
+        that was searched, which may be less or greater than the actual depth
+        limit. This may happen if the engine decides to extend the search for
+        more interesting lines, or reduce the search for lines which are
+        unlikely to improve the position. *)
+    val seldepth : t -> int
+  end
+
+  type line = Line.t
   type t
+
+  (** The preferred lines of play. *)
+  val lines : t -> line list
 
   (** The principal variation (PV). This is the engine's preferred line of
       play for both sides. Thus, the first element of the PV is the engine's
@@ -141,7 +162,10 @@ module Result : sig
       If this is not a mating sequence, then it is guaranteed to have a length
       that is at most the depth that was searched.
   *)
-  val pv : t -> Position.child list
+  val pv : t -> line option
+
+  (** Same as [pv], but raises if there are no lines. *)
+  val pv_exn : t -> line
 
   (** The best move to play, if any. This is the first element of the PV. *)
   val best : t -> Position.child option
@@ -149,21 +173,11 @@ module Result : sig
   (** The best move to play. Raises if the PV is empty. *)
   val best_exn : t -> Position.child
 
-  (** The score that was given to the best move. *)
-  val score : t -> Uci.Send.Info.score
-
   (** The number of nodes (positions) that were searched. *)
   val nodes : t -> int
 
   (** The depth limit of the search. *)
   val depth : t -> int
-
-  (** The selective search depth in plies. This is the actual maximum depth
-      that was searched, which may be less or greater than the actual depth
-      limit. This may happen if the engine decides to extend the search for
-      more interesting lines, or reduce the search for lines which are
-      unlikely to improve the position. *)
-  val seldepth : t -> int
 
   (** The total time (in milliseconds) taken to complete the search. *)
   val time : t -> int
@@ -189,10 +203,14 @@ type result = Result.t
     An optional future [ponder] can be provided. If it is [None] (default),
     then the search will run normally. Otherwise, it will run in ponder mode
     until this future is decided.
+
+    For searching multiple lines, [multi_pv] can be provided (by default it
+    is [1]).
 *)
 val go :
   ?iter:(result -> unit) ->
   ?ponder:unit Bap_future.Std.future option ->
+  ?multi_pv:int ->
   root:Position.t ->
   limits:limits ->
   frequency:(Zobrist.key, int) Base.Hashtbl.t ->

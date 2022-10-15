@@ -7,6 +7,7 @@ open Bap_future.Std
 open Monads.Std
 
 module Child = Position.Child
+module Line = Search.Result.Line
 
 module State = struct
   module T = struct
@@ -138,7 +139,7 @@ module Options = struct
     let ponder = false
     let own_book = false
     let book_path = "book.bin"
-    let multi_pv = T.{default = 1; min = 1; max = 1}
+    let multi_pv = T.{default = 1; min = 1; max = 500}
   end
 
   let tbl = Hashtbl.of_alist_exn (module String) [
@@ -265,43 +266,43 @@ module Search_thread = struct
      search. *)
   let info_of_result root tt result =
     let depth = Search.Result.depth result in
-    let score = Search.Result.score result in
-    let info = match Search.Result.pv result with
-      | [] -> Uci.Send.Info.[Depth depth; Score score]
-      | pv ->
-        let seldepth = Search.Result.seldepth result in
-        let nodes = Search.Result.nodes result in
-        (* Avoid division by zero here (the search may terminate in under a
-           millisecond). *)
-        let time = max 1 @@ Search.Result.time result in
-        let nps = (nodes * 1000) / time in
-        Uci.Send.Info.[
-          Depth depth;
-          Seldepth seldepth;
-          Score score;
-          Nodes nodes;
-          Nps nps;
-          Time time;
-          Pv (List.map pv ~f:Child.move);
-        ] in
-    Format.printf "%a\n%!" Uci.Send.pp @@ Info info
+    let time = max 1 @@ Search.Result.time result in
+    let nodes = Search.Result.nodes result in
+    let nps = (nodes * 1000) / time in
+    Search.Result.lines result |> List.iteri ~f:(fun i line ->
+        let pv = Line.pv line |> List.map ~f:Child.move in
+        let score = Line.score line in
+        let seldepth = Line.seldepth line in
+        Format.printf "%a\n%!" Uci.Send.pp @@ Info Uci.Send.Info.[
+            Uci.Send.Info.Depth depth;
+            Seldepth seldepth;
+            Multipv (i + 1);
+            Score score;
+            Nodes nodes;
+            Nps nps;
+            Time time;
+            Pv pv;
+          ])
 
   let bestmove result =
     let make ?p m =
       let move = Child.move m in
       let ponder = Option.map p ~f:Child.move in
       Uci.Send.Bestmove.{move; ponder} in
-    let bestmove = match Search.Result.pv result with
-      | [] -> None
-      | [m] -> Some (make m)
-      | m :: p :: _ -> Some (make m ~p) in
+    let bestmove =
+      Search.Result.pv result |>
+      Option.bind ~f:(fun line -> match Line.pv line with
+          | m :: p :: _ -> Some (make m ~p)
+          | [m] -> Some (make m)
+          | [] -> None) in
     Format.printf "%a\n%!" Uci.Send.pp @@ Bestmove bestmove
 
   (* The main search routine, should be run in a separate thread. *)
   let search ~root ~limits ~frequency ~tt ~stop ~ponder =
     let result = try
-        Search.go () ~root ~limits ~frequency ~tt ~ponder
-          ~iter:(info_of_result root tt)
+        let iter = info_of_result root tt in
+        let multi_pv = Options.spin_value "MultiPV" in
+        Search.go () ~root ~limits ~frequency ~tt ~ponder ~multi_pv ~iter
       with exn ->
         Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
         Err.exit () in

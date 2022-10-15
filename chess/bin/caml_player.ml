@@ -1,6 +1,8 @@
 open Core_kernel [@@warning "-D"]
 open Chess
 
+module Line = Search.Result.Line
+
 let limits = ref None
 
 let incr m pos = Hashtbl.incr m @@ Position.hash pos
@@ -22,12 +24,13 @@ let pp_score ppf : Uci.Send.Info.score -> unit = function
   | Cp (cp, Upper) -> Format.fprintf ppf "%d (upper-bound)%!" cp
 
 let print_res res =
+  let line = Search.Result.pv_exn res in
   Format.printf "Time taken: %dms\n%!" @@ Search.Result.time res;
-  Format.printf "Principal variation: %a\n%!" pp_pv @@ Search.Result.pv res;
+  Format.printf "Principal variation: %a\n%!" pp_pv @@ Line.pv line;
   Format.printf "Depth: %d\n%!" @@ Search.Result.depth res;
-  Format.printf "Selective depth: %d\n%!" @@ Search.Result.seldepth res;
+  Format.printf "Selective depth: %d\n%!" @@ Line.seldepth line;
   Format.printf "Nodes searched: %d\n%!" @@ Search.Result.nodes res;
-  Format.printf "Score: %a\n%!" pp_score @@ Search.Result.score res;
+  Format.printf "Score: %a\n%!" pp_score @@ Line.score line;
   Format.printf "\n%!"
 
 let book = ref None
