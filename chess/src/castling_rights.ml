@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 
 let bits = 4
 let nmask = lnot 0b1111

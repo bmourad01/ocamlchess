@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 open Chess
 open Monads.Std
 
@@ -259,7 +259,7 @@ let window_size = 640
 external init_fonts : string -> string -> unit = "ocamlchess_init_fonts"
 external init_named_values : unit -> unit = "ocamlchess_init_named_values"
 
-let assets = Sys.getenv "HOME" ^ "/.local/share/ocamlchess/assets/"
+let assets = Caml.Sys.getenv "HOME" ^ "/.local/share/ocamlchess/assets/"
 let piece_font = assets ^ "FreeSerif.ttf"
 let text_font = assets ^ "FreeSans.ttf"
 

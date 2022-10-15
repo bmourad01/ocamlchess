@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 
 module T = struct
   type t = int64 [@@deriving compare, equal, hash, sexp]

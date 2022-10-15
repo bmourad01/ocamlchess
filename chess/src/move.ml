@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 
 let bits = Piece.kind_bits + (Square.bits * 2)
 

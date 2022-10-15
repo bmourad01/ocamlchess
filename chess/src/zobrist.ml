@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 
 type key = int64 [@@deriving equal, compare, sexp]
 

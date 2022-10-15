@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 open OUnit2
 open Chess
 
@@ -7,7 +7,7 @@ let test_fold_full () =
     Bitboard.fold Bitboard.full ~init:(0, [])
       ~f:(fun (count, l) _ -> count + 1, count :: l) in
   assert_equal count Square.count ~cmp:Int.equal;
-  assert_equal l (List.init Square.count ~f:ident |> List.rev)
+  assert_equal l (List.init Square.count ~f:Fn.id |> List.rev)
     ~cmp:(List.equal Int.equal)
 
 let test_fold_full_rev () =
@@ -15,7 +15,7 @@ let test_fold_full_rev () =
     Bitboard.fold_rev Bitboard.full ~init:(0, [])
       ~f:(fun (count, l) _ -> count + 1, count :: l) in
   assert_equal count Square.count ~cmp:Int.equal;
-  assert_equal l (List.init Square.count ~f:ident |> List.rev)
+  assert_equal l (List.init Square.count ~f:Fn.id |> List.rev)
     ~cmp:(List.equal Int.equal)
 
 let test_fold_empty () =

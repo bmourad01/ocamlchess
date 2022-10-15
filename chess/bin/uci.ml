@@ -1,4 +1,7 @@
-open Core_kernel
+module M = Mutex
+module T = Thread
+
+open Core_kernel [@@warning "-D"]
 open Chess
 open Bap_future.Std
 open Monads.Std
@@ -241,22 +244,22 @@ let position pos moves = match Position.Valid.check pos with
 module Search_thread = struct
   let t = Atomic.make None
   let c = Condition.create ()
-  let m = Mutex.create ()
+  let m = M.create ()
 
   let signal ps =
-    Mutex.lock m;
+    M.lock m;
     List.iter ps ~f:(Option.iter ~f:(fun p -> Promise.fulfill p ()));
     Condition.signal c;
-    Mutex.unlock m
+    M.unlock m
 
   let wait stop ponder =
     let open Future in
     let cond = match ponder with
       | Some ponder -> fun () -> is_decided stop || is_decided ponder
       | None        -> fun () -> is_decided stop in
-    Mutex.lock m;
+    M.lock m;
     while not @@ cond () do Condition.wait c m done;
-    Mutex.unlock m
+    M.unlock m
 
   (* For each iteration in the search, send a UCI `info` command about the
      search. *)
@@ -317,14 +320,14 @@ module Search_thread = struct
     State.(gets ponder) >>| fun ponder ->
     Atomic.get t |> Option.iter ~f:(fun t ->
         signal [stop; ponder];
-        Thread.join t;
+        T.join t;
         failwith
           "Error: tried to start a new search while the previous one is \
            still running")
 
   let start ~root ~limits ~frequency ~tt ~stop ~ponder =
     Atomic.set t @@ Option.return @@
-    Thread.create (fun () -> search ~root ~limits ~frequency ~tt ~stop ~ponder) ()
+    T.create (fun () -> search ~root ~limits ~frequency ~tt ~stop ~ponder) ()
 end
 
 module Go = struct
@@ -485,4 +488,4 @@ let run () =
   Atomic.get Search_thread.t |>
   Option.iter ~f:(fun t ->
       Search_thread.signal ps;
-      Thread.join t);
+      T.join t);

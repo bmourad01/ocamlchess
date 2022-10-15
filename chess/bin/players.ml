@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 open Chess
 
 (* We're using a map because we want the order to be consistent when

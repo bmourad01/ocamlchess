@@ -59,7 +59,7 @@ val event : t -> string option
 val site : t -> string option
 
 (** The date the game was played, if any. *)
-val date : t -> Core_kernel.Date.t option
+val date : t -> Core_kernel.Date.t option [@@warning "-D"]
 
 (** The round of the event (such as in a tournament), if any. *)
 val round : t -> int option 
@@ -81,7 +81,7 @@ val moves : t -> Move.t list
 
 (** The map from position hashes to the number of times they have occurred in
     the game. *)
-val history : t -> int Core_kernel.Int64.Map.t
+val history : t -> int Core_kernel.Int64.Map.t [@@warning "-D"]
 
 (** Returns the current position of the game. *)
 val position : t -> Position.t
@@ -101,6 +101,7 @@ val create :
   ?start:Position.t ->
   unit ->
   t
+[@@warning "-D"]
 
 (** Raised when [add_move] is called on a game that has ended. *)
 exception Game_over

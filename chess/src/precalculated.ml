@@ -1,4 +1,4 @@
-open Core_kernel
+open Core_kernel [@@warning "-D"]
 
 module Bb = Bitboard
 module Cr = Castling_rights

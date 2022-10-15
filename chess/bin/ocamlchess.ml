@@ -58,12 +58,12 @@ module Gui = struct
     Elo_world.init ();
     `S "PLAYER" ::
     `Pre "Predefined algorithms for the computer." :: begin
-      Players.enumerate () |> Core_kernel.Sequence.map
+      Players.enumerate () |> Base.Sequence.map
         ~f:(fun Player.(T player) ->
             `P (Format.sprintf "%s: %s"
                   (Player.name player)
                   (Player.desc player))) |>
-      Core_kernel.Sequence.to_list
+      Base.Sequence.to_list
     end
 
   let try_create_limits pos nodes depth =
@@ -83,6 +83,8 @@ module Gui = struct
       Format.eprintf "Error when loading book: %s\n%!" msg;
       Err.exit ()
 
+  module Time = Core_kernel.Time [@@warning "-D"]
+
   let go pos white black delay depth nodes book no_validate =
     let validate = not no_validate in
     let pos = try_create_pos pos validate in
@@ -95,12 +97,11 @@ module Gui = struct
     let limits = try_create_limits pos nodes depth in
     Caml_player.limits := Some limits;
     Base.Option.iter book ~f:(fun filename ->
-        let open Core_kernel in
         let t = Time.now () in
         try_load_book filename;
         let t' = Time.now () in
         let sec = Time.(Span.to_sec @@ diff t' t) in
-        printf "Loaded book %s in %fs\n\n%!" filename sec);
+        Format.printf "Loaded book %s in %fs\n\n%!" filename sec);
     Gui.run pos ~white ~black ~delay
 
   let pos =
