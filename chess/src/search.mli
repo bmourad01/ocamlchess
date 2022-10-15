@@ -204,8 +204,9 @@ type result = Result.t
     then the search will run normally. Otherwise, it will run in ponder mode
     until this future is decided.
 
-    For searching multiple lines, [multi_pv] can be provided (by default it
-    is [1]).
+    For searching multiple lines, [multi_pv] can be provided. By default, it
+    is [1], and if a value less than [1] is provided then the default is
+    used.
 *)
 val go :
   ?iter:(result -> unit) ->
