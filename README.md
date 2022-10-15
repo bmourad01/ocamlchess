@@ -61,4 +61,5 @@ We would like to thank the following projects/resources, which have been used to
 - [Stockfish](https://github.com/official-stockfish/Stockfish)
 - [Inanis](https://github.com/Tearth/Inanis)
 - [mantissa](https://github.com/jtheardw/mantissa)
+- [Shallow Blue](https://github.com/GunshipPenguin/shallow-blue)
 - [wukongJS](https://github.com/maksimKorzh/wukongJS)
