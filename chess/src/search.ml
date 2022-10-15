@@ -524,18 +524,6 @@ module State = struct
     Oa.unsafe_set_some pv 0 m;
     update_pv_aux pv child_pv
 
-  let extract_pv_aux pv depth =
-    let[@inline] rec extract acc i =
-      if i >= depth then List.rev acc
-      else match Oa.unsafe_get pv i with
-        | None -> List.rev acc
-        | Some m -> extract (m :: acc) (i + 1) in
-    extract [] 0
-
-  let extract_pv st ~ply ~depth =
-    let pv = Array.unsafe_get st.pv ply in
-    extract_pv_aux pv depth
-
   let extract_lines st =
     Array.foldi st.root_moves ~init:[] ~f:(fun i acc rm ->
         if i < st.multi_pv then
@@ -543,9 +531,14 @@ module State = struct
           if st.root_depth > 1 || updated || i = 0 then
             let mate = is_mate score in
             let mated = is_mated score in
-            let depth = pv_depth st score ~mate ~mated in
-            let line = Result.Line.Fields.create
-                ~pv:(extract_pv_aux rm.pv depth)
+            let pv =
+              let depth = pv_depth st score ~mate ~mated in
+              let init = 0, [] and finish = Fn.compose List.rev snd in
+              Oa.fold_until rm.pv ~init ~finish ~f:(fun (i, l) -> function
+                  | Some _ when i >= depth -> Stop (List.rev l)
+                  | Some m -> Continue (i + 1, m :: l)
+                  | None -> Stop (List.rev l)) in
+            let line = Result.Line.Fields.create ~pv
                 ~score:(convert_score score ~mate ~mated)
                 ~seldepth:rm.seldepth in
             line :: acc
