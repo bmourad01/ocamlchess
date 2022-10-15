@@ -1571,9 +1571,9 @@ let go
     () =
   match moves root limits with
   | [] -> no_moves root iter
-  | _ when multi_pv < 1 -> no_moves root iter
   | _ when mate_in_zero limits -> no_moves root iter ~mzero:true
   | moves ->
+    let multi_pv = max multi_pv 1 in
     let st = State.create moves ~multi_pv ~root
         ~limits ~frequency ~tt ~iter ~ponder in
     iterdeep st moves
