@@ -1409,9 +1409,9 @@ module Main = struct
 
   (* Principal variation search.
 
-     Attempt to search with a zero window around alpha, and do a full search
-     if the score is within our normal window This can allow us to skip lines
-     that are unlikely to be part of the PV.
+     Attempt to search with a zero window around alpha, and do a full
+     search if the score is within our normal window. This can allow us
+     to skip lines that are unlikely to be part of the PV.
   *)
   and pvs st t pos ~i ~r ~beta ~ply ~depth ~pv =
     let[@specialise] go ?(r = 0) alpha ~pv =
