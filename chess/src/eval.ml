@@ -9,6 +9,7 @@ let[@inline] scale2 (x, y) z = x * z, y * z
 let[@inline] neg2 x = scale2 x (-1)
 
 let[@inline] (++) x y = add2 x y
+let[@inline] ( ** ) x y = scale2 x y
 
 let files = Array.init Square.File.count ~f:Bb.file_exn
 
@@ -81,7 +82,7 @@ module Material = struct
   let evaluate = evaluate @@ fun pos c ->
     let us = Position.board_of_color pos c in
     Array.fold weights ~init:(0, 0) ~f:(fun acc (k, w)  ->
-        add2 acc @@ scale2 w Bb.(count (us & Position.board_of_kind pos k)))
+        acc ++ (w ** Bb.(count (us & Position.board_of_kind pos k))))
 end
 
 module Mobility = struct
@@ -119,7 +120,7 @@ module Mobility = struct
               king_danger := !king_danger + Bb.(count (b & box));
               Bb.(count (b & center)) * w.center +
               Bb.(count (b - center))) in
-        add2 acc (score * w.start, score * w.end_))
+        acc ++ (score * w.start, score * w.end_))
 end
 
 module Rook_open_file = struct
@@ -253,11 +254,12 @@ module King_pawn_shield = struct
   end
 
   let evaluate = evaluate @@ fun pos c ->
-    let open Bb.Syntax in
     let p = Position.pawn pos in
     let b = Position.board_of_color pos c in
-    let king_sq = Bb.first_set_exn (b & Position.king pos) in
-    add2 (Shield.go king_sq c (b & p)) (Open_file.go king_sq p)
+    let king_sq = Bb.(first_set_exn (b & Position.king pos)) in
+    let shield = Shield.go king_sq c Bb.(b & p) in
+    let open_file = Open_file.go king_sq p in
+    shield ++ open_file
 end
 
 (* Pawn structure. *)
@@ -541,9 +543,9 @@ module Placement = struct
 
   (* Weighted sum of piece placement (using piece-square tables). *)
   let evaluate = evaluate @@ fun pos c ->
+    let init = 0, 0 in
     Position.collect_color pos c |>
-    List.fold ~init:(0, 0) ~f:(fun acc (sq, k) ->
-        add2 acc @@ Tables.of_kind sq c k)
+    List.fold ~init ~f:(fun acc (sq, k) -> acc ++ Tables.of_kind sq c k)
 end
 
 module Mop_up = struct
