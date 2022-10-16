@@ -1149,7 +1149,9 @@ module Main = struct
   (* For multi-PV searching, ignore moves that are ordered before the current
      PV index. *)
   and no_root_move (st : state) m ~ply =
-    ply = 0 && Option.is_none (State.find_root_move st m ~pos:st.pv_index)
+    ply = 0
+    && st.multi_pv > 1
+    && Option.is_none (State.find_root_move st m ~pos:st.pv_index)
 
   (* Futility pruning.
 
