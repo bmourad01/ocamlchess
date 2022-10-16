@@ -138,6 +138,7 @@ module Options = struct
   module Defaults = struct
     let ponder = false
     let own_book = false
+    let book_random = false
     let book_path = "book.bin"
     let multi_pv = T.{default = 1; min = 1; max = 500}
   end
@@ -146,6 +147,7 @@ module Options = struct
       "MultiPV",    spin Defaults.multi_pv;
       "Ponder",     check Defaults.ponder;
       "OwnBook",    check Defaults.own_book;
+      "BookRandom", check Defaults.book_random;
       "BookPath",   string Defaults.book_path;
       "Clear Hash", button State.clear_tt;
     ]
@@ -204,7 +206,8 @@ module Book = struct
     | None -> return false
     | Some book ->
       State.(gets pos) >>| fun pos ->
-      match Book.lookup book pos with
+      let random = Options.check_value "BookRandom" in
+      match Book.lookup book pos ~random with
       | Ok m -> book_move m; true
       | Error _ -> false
 end
