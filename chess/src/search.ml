@@ -16,6 +16,14 @@ let[@inline][@specialise] (>>?) x f = match x with
 let b2i = Bool.to_int
 let b2in = Fn.compose b2i not
 
+let[@inline] max x y =
+  let m = x - y in
+  x - (m land (m asr (Caml.Sys.int_size - 1)))
+
+let[@inline] min x y =
+  let m = x - y in
+  y + (m land (m asr (Caml.Sys.int_size - 1)))
+
 module Limits = struct
   type t = {
     infinite : bool;
