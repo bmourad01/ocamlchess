@@ -580,7 +580,7 @@ module State = struct
   let sort_root_moves ?last st first =
     let total = Array.length st.root_moves in
     let last = match last with
-      | Some last -> last
+      | Some last -> min total last
       | None -> total in
     let len = max 0 (last - first) in
     if len > 1 then
