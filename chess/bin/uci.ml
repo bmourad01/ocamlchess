@@ -74,7 +74,7 @@ module Options = struct
 
   (* Artificial type to resolve ambiguity between the Combo and String
      constructors. *)
-  type combo = [`combo of string]
+  type combo = {v : string} [@@unboxed]
 
   type _ t =
     | Spin : {spin : T.spin; mutable value : int} -> int t
@@ -99,7 +99,7 @@ module Options = struct
     let check : bool t -> bool -> unit state = fun (Check c) b ->
       return (c.value <- b)
 
-    let combo : combo t -> combo -> unit state = fun (Combo c) (`combo v) ->
+    let combo : combo t -> combo -> unit state = fun (Combo c) {v} ->
       return @@ if T.is_var v c.combo then c.value <- v
 
     let string : string t -> string -> unit state = fun (String s) v ->
@@ -123,7 +123,7 @@ module Options = struct
     unit state = fun t callback ~name ~value -> match t with
     | Spin _   -> callback t @@ parse ~name ~value ~f:Int.of_string
     | Check _  -> callback t @@ parse ~name ~value ~f:Bool.of_string
-    | Combo _  -> callback t @@ parse ~name ~value ~f:(fun s -> `combo s)
+    | Combo _  -> callback t @@ parse ~name ~value ~f:(fun v -> {v})
     | String _ -> callback t @@ parse ~name ~value ~f:Fn.id
     | Button   -> callback t ()
 
