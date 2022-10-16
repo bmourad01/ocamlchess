@@ -81,7 +81,7 @@ module Limits = struct
         our_time / int_of_float (20.0 *. ratio) in
     time + our_inc
 
-  let default_depth = 8
+  let default_depth = 9
 
   let create
       ?(nodes = None)
