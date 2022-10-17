@@ -115,9 +115,9 @@ module Tt : sig
   type entry = Entry.t
   type t
 
-  (** [create ?len ()] creates a fresh table, where [len] is the maximum
-      number of entries allowed. *)
-  val create : ?len:int -> unit -> t
+  (** [create ?mb ()] creates a fresh table whose size is [mb] megabytes. By
+      default, it is 32MB. *)
+  val create : ?mb:int -> unit -> t
 
   (** Clears all entries in the table. *)
   val clear : t -> unit

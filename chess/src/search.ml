@@ -178,6 +178,10 @@ module Tt = struct
 
     let eval e = Uopt.to_option e.eval
     let best e = Uopt.to_option e.best
+
+    (* There is some extra space being used for heap-allocated values,
+       but we will ignore it. *)
+    let size = 6 * (Caml.Sys.word_size / 8)
   end
 
   type entry = Entry.t
@@ -191,12 +195,12 @@ module Tt = struct
   *)
   type t = entry Oa.t
 
-  let create ?(len = 0x100000) () =
-    if len <= 0 then
+  let create ?(mb = 32) () =
+    if mb <= 0 then
       invalid_argf
-        "Invalid transposition table length %d, must be greater than zero"
-        len ()
-    else Oa.create ~len
+        "Invalid transposition table size %dmb, must be greater than 0"
+        mb ()
+    else Oa.create ~len:((mb * 0x100000) / Entry.size)
 
   let clear tt = Oa.clear tt
 
