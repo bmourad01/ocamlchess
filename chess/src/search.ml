@@ -149,6 +149,7 @@ type limits = Limits.t
 let inf = 65535
 let mate_score = inf / 2
 let max_ply = 64
+let update_time = 3000
 
 let ply_to_moves ply = (ply + (ply land 1)) / 2
 
@@ -158,11 +159,11 @@ let ply_to_moves ply = (ply + (ply land 1)) / 2
    The centipawn score is always exact, since the aspiration loop will not
    terminate until we get a score that is within our search window.
 *)
-let convert_score score ~mate ~mated =
+let convert_score score ~bound ~mate ~mated =
   let open Uci.Send.Info in
   if mate then Mate (ply_to_moves (mate_score - score))
   else if mated then Mate (-(ply_to_moves (mate_score + score)))
-  else Cp (score, Exact)
+  else Cp (score, bound)
 
 (* Mate scores should be relative to the distance from the root position.
    Shorter distances are to be preferred. *)
@@ -320,6 +321,7 @@ module Root_move = struct
     mutable prev_score : int;
     mutable avg_score  : int;
     mutable seldepth   : int;
+    mutable bound      : Uci.Send.Info.bound;
     pv                 : Child.t Oa.t;
   }
 
@@ -331,6 +333,7 @@ module Root_move = struct
       prev_score = -inf;
       avg_score = -inf;
       seldepth = 1;
+      bound = Exact;
       pv = Oa.create ~len:pv_size;
     } in
     Oa.unsafe_set_some t.pv 0 m;
@@ -384,6 +387,7 @@ module State = struct
     mutable pv_index           : int;
     multi_pv                   : int;
     iter                       : Result.t -> unit;
+    currmove                   : Child.t -> n:int -> depth:int -> unit;
     ponder                     : unit future option;
   }
 
@@ -392,7 +396,16 @@ module State = struct
   let move_history_size = Piece.Color.count * Square.(count * count)
   let countermove_size = Piece.Color.count * Piece.Kind.count * Square.count
 
-  let create moves ~multi_pv ~limits ~root ~frequency ~tt ~iter ~ponder =
+  let create
+      moves
+      ~multi_pv
+      ~limits
+      ~root
+      ~frequency
+      ~tt
+      ~iter
+      ~currmove
+      ~ponder =
     let root_moves = List.to_array moves |> Array.map ~f:Root_move.create in
     let frequency = Hashtbl.copy frequency in
     Position.hash root |> Hashtbl.update frequency ~f:(function
@@ -421,6 +434,7 @@ module State = struct
       pv_index = 0;
       multi_pv = min multi_pv @@ Array.length root_moves;
       iter;
+      currmove;
       ponder;
     }
 
@@ -553,6 +567,7 @@ module State = struct
         if i < st.multi_pv then
           let score, updated = Root_move.real_score rm in
           if st.root_depth > 1 || updated || i = 0 then
+            let bound = rm.bound in
             let mate = is_mate score in
             let mated = is_mated score in
             let pv =
@@ -563,7 +578,7 @@ module State = struct
                   | Some m -> Continue (i + 1, m :: l)
                   | None -> Stop (List.rev l)) in
             let line = Result.Line.Fields.create ~pv
-                ~score:(convert_score score ~mate ~mated)
+                ~score:(convert_score score ~bound ~mate ~mated)
                 ~seldepth:rm.seldepth in
             line :: acc
           else acc
@@ -1144,6 +1159,8 @@ module Main = struct
   and child st t pos ~beta ~depth ~ply ~check ~pv
       ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
+    if ply = 0 && State.elapsed st > update_time then
+      st.currmove m ~n:(i + 1) ~depth;
     if should_skip st t m ~i ~beta ~depth ~ply ~order then Continue (i + 1)
     else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
       | First score -> Stop score
@@ -1457,6 +1474,13 @@ module Main = struct
       then go fw ~pv:false else score
 end
 
+let result (st : state) ~time =
+  let lines = State.extract_lines st in
+  let nodes = st.nodes and depth = st.root_depth in
+  let r = Result.Fields.create ~lines ~time ~nodes ~depth in
+  st.iter r;
+  r
+
 (* Aspiration window.
 
    The idea is that if we have the best score from a shallower search,
@@ -1470,6 +1494,15 @@ module Aspiration = struct
   let min_depth = 6
   let initial_delta = 10
 
+  let set_bound (st : state) bound =
+    let rm = Array.unsafe_get st.root_moves st.pv_index in
+    rm.bound <- bound
+
+  let update (st : state) =
+    if st.multi_pv = 1 then
+      let time = State.elapsed st in
+      if time > update_time then ignore @@ result st ~time
+
   let rec loop st moves depth ~alpha ~beta ~delta =
     let score =
       Main.with_moves st st.root moves ~alpha ~beta ~depth
@@ -1479,11 +1512,17 @@ module Aspiration = struct
       let new_delta = delta * 2 in
       if score >= beta then
         let beta = min inf (score + delta) in
+        set_bound st Lower;
+        update st;
         loop st moves depth ~alpha ~beta ~delta:new_delta
       else if score <= alpha then
         let beta = (alpha + beta) / 2 in
         let alpha = max (-inf) (score - delta) in
+        set_bound st Upper;
+        update st;
         loop st moves depth ~alpha ~beta ~delta:new_delta
+      else set_bound st Exact
+    else set_bound st Exact
 
   let go st moves depth basis =
     if depth < min_depth then
@@ -1492,20 +1531,14 @@ module Aspiration = struct
          searching a bit deeper before entering the loop. *)
       let _score = Main.with_moves st st.root moves ~depth
           ~alpha:(-inf) ~beta:inf ~check:st.check ~ply:0 ~pv:true in
-      State.sort_root_moves st st.pv_index
+      State.sort_root_moves st st.pv_index;
+      set_bound st Exact
     else
       let delta = initial_delta in
       let alpha = max (-inf) (basis - delta) in
       let beta = min inf (basis + delta) in
       loop st moves depth ~alpha ~beta ~delta
 end
-
-let result (st : state) ~time =
-  let lines = State.extract_lines st in
-  let nodes = st.nodes and depth = st.root_depth in
-  let r = Result.Fields.create ~lines ~time ~nodes ~depth in
-  st.iter r;
-  r
 
 let rec iterdeep (st : state) moves =
   if st.pv_index < st.multi_pv then
@@ -1596,6 +1629,7 @@ let mate_in_zero limits = match Limits.mate limits with
 
 let go
     ?(iter = ignore)
+    ?(currmove = fun _ ~n:_ ~depth:_ -> ())
     ?(ponder = None)
     ?(multi_pv = 1)
     ~root
@@ -1608,6 +1642,7 @@ let go
   | _ when mate_in_zero limits -> no_moves root iter ~mzero:true
   | moves ->
     let multi_pv = max multi_pv 1 in
-    let st = State.create moves ~multi_pv ~root
-        ~limits ~frequency ~tt ~iter ~ponder in
+    let st =
+      State.create moves ~multi_pv ~root ~limits
+        ~frequency ~tt ~iter ~currmove ~ponder in
     iterdeep st moves

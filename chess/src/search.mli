@@ -197,8 +197,13 @@ type result = Result.t
       the existing entries.
     - [tt]: the transposition table.
 
-    An optional callback [iter] can be provided, which is invoked for each
-    iteration of the search. By default, it will do nothing.
+    An optional callback [iter r] can be provided, which is invoked for each
+    iteration result [r] of the search. By default, it will do nothing.
+
+    An optional callback [currmove m ~n ~depth] can be provided, which is
+    invoked for each move [m] (whose order is [n]) at the root node when
+    the search has exceeded a certain duration. By default, it will do
+    nothing.
 
     An optional future [ponder] can be provided. If it is [None] (default),
     then the search will run normally. Otherwise, it will run in ponder mode
@@ -210,6 +215,7 @@ type result = Result.t
 *)
 val go :
   ?iter:(result -> unit) ->
+  ?currmove:(Position.child -> n:int -> depth:int -> unit) ->
   ?ponder:unit Bap_future.Std.future option ->
   ?multi_pv:int ->
   root:Position.t ->

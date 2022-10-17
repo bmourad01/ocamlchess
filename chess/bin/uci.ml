@@ -300,12 +300,21 @@ module Search_thread = struct
           | [] -> None) in
     Format.printf "%a\n%!" Uci.Send.pp @@ Bestmove bestmove
 
+  let currmove child ~n ~depth =
+    let m = Child.move child in
+    Format.printf "%a\n%!" Uci.Send.pp @@ Info [
+      Depth depth;
+      Currmove m;
+      Currmovenumber n;
+    ]
+
   (* The main search routine, should be run in a separate thread. *)
   let search ~root ~limits ~frequency ~tt ~stop ~ponder =
     let result = try
         let iter = info_of_result root tt in
         let multi_pv = Options.spin_value "MultiPV" in
-        Search.go () ~root ~limits ~frequency ~tt ~ponder ~multi_pv ~iter
+        Search.go () ~root ~limits ~frequency
+          ~tt ~ponder ~multi_pv ~iter ~currmove
       with exn ->
         Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
         Err.exit () in
