@@ -6,8 +6,20 @@ module Bb = Bitboard
 module Pre = Precalculated
 module Child = Position.Child
 module Threats = Position.Threats
-module Oa = Option_array
 module See = Position.See
+
+module Oa = struct
+  include Option_array
+
+  let fold_until =
+    let open Continue_or_stop in
+    let[@specialise] rec aux acc a i ~f ~finish =
+      if i < length a then unsafe_get a i |> f acc |> function
+        | Continue y -> aux y a (i + 1) ~f ~finish
+        | Stop z -> z
+      else finish acc in
+    fun a ~init -> aux init a 0
+end
 
 let[@inline][@specialise] (>>?) x f = match x with
   | None -> f ()
