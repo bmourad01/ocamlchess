@@ -5,6 +5,7 @@ This project aims to create an efficient, UCI-compatible chess engine (and libra
 # Requirements
 
 For best performance, please ensure that a Flambda-enabled OCaml compiler is installed.
+The engine also makes extensive use of the 64-bit [bitboard](https://www.chessprogramming.org/Bitboards) representation, so 32-bit platforms will be at a significant performance disadvantage.
 
 The following OCaml packages are required, available via `opam install <pkg>`:
 
