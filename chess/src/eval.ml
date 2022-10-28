@@ -9,6 +9,7 @@ let[@inline] scale2 (x, y) z = x * z, y * z
 let[@inline] neg2 x = scale2 x (-1)
 
 let[@inline] (++) x y = add2 x y
+let[@inline] (--) x y = sub2 x y
 let[@inline] ( ** ) x y = scale2 x y
 
 let files = Array.init Square.File.count ~f:Bb.file_exn
@@ -51,8 +52,8 @@ end
 type go = Position.t -> Piece.color -> int * int
 
 (* Calculate both opening and endgame advantage from white's perspective. *)
-let[@inline][@specialise] evaluate (go : go) pos =
-  sub2 (go pos White) (go pos Black)
+let[@inline][@specialise] evaluate (g : go) pos =
+  g pos White -- g pos Black
 
 let[@inline][@specialise] perspective c neg x = match c with
   | Piece.White -> x
