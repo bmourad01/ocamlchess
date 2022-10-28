@@ -242,13 +242,12 @@ module King_pawn_shield = struct
     (* In the opening stages of the game, the king should move away from
        open files. *)
     let[@inline] go king_sq p =
-      let file =
-        let min = Square.File.b and max = Square.File.g in
-        Int.clamp_exn ~min ~max @@ Square.file king_sq in
+      let file = Square.file king_sq in
+      let i = max 0 (file - 1) in
+      let j = min (Square.File.count - 1) (file + 1) in
       let n = ref 0 in
-      for c = file - 1 to file + 1 do
-        let f = Bb.file_exn c in
-        if Bb.((f & p) = empty) then incr n
+      for c = i to j do
+        if Bb.((file_exn c & p) = empty) then incr n
       done;
       !n * start_weight, !n * end_weight
   end
