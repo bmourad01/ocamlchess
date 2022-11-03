@@ -175,6 +175,10 @@ let is_mated score = score >= -mate_score && score <= (-mate_score) + max_ply
 let mating ply = mate_score - ply
 let mated ply = -mate_score + ply
 
+(* Evaluations aren't useful for positions that are in check, so just
+   assume that if we've made it this far from the root then it's a draw *)
+let end_of_line pos ~check = if check then 0 else Eval.go pos
+
 (* Transposition table for caching search results. *)
 module Tt = struct
   type bound = Uci.Send.Info.bound [@@deriving equal]
@@ -640,6 +644,40 @@ module State = struct
 
   let best_root_move st = Array.unsafe_get st.root_moves 0
   let current_root_move st = Array.unsafe_get st.root_moves st.pv_index
+
+  let has_reached_limits st =
+    let elapsed = elapsed st in
+    not (pondering st) && begin
+      Limits.stopped st.limits || begin
+        match Limits.nodes st.limits with
+        | Some n when st.nodes >= n -> true
+        | _ -> match Limits.max_time st.limits with
+          | Some t -> elapsed >= t
+          | None -> match Limits.movetime st.limits with
+            | Some t -> elapsed >= t
+            | None -> false
+      end
+    end
+
+  let check_limits st =
+    let result = has_reached_limits st in
+    if result then stop st;
+    result
+
+  (* Will playing this position likely lead to a repetition draw? *)
+  let check_repetition st pos =
+    Position.hash pos |> Hashtbl.find st.frequency |>
+    Option.value_map ~default:false ~f:(fun n -> n > 2)
+
+  (* Will the position lead to a draw? *)
+  let drawn st pos =
+    check_repetition st pos ||
+    Position.halfmove pos >= 100 ||
+    Position.is_insufficient_material pos
+
+  (* Find a cached evaluation of the position. *)
+  let lookup st pos ~depth ~ply ~alpha ~beta ~pv =
+    Tt.lookup st.tt ~pos ~depth ~ply ~alpha ~beta ~pv
 end
 
 type state = State.t
@@ -888,49 +926,10 @@ module Ply = struct
 
   let qcutoff = cutoff ~q:true ~depth:0
 
-  (* Find a cached evaluation of the position. *)
-  let lookup (st : state) pos ~depth ~ply ~alpha ~beta ~pv =
-    Tt.lookup st.tt ~pos ~depth ~ply ~alpha ~beta ~pv
-
   (* Cache an evaluation. *)
   let store (st : state) t pos ~depth ~ply ~score ~pv =
     let eval = Uopt.of_option @@ State.lookup_eval st ply in
-    Tt.store st.tt pos ~ply ~depth ~score ~eval
-      ~best:t.best ~bound:t.bound ~pv
-
-  let has_reached_limits st =
-    let elapsed = State.elapsed st in
-    not (State.pondering st) && begin
-      Limits.stopped st.limits || begin
-        match Limits.nodes st.limits with
-        | Some n when st.nodes >= n -> true
-        | _ -> match Limits.max_time st.limits with
-          | Some t -> elapsed >= t
-          | None -> match Limits.movetime st.limits with
-            | Some t -> elapsed >= t
-            | None -> false
-      end
-    end
-
-  let check_limits st =
-    let result = has_reached_limits st in
-    if result then State.stop st;
-    result
-
-  (* Will playing this position likely lead to a repetition draw? *)
-  let check_repetition (st :  state) pos =
-    Position.hash pos |> Hashtbl.find st.frequency |>
-    Option.value_map ~default:false ~f:(fun n -> n > 2)
-
-  (* Will the position lead to a draw? *)
-  let drawn st pos =
-    check_repetition st pos ||
-    Position.halfmove pos >= 100 ||
-    Position.is_insufficient_material pos
-
-  (* Evaluations aren't useful for positions that are in check, so just
-     assume that if we've made it this far from the root then it's a draw *)
-  let end_of_line pos ~check = if check then 0 else Eval.go pos
+    Tt.store st.tt pos ~ply ~depth ~score ~eval ~best:t.best ~bound:t.bound ~pv
 end
 
 (* Quiescence search is used when we reach our maximum depth for the main
@@ -990,9 +989,8 @@ module Quiescence = struct
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~pv =
     let check = Position.in_check pos in
-    if Ply.drawn st pos then 0
-    else if ply >= max_ply || Ply.check_limits st
-    then Ply.end_of_line pos ~check
+    if State.drawn st pos then 0
+    else if ply >= max_ply || State.check_limits st then end_of_line pos ~check
     else Position.children pos |> function
       | [] -> if check then mated ply else 0
       | moves -> with_moves st pos moves ~alpha ~beta ~ply ~check ~pv ~init
@@ -1001,7 +999,7 @@ module Quiescence = struct
      "noisy". *)
   and with_moves ?(init = true) st pos moves ~alpha ~beta ~ply ~check ~pv =
     let depth = tt_depth ~check ~init in
-    match Ply.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
+    match State.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
       match evaluate st pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv with
@@ -1081,9 +1079,8 @@ module Main = struct
   let rec go (st : state) pos ~alpha ~beta ~ply ~depth ~pv =
     let check = Position.in_check pos in
     if pv then st.seldepth <- max st.seldepth ply;
-    if Ply.drawn st pos then 0
-    else if ply >= max_ply || Ply.check_limits st
-    then Ply.end_of_line pos ~check
+    if State.drawn st pos then 0
+    else if ply >= max_ply || State.check_limits st then end_of_line pos ~check
     else match Position.children pos with
       | [] -> if check then mated ply else 0
       | moves -> match mdp ~alpha ~beta ~ply with
@@ -1098,7 +1095,7 @@ module Main = struct
 
   (* Search the available moves for the given position. *)
   and with_moves st pos moves ~alpha ~beta ~ply ~depth ~check ~pv =
-    match Ply.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
+    match State.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
       let score, improving = evaluate st pos ~ply ~check ~ttentry in
