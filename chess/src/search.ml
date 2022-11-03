@@ -1159,27 +1159,30 @@ module Main = struct
   and child st t pos ~beta ~depth ~ply ~check ~pv
       ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
-    if ply = 0 && State.elapsed st > update_time then
-      st.currmove m ~n:(i + 1) ~depth;
-    if should_skip st t m ~i ~beta ~depth ~ply ~order then Continue (i + 1)
-    else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
-      | First score -> Stop score
-      | Second _ when st.stopped -> Stop t.score
-      | Second ext ->
-        let r = lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving in
-        let pos = Child.self m in
-        State.set_move st ply m;
-        State.inc_nodes st;
-        State.incr st pos;
-        let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
-        State.decr st pos;
-        if ply = 0 then Search.update_root_move st t i m score;
-        if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
-        else if st.stopped then Stop t.score
-        else Continue (i + 1)
+    if no_root_move st m ~ply
+    then Continue (i + 1)
+    else begin
+      if ply = 0 && State.elapsed st > update_time then
+        st.currmove m ~n:(i + 1) ~depth;
+      if should_skip st t m ~i ~beta ~depth ~ply ~order then Continue (i + 1)
+      else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
+        | First score -> Stop score
+        | Second _ when st.stopped -> Stop t.score
+        | Second ext ->
+          let r = lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving in
+          let pos = Child.self m in
+          State.set_move st ply m;
+          State.inc_nodes st;
+          State.incr st pos;
+          let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
+          State.decr st pos;
+          if ply = 0 then Search.update_root_move st t i m score;
+          if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
+          else if st.stopped then Stop t.score
+          else Continue (i + 1)
+    end
 
   and should_skip st t m ~i ~beta ~depth ~ply ~order =
-    no_root_move st m ~ply ||
     State.is_excluded st ply m || begin
       i > 0 && t.score > mated max_ply && begin
         see m ~order ~depth ||
