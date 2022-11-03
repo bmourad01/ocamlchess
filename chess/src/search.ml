@@ -830,7 +830,7 @@ module Order = struct
 end
 
 (* Helpers for the search. *)
-module Search = struct
+module Ply = struct
   (* The results for a single ply. *)
   type 'a t = {
     mutable best  : Child.t Uopt.t;
@@ -928,18 +928,6 @@ module Search = struct
     Position.halfmove pos >= 100 ||
     Position.is_insufficient_material pos
 
-  (* Mate distance pruning.
-
-     If we've already found a shorter path to checkmate than our current
-     distance from the root, then just cut off the search here.
-  *)
-  let mdp ~alpha ~beta ~ply =
-    if ply > 0 then
-      let alpha = max alpha @@ mated ply in
-      let beta = min beta @@ mating (ply + 1) in
-      if alpha >= beta then First alpha else Second (alpha, beta)
-    else Second (alpha, beta)
-
   (* Evaluations aren't useful for positions that are in check, so just
      assume that if we've made it this far from the root then it's a draw *)
   let end_of_line pos ~check = if check then 0 else Eval.go pos
@@ -1002,9 +990,9 @@ module Quiescence = struct
   (* Search a position until it becomes "quiet". *)
   let rec go ?(init = true) st pos ~alpha ~beta ~ply ~pv =
     let check = Position.in_check pos in
-    if Search.drawn st pos then 0
-    else if ply >= max_ply || Search.check_limits st
-    then Search.end_of_line pos ~check
+    if Ply.drawn st pos then 0
+    else if ply >= max_ply || Ply.check_limits st
+    then Ply.end_of_line pos ~check
     else Position.children pos |> function
       | [] -> if check then mated ply else 0
       | moves -> with_moves st pos moves ~alpha ~beta ~ply ~check ~pv ~init
@@ -1013,7 +1001,7 @@ module Quiescence = struct
      "noisy". *)
   and with_moves ?(init = true) st pos moves ~alpha ~beta ~ply ~check ~pv =
     let depth = tt_depth ~check ~init in
-    match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
+    match Ply.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
       match evaluate st pos ~alpha ~beta ~ply ~depth ~check ~ttentry ~pv with
@@ -1024,11 +1012,12 @@ module Quiescence = struct
         | Some (it, quiet_evasion) ->
           (* The `state` field is the number of quiet evasions that have
              occurred so far. *)
-          let t = Search.create ~alpha ?score 0 in
+          let t = Ply.create ~alpha ?score 0 in
           let finish () = t.score in
-          let f = child st t ~beta ~ply ~pv ~check ~quiet_evasion in
-          let score = Iterator.fold_until it ~init:() ~finish ~f in
-          Search.store st t pos ~depth ~ply ~score ~pv;
+          let score =
+            (Iterator.fold_until [@specialised]) it ~init:() ~finish ~f:(fun u e ->
+                child st t u e ~beta ~ply ~pv ~check ~quiet_evasion) in
+          Ply.store st t pos ~depth ~ply ~score ~pv;
           score
 
   (* Search a child of the current node. *)
@@ -1047,7 +1036,7 @@ module Quiescence = struct
           ~alpha:(-beta)
           ~beta:(-t.alpha) in
       State.decr st pos;
-      if Search.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
+      if Ply.qcutoff st t m ~score ~beta ~ply ~pv then Stop t.score
       else if st.stopped then Stop t.score
       else Continue ()
 
@@ -1092,27 +1081,24 @@ module Main = struct
   let rec go (st : state) pos ~alpha ~beta ~ply ~depth ~pv =
     let check = Position.in_check pos in
     if pv then st.seldepth <- max st.seldepth ply;
-    if Search.drawn st pos then 0
-    else if ply >= max_ply || Search.check_limits st
-    then Search.end_of_line pos ~check
+    if Ply.drawn st pos then 0
+    else if ply >= max_ply || Ply.check_limits st
+    then Ply.end_of_line pos ~check
     else match Position.children pos with
       | [] -> if check then mated ply else 0
-      | moves ->
-        (* Check + single reply extension. *)
-        let single = match moves with [_] -> true | _ -> false in
-        let depth = depth + b2i (check || single) in
-        match Search.mdp ~alpha ~beta ~ply with
+      | moves -> match mdp ~alpha ~beta ~ply with
         | First alpha -> alpha
-        | Second (alpha, beta) when depth <= 0 ->
-          (* Depth exhausted, drop down to quiescence search. *)
-          Quiescence.with_moves st pos moves ~alpha ~beta ~ply ~check ~pv
         | Second (alpha, beta) ->
-          (* Search the available moves. *)
-          with_moves st pos moves ~alpha ~beta ~ply ~depth ~check ~pv
+          (* Check + single reply extension. *)
+          let single = match moves with [_] -> true | _ -> false in
+          let depth = depth + b2i (check || single) in
+          if depth <= 0 then
+            Quiescence.with_moves st pos moves ~alpha ~beta ~ply ~check ~pv
+          else with_moves st pos moves ~alpha ~beta ~ply ~depth ~check ~pv
 
   (* Search the available moves for the given position. *)
   and with_moves st pos moves ~alpha ~beta ~ply ~depth ~check ~pv =
-    match Search.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
+    match Ply.lookup st pos ~depth ~ply ~alpha ~beta ~pv with
     | First score -> score
     | Second ttentry ->
       let score, improving = evaluate st pos ~ply ~check ~ttentry in
@@ -1121,13 +1107,25 @@ module Main = struct
       | Some score -> score
       | None ->
         let it = Order.score st moves ~ply ~pos ~ttentry in
-        let t = Search.create ~alpha () in
+        let t = Ply.create ~alpha () in
         let finish _ = t.score in
-        let f = child st t pos ~beta ~depth ~ply
-            ~check ~pv ~improving ~ttentry in
-        let score = Iterator.fold_until it ~init:0 ~finish ~f in
-        if should_store st ply then Search.store st t pos ~depth ~ply ~score ~pv;
+        let score =
+          (Iterator.fold_until [@specialised]) it ~init:0 ~finish ~f:(fun i e ->
+              child st t pos i e ~beta ~depth ~ply ~check ~pv ~improving ~ttentry) in
+        if should_store st ply then Ply.store st t pos ~depth ~ply ~score ~pv;
         score
+
+  (* Mate distance pruning.
+
+     If we've already found a shorter path to checkmate than our current
+     distance from the root, then just cut off the search here.
+  *)
+  and mdp ~alpha ~beta ~ply =
+    if ply > 0 then
+      let alpha = max alpha @@ mated ply in
+      let beta = min beta @@ mating (ply + 1) in
+      if alpha >= beta then First alpha else Second (alpha, beta)
+    else Second (alpha, beta)
 
   (* Don't store the results in the TT if:
 
@@ -1176,8 +1174,8 @@ module Main = struct
           State.incr st pos;
           let score = pvs st t pos ~i ~r ~beta ~ply ~depth:(depth + ext) ~pv in
           State.decr st pos;
-          if ply = 0 then Search.update_root_move st t i m score;
-          if Search.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
+          if ply = 0 then Ply.update_root_move st t i m score;
+          if Ply.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
           else if st.stopped then Stop t.score
           else Continue (i + 1)
     end
@@ -1312,17 +1310,17 @@ module Main = struct
     && not (is_mate beta || is_mated beta)
     && probcut_tt ~ply ~depth ~beta_cut ~ttentry then
       Order.pcscore moves ~ttentry |> Option.bind ~f:(fun it ->
+          let init = None and finish = Fn.id in
           let eval = State.lookup_eval_unsafe st ply in
-          let f = probcut_child st pos ~eval ~depth ~ply ~beta_cut in
-          Iterator.fold_until it ~init:None ~finish:Fn.id ~f)
+          (Iterator.fold_until [@specialised]) it ~init ~finish ~f:(fun k e ->
+              probcut_child st pos k e ~eval ~depth ~ply ~beta_cut))
     else None
 
   (* Confirm the move with quiescence search before dropping down to the
      full search. *)
   and probcut_child st pos ~eval ~depth ~ply ~beta_cut = fun k (m, order) ->
     let open Continue_or_stop in
-    if probcut_skip st m ~eval ~beta_cut ~ply ~order then Continue None
-    else
+    if not @@ probcut_skip st m ~eval ~beta_cut ~ply ~order then
       let alpha = -beta_cut in
       let beta = -beta_cut + 1 in
       let child = Child.self m in
@@ -1346,6 +1344,7 @@ module Main = struct
         Stop (Some score)
       else if st.stopped then Stop None
       else Continue None
+    else Continue None
 
   (* Excluded moves as well as moves whose SEE values are below our
      threshold should be skipped. Note that we convert the score to
