@@ -886,13 +886,6 @@ module Ply = struct
     state;
   }
 
-  let update_quiet st m ~ply ~depth =
-    if is_quiet m then begin
-      State.update_killer st ply m;
-      State.update_move_history st m depth;
-      State.update_countermove st ply m;
-    end
-
   let update_root_move (st : state) t i m score =
     State.find_root_move st m |>
     Option.iter ~f:(fun (rm : Root_move.t) ->
@@ -916,7 +909,11 @@ module Ply = struct
           t.alpha <- score;
           if not q then t.bound <- Exact;
         end else begin
-          update_quiet st m ~ply ~depth;
+          if is_quiet m then begin
+            State.update_killer st ply m;
+            State.update_move_history st m depth;
+            State.update_countermove st ply m;
+          end;
           t.bound <- Lower;
           result := true
         end
