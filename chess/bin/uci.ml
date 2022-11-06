@@ -7,13 +7,14 @@ open Bap_future.Std
 open Monads.Std
 
 module Child = Position.Child
+module Histogram = Position.Histogram
 module Line = Search.Result.Line
 
 module State = struct
   module T = struct
     type t = {
       pos       : Position.t;
-      frequency : (Zobrist.key, int) Hashtbl.t;
+      histogram : Position.histogram;
       tt        : Search.tt;
       stop      : unit promise option;
       ponder    : unit promise option;
@@ -26,15 +27,14 @@ module State = struct
   include Monad.State.Make(T)(Monad.Ident)
   include Monad.State.T1(T)(Monad.Ident)
 
-  (* Update the position and frequency. If this is a new game, then
-     clear the frequency and TT. *)
+  (* Update the position and histogram. If this is a new game, then
+     clear the histogram and TT. *)
   let set_position ?(new_game = false) pos = update @@ fun st ->
-    if new_game then begin
-      Hashtbl.clear st.frequency;
-      Search.Tt.clear st.tt;
-    end;
-    Hashtbl.incr st.frequency @@ Position.hash pos;
-    {st with pos}
+    let histogram =
+      let h = if new_game then Histogram.empty else st.histogram in
+      Histogram.incr h pos in
+    if new_game then Search.Tt.clear st.tt;
+    {st with pos; histogram}
 
   let play_move m = gets pos >>= fun pos ->
     match Position.make_move pos m with
@@ -309,11 +309,11 @@ module Search_thread = struct
     ]
 
   (* The main search routine, should be run in a separate thread. *)
-  let search ~root ~limits ~frequency ~tt ~stop ~ponder =
+  let search ~root ~limits ~histogram ~tt ~stop ~ponder =
     let result = try
         let iter = info_of_result root tt in
         let multi_pv = Options.spin_value "MultiPV" in
-        Search.go () ~root ~limits ~frequency
+        Search.go () ~root ~limits ~histogram
           ~tt ~ponder ~multi_pv ~iter ~currmove
       with exn ->
         Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
@@ -338,9 +338,9 @@ module Search_thread = struct
           "Error: tried to start a new search while the previous one is \
            still running")
 
-  let start ~root ~limits ~frequency ~tt ~stop ~ponder =
+  let start ~root ~limits ~histogram ~tt ~stop ~ponder =
     Atomic.set t @@ Option.return @@
-    T.create (fun () -> search ~root ~limits ~frequency ~tt ~stop ~ponder) ()
+    T.create (fun () -> search ~root ~limits ~histogram ~tt ~stop ~ponder) ()
 end
 
 module Go = struct
@@ -430,9 +430,9 @@ module Go = struct
       let limits = new_limits t (Position.active root) stop in
       (* Start the search. *)
       State.new_ponder_when t.ponder >>= fun ponder ->
-      State.(gets frequency) >>= fun frequency ->
+      State.(gets histogram) >>= fun histogram ->
       State.(gets tt) >>| fun tt ->
-      Search_thread.start ~root ~limits ~frequency ~tt ~stop ~ponder
+      Search_thread.start ~root ~limits ~histogram ~tt ~stop ~ponder
 end
 
 let stop = State.update @@ function
@@ -474,15 +474,13 @@ let rec loop () = match In_channel.(input_line stdin) with
       | false -> return ()
       | true -> loop ()
 
-(* Default frequency has the starting position. *)
-let frequency = Hashtbl.of_alist_exn (module Int64) [
-    Position.(hash start), 1;
-  ]
+(* Default histogram has the starting position. *)
+let histogram = Histogram.singleton Position.start
 
 let exec () =
   let st =
     Monad.State.exec (loop ()) @@
-    State.Fields.create ~frequency
+    State.Fields.create ~histogram
       ~pos:Position.start
       ~tt:(Search.Tt.create ())
       ~stop:None

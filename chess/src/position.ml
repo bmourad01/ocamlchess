@@ -59,6 +59,28 @@ type t = {
 } [@@deriving fields]
 
 type position = t
+type histogram = int Int64.Map.t [@@deriving compare, equal, sexp]
+
+module Histogram = struct
+  type t = histogram [@@deriving compare, equal, sexp]
+
+  let empty = Int64.Map.empty
+  let singleton pos = Int64.Map.singleton pos.hash 1
+
+  let incr h pos = Map.update h pos.hash ~f:(function
+      | Some n -> n + 1
+      | None -> 1)
+
+  let decr h pos = Map.change h pos.hash ~f:(function
+      | None | Some 1 -> None
+      | Some n -> Some (n - 1))
+
+  let frequency h pos =
+    Map.find h pos.hash |> Option.value ~default:0
+
+  let to_sequence h = Map.to_sequence h
+end
+
 
 let[@inline] en_passant pos = Uopt.to_option pos.en_passant
 let[@inline] checkers pos = Lazy.force pos.checkers

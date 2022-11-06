@@ -79,9 +79,8 @@ val start : t -> Position.t
 (** The list of moves that were played. *)
 val moves : t -> Move.t list
 
-(** The map from position hashes to the number of times they have occurred in
-    the game. *)
-val history : t -> int Core_kernel.Int64.Map.t [@@warning "-D"]
+(** The histogram of positions that have occurred in the game. *)
+val histogram: t -> Position.histogram
 
 (** Returns the current position of the game. *)
 val position : t -> Position.t

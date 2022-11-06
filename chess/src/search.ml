@@ -371,7 +371,7 @@ module State = struct
     root                       : Position.t;
     root_moves                 : Root_move.t array;
     check                      : bool;
-    frequency                  : (Zobrist.key, int) Hashtbl.t;
+    histogram                  : (Zobrist.key, int) Hashtbl.t;
     tt                         : tt;
     start_time                 : Time.t;
     evals                      : int Oa.t;
@@ -400,25 +400,31 @@ module State = struct
   let move_history_size = Piece.Color.count * Square.(count * count)
   let countermove_size = Piece.Color.count * Piece.Kind.count * Square.count
 
+  let create_frequency_table h root =
+    let tbl = Hashtbl.create (module Int64) in
+    Position.Histogram.to_sequence h |>
+    Sequence.iter ~f:(fun (key, data) -> Hashtbl.set tbl ~key ~data);
+    Position.hash root |> Hashtbl.update tbl ~f:(function
+        | Some n -> n | None -> 1);
+    tbl
+
   let create
       moves
       ~multi_pv
       ~limits
       ~root
-      ~frequency
+      ~histogram
       ~tt
       ~iter
       ~currmove
       ~ponder =
     let root_moves = List.to_array moves |> Array.map ~f:Root_move.create in
-    let frequency = Hashtbl.copy frequency in
-    Position.hash root |> Hashtbl.update frequency ~f:(function
-        | Some n -> n | None -> 1); {
+    let histogram = create_frequency_table histogram root in {
       limits;
       root;
       root_moves;
       check = Position.in_check root;
-      frequency;
+      histogram;
       tt;
       start_time = Time.now ();
       evals = Oa.create ~len:max_ply;
@@ -534,10 +540,10 @@ module State = struct
   let lookup_eval_unsafe st ply = Oa.unsafe_get_some_exn st.evals ply
   let clear_eval st ply = Oa.unsafe_set_none st.evals ply
   let stop st = st.stopped <- true
-  let incr st pos = Hashtbl.incr st.frequency @@ Position.hash pos
+  let incr st pos = Hashtbl.incr st.histogram @@ Position.hash pos
 
   let decr st pos =
-    Hashtbl.decr ~remove_if_zero:true st.frequency @@ Position.hash pos
+    Hashtbl.decr ~remove_if_zero:true st.histogram @@ Position.hash pos
 
   let pondering st = match st.ponder with
     | Some p -> not @@ Future.is_decided p
@@ -666,7 +672,7 @@ module State = struct
 
   (* Will playing this position likely lead to a repetition draw? *)
   let check_repetition st pos =
-    Position.hash pos |> Hashtbl.find st.frequency |>
+    Position.hash pos |> Hashtbl.find st.histogram |>
     Option.value_map ~default:false ~f:(fun n -> n > 2)
 
   (* Will the position lead to a draw? *)
@@ -1628,9 +1634,9 @@ let go
     ?(currmove = fun _ ~n:_ ~depth:_ -> ())
     ?(ponder = None)
     ?(multi_pv = 1)
+    ?(histogram = Position.Histogram.empty)
     ~root
     ~limits
-    ~frequency
     ~tt
     () =
   match moves root limits with
@@ -1640,5 +1646,5 @@ let go
     let multi_pv = max multi_pv 1 in
     let st =
       State.create moves ~multi_pv ~root ~limits
-        ~frequency ~tt ~iter ~currmove ~ponder in
+        ~histogram ~tt ~iter ~currmove ~ponder in
     iterdeep st moves

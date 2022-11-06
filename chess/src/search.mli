@@ -192,9 +192,7 @@ type result = Result.t
     - [root]: the position to start the search from.
     - [limits]: the search limits.
     - [frequency]: the histogram of how many times a position, indexed by 
-      its Zobrist key, has occurred. A local copy of this table is made
-      for the duration of the search, so there is no risk of mutating
-      the existing entries.
+      its Zobrist key, has occurred.
     - [tt]: the transposition table.
 
     An optional callback [iter r] can be provided, which is invoked for each
@@ -218,9 +216,9 @@ val go :
   ?currmove:(Position.child -> n:int -> depth:int -> unit) ->
   ?ponder:unit Bap_future.Std.future option ->
   ?multi_pv:int ->
+  ?histogram:Position.histogram ->
   root:Position.t ->
   limits:limits ->
-  frequency:(Zobrist.key, int) Base.Hashtbl.t ->
   tt:tt ->
   unit ->
   result

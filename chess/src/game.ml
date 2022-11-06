@@ -1,6 +1,7 @@
 open Core_kernel [@@warning "-D"]
 
 module Child = Position.Child
+module Histogram = Position.Histogram
 
 type declared_draw = [
   | `Mutual_agreement
@@ -60,17 +61,17 @@ end
 
 module T = struct
   type t = {
-    event    : string option;
-    site     : string option;
-    date     : Date.t option;
-    round    : int option;
-    white    : string option;
-    black    : string option;
-    result   : result;
-    start    : Position.t;
-    moves    : Move.t list;
-    position : Position.t;
-    history  : int Int64.Map.t;
+    event     : string option;
+    site      : string option;
+    date      : Date.t option;
+    round     : int option;
+    white     : string option;
+    black     : string option;
+    result    : result;
+    start     : Position.t;
+    moves     : Move.t list;
+    position  : Position.t;
+    histogram : Position.histogram;
   } [@@deriving compare, equal, sexp, fields]
 end
 
@@ -82,11 +83,10 @@ let is_over game = match game.result with
   | Ongoing -> false
   | _ -> true
 
-let result_of pos history =
+let result_of pos histogram =
   let c = Position.active pos in
   let in_check = Position.in_check pos in
   let no_moves = List.is_empty @@ Position.children pos in
-  let hash = Position.hash pos in
   if in_check && no_moves then
     Checkmate c
   else if no_moves then
@@ -95,7 +95,7 @@ let result_of pos history =
     Draw `Insufficient_material
   else if Position.halfmove pos >= 150 then
     Draw `Seventy_five_move_rule
-  else if Map.find_exn history hash >= 5 then
+  else if Histogram.frequency histogram pos >= 5 then
     Draw `Fivefold_repetition
   else Ongoing 
 
@@ -108,10 +108,10 @@ let create
     ?(black =  None)
     ?(start = Position.start)
     () =
-  let history = Int64.Map.singleton (Position.hash start) 1 in
-  let result = result_of start history in
+  let histogram = Histogram.singleton start in
+  let result = result_of start histogram in
   Fields.create ~event ~site ~date ~round ~white ~black
-    ~result ~start ~moves:[] ~history ~position:start
+    ~result ~start ~moves:[] ~histogram ~position:start
 
 exception Game_over
 exception Invalid_parent
@@ -129,17 +129,13 @@ let add_move ?(resigned = None) ?(declared_draw = None) game child =
       then Child.move child :: game.moves
       else raise Invalid_parent in
     let pos = Child.self child in
-    let hash = Position.hash pos in
-    let history =
-      Map.update game.history hash ~f:(function
-          | Some n -> n + 1
-          | None -> 1) in
+    let histogram = Histogram.incr game.histogram pos in
     (* In the following order, we check:
        1. Automatic end to the game
        2. Resignation
        3. Declared draw (must be validated). *)
     let result = 
-      let result = result_of pos history in
+      let result = result_of pos histogram in
       match result with
       | Ongoing -> begin
           match resigned with
@@ -149,14 +145,14 @@ let add_move ?(resigned = None) ?(declared_draw = None) game child =
             | Some draw -> match draw with
               | `Mutual_agreement -> Draw (draw :> draw)
               | `Threefold_repetition ->
-                if Map.find_exn history hash >= 3
+                if Histogram.frequency histogram pos >= 3
                 then Draw (draw :> draw) else raise Invalid_threefold
               | `Fifty_move_rule ->
                 if Position.halfmove pos >= 100
                 then Draw (draw :> draw) else raise Invalid_fifty_move
         end
       | _ -> result in
-    {game with moves; result; history; position = Child.self child}
+    {game with moves; result; histogram; position = Child.self child}
   else raise Game_over
 
 let pp_option_string ppf = function

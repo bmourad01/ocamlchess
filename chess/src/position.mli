@@ -6,6 +6,35 @@ type t [@@deriving compare, equal, sexp]
 
 include Base.Comparable.S with type t := t
 
+type histogram [@@deriving compare, equal, sexp]
+
+(** A histogram of how many times a position has occurred in a game. *)
+module Histogram : sig
+  (** The empty histogram. *)
+  val empty : histogram
+
+  (** [singleton pos] returns the histogram containing only [pos], with
+      a frequency of [1]. *)
+  val singleton : t -> histogram
+
+  (** [incr h pos] increments the number of times [pos] has occurred
+      in [h]. *)
+  val incr : histogram -> t -> histogram
+
+  (** [decr h pos] increments the number of times [pos] has occurred
+      in [h], removing it if the number drops to zero. *)
+  val decr : histogram -> t -> histogram
+
+  (** [frequency h pos] returns the number of times [pos] has occurred
+      int [h]. Returns [0] if it hasn't occurred yet. *)
+  val frequency : histogram -> t -> int
+
+  (** Returns a sequence of hash-frequency pairs of the histogram. *)
+  val to_sequence : histogram -> (Zobrist.key * int) Base.Sequence.t
+
+  type t = histogram [@@deriving compare, equal, sexp]
+end
+
 (** [white pos] returns the bitboard representing all squares occupied by
     white pieces in position [pos]. *)
 val white : t -> Bitboard.t

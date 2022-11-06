@@ -1,11 +1,10 @@
 open Core_kernel [@@warning "-D"]
 open Chess
 
+module Histogram = Position.Histogram
 module Line = Search.Result.Line
 
 let limits = ref None
-
-let incr m pos = Hashtbl.incr m @@ Position.hash pos
 
 let pp_pv ppf pv =
   let rec aux = function
@@ -35,37 +34,36 @@ let print_res res =
 
 let book = ref None
 
-let try_book in_book root frequency =
+let try_book in_book root histogram =
   if not in_book then None
   else Option.bind !book ~f:(fun book ->
       match Book.lookup book root with
       | Ok m ->
         Format.printf "Book move: %a\n\n%!" Position.San.pp m;
         let new_pos = Position.Child.self m in
-        incr frequency new_pos;
-        Some m
+        Some (m, Histogram.incr histogram new_pos)
       | Error err ->
         Format.printf "%a; using search\n\n%!" Book.Error.pp err;
         None)
 
-let choice (frequency, tt, in_book) moves =
+let choice (histogram, tt, in_book) moves =
   let root = Position.Child.parent @@ List.hd_exn moves in
-  incr frequency root;
-  match try_book in_book root frequency with
-  | Some m -> m, (frequency, tt, true)
+  let histogram = Histogram.incr histogram root in
+  match try_book in_book root histogram with
+  | Some (m, histogram) -> m, (histogram, tt, true)
   | None ->
     let limits = Option.value_exn !limits in
-    let res = Search.go ~root ~limits ~frequency ~tt ~iter:print_res () in
+    let res = Search.go ~root ~limits ~histogram ~tt ~iter:print_res () in
     let m = Search.Result.best_exn res in
     let new_pos = Position.Child.self m in
-    incr frequency new_pos;
-    m, (frequency, tt, false)
+    let histogram = Histogram.incr histogram new_pos in
+    m, (histogram, tt, false)
 
 let name = "caml"
 
 let create () =
   let player =
-    let state = Hashtbl.create (module Int64), Search.Tt.create (), true in
+    let state = Histogram.empty, Search.Tt.create (), true in
     Player.create ~choice ~state ~name
       ~desc:"The flagship player, based on traditional game tree search and \
              evaluation." in
