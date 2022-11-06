@@ -191,8 +191,7 @@ type result = Result.t
 
     - [root]: the position to start the search from.
     - [limits]: the search limits.
-    - [frequency]: the histogram of how many times a position, indexed by 
-      its Zobrist key, has occurred.
+    - [histogram]: the histogram of positions in the game.
     - [tt]: the transposition table.
 
     An optional callback [iter r] can be provided, which is invoked for each
