@@ -12,7 +12,10 @@ module Phase : sig
   val maximum : int
 
   (** Returns the phase weight of the position. This is based on the total
-      count of the non-pawn material on the board (excluding kings). *)
+      count of the non-pawn material on the board (excluding kings).
+
+      The value returned is within the range [\[0, maximum\]].
+  *)
   val weight : Position.t -> int
 
   (** Returns [true] if the non-pawn material on the board (excluding kings)
@@ -35,10 +38,13 @@ module Material : sig
   val queen_eg : int
 end
 
-(** Returns a score for a position.
+(** Returns a score for a position, measured in centipawns.
 
     The score represents the relative advantage of the active player.
     Note that draws and checkmates are not explored here, but instead
     are considered when searching positions (see the [Search] module).
+
+    Note that evaluations for tactically volatile positions (such as
+    checks, captures, and promotions) are not guaranteed to be accurate.
 *)
 val go : Position.t -> int
