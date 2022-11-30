@@ -312,9 +312,7 @@ module Search_thread = struct
   let search ~root ~limits ~histogram ~tt ~stop ~ponder =
     let result = try
         let iter = info_of_result root tt in
-        let multi_pv = Options.spin_value "MultiPV" in
-        Search.go () ~root ~limits ~histogram
-          ~tt ~ponder ~multi_pv ~iter ~currmove
+        Search.go () ~root ~limits ~histogram ~tt ~ponder ~iter ~currmove
       with exn ->
         Format.eprintf "Search encountered an exception: %a\n%!" Exn.pp exn;
         Err.exit () in
@@ -394,6 +392,7 @@ module Go = struct
       ~binc:t.binc
       ~infinite:t.infinite
       ~moves:t.moves
+      ~multipv:(Options.spin_value "MultiPV")
 
   let parse (g : Uci.Recv.Go.t list) =
     let t = create () in

@@ -82,3 +82,36 @@ val line : Square.t -> Square.t -> Bitboard.t
 (** [mvv_lva victim attacker] computes an ordering for the most valuable
     [victim] and least valuable [attacker]. Higher values are better . *)
 val mvv_lva : Piece.kind -> Piece.kind -> int
+
+(** [king_area sq c] returns the mask of the king's safety area at square
+    [sq] for the player of color [c]. *)
+val king_area : Square.t -> Piece.color -> Bitboard.t
+
+(** [passed_pawns sq c] returns the mask for recognizing a potential passed
+    pawn at square [sq] and of color [c]. *)
+val passed_pawns : Square.t -> Piece.color -> Bitboard.t
+
+(** [forward_ranks sq c] returns the ranks that are ahead of square [sq]
+    for pieces of color [c]. *)
+val forward_ranks : Square.t -> Piece.color -> Bitboard.t
+
+(** [forward_files sq c] returns the files that are ahead of square [sq]
+    for pieces of color [c]. *)
+val forward_files : Square.t -> Piece.color -> Bitboard.t
+
+(** [outpost_ranks c] returns the knight and bishop outpost ranks for
+    pieces of color [c]. *)
+val outpost_ranks : Piece.color -> Bitboard.t
+
+(** [outpost_squares sq c] returns the knight and bishop outpost squares
+    at square [c] for pieces of color [c]. *)
+val outpost_squares : Square.t -> Piece.color -> Bitboard.t
+
+(** [connected_pawns sq c] returns the mask for recognizing connected
+    pawns at square [sq] for pawns of color [c]. *)
+val connected_pawns : Square.t -> Piece.color -> Bitboard.t
+
+(** [king_pawn_file_distance sq pawn] returns the distance, in files,
+    between the king at square [sq] and the nearest pawn in the bitboard
+    of pawns [pawn]. *)
+val king_pawn_file_distance : Square.t -> Bitboard.t -> int

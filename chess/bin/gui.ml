@@ -176,12 +176,12 @@ let assert_hash new_pos =
       "New position has hash %016LX, but %016LX was expected. \
        Position: %s" h' h (Position.Fen.to_string new_pos) ()
 
-let assert_pawn_hash new_pos =
+let assert_pawn_king_hash new_pos =
   let h =
     Position.Fen.to_string new_pos |>
     Position.Fen.of_string_exn |>
-    Position.pawn_hash in
-  let h' = Position.pawn_hash new_pos in
+    Position.pawn_king_hash in
+  let h' = Position.pawn_king_hash new_pos in
   if Int64.(h = h') then h' else failwithf
       "New position has pawn hash %016LX, but %016LX was expected. \
        Position: %s" h' h (Position.Fen.to_string new_pos) ()
@@ -192,13 +192,11 @@ let print_new_pos new_pos prev moves =
   Format.printf "%a (%a): %a\n%!"
     Move.pp m Position.San.pp mv Position.pp new_pos;
   Format.printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
-  Format.printf "Pawn hash: %016LX\n%!" @@ assert_pawn_hash new_pos;
+  Format.printf "Pawn-king hash: %016LX\n%!" @@ assert_pawn_king_hash new_pos;
   Position.See.go mv |> Option.iter ~f:(fun see ->
       Format.printf "Static Exchange Evaluation: %d\n%!" see);
   Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "Gives check: %b\n%!" @@ Position.gives_check (Child.parent mv) m;
-  Format.printf "Phase weight: %d/%d\n%!"
-    (Eval.Phase.weight new_pos) Eval.Phase.maximum;
   Format.printf "\n%!"
 
 let rec main_loop ~delay () = State.(gets window) >>= fun window ->
@@ -288,9 +286,7 @@ let run pos ~white ~black ~delay =
   Format.printf "\n%!";
   Format.printf "Initial position: %a\n%!" Position.pp pos;
   Format.printf "Hash: %016LX\n%!" @@ Position.hash pos;
-  Format.printf "Pawn hash: %016LX\n%!" @@ Position.pawn_hash pos;
-  Format.printf "Phase weight: %d/%d\n%!"
-    (Eval.Phase.weight pos) Eval.Phase.maximum;
+  Format.printf "Pawn-king hash: %016LX\n%!" @@ Position.pawn_king_hash pos;
   Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "\n%!";
   let window_name = Format.sprintf "ocamlchess: %s vs. %s" white_name black_name in

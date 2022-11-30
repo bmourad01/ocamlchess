@@ -38,24 +38,24 @@ let attacks_idx c k =
    performance advantage over a typical state monad pattern (where
    we are making a new copy every time we update a field). *)
 type t = {
-  mutable white      : Bb.t;
-  mutable black      : Bb.t;
-  mutable pawn       : Bb.t;
-  mutable knight     : Bb.t;
-  mutable bishop     : Bb.t;
-  mutable rook       : Bb.t;
-  mutable queen      : Bb.t;
-  mutable king       : Bb.t;
-  mutable active     : Piece.color;
-  mutable castle     : Cr.t;
-  mutable en_passant : Square.t Uopt.t;
-  mutable halfmove   : int;
-  mutable fullmove   : int;
-  mutable hash       : Zobrist.key;
-  mutable pawn_hash  : Zobrist.key;
-  mutable checkers   : Bb.t Lazy.t;
-  mutable checks     : checks Lazy.t;
-  mutable attacks    : Bb.t array Lazy.t;
+  mutable white          : Bb.t;
+  mutable black          : Bb.t;
+  mutable pawn           : Bb.t;
+  mutable knight         : Bb.t;
+  mutable bishop         : Bb.t;
+  mutable rook           : Bb.t;
+  mutable queen          : Bb.t;
+  mutable king           : Bb.t;
+  mutable active         : Piece.color;
+  mutable castle         : Cr.t;
+  mutable en_passant     : Square.t Uopt.t;
+  mutable halfmove       : int;
+  mutable fullmove       : int;
+  mutable hash           : Zobrist.key;
+  mutable pawn_king_hash : Zobrist.key;
+  mutable checkers       : Bb.t Lazy.t;
+  mutable checks         : checks Lazy.t;
+  mutable attacks        : Bb.t array Lazy.t;
 } [@@deriving fields]
 
 type position = t
@@ -81,7 +81,6 @@ module Histogram = struct
   let to_sequence h = Map.to_sequence h
 end
 
-
 let[@inline] en_passant pos = Uopt.to_option pos.en_passant
 let[@inline] checkers pos = Lazy.force pos.checkers
 let[@inline] in_check pos = Bb.(checkers pos <> empty)
@@ -89,24 +88,24 @@ let[@inline] in_check pos = Bb.(checkers pos <> empty)
 (* We make an explicit copy because our move generator will return
    a new position (thus adhering to a functional style). *)
 let[@inline] copy pos = {
-  white        = pos.white;
-  black        = pos.black;
-  pawn         = pos.pawn;
-  knight       = pos.knight;
-  bishop       = pos.bishop;
-  rook         = pos.rook;
-  queen        = pos.queen;
-  king         = pos.king;
-  active       = pos.active;
-  castle       = pos.castle;
-  en_passant   = pos.en_passant;
-  halfmove     = pos.halfmove;
-  fullmove     = pos.fullmove;
-  hash         = pos.hash;
-  pawn_hash    = pos.pawn_hash;
-  checkers     = pos.checkers;
-  checks       = pos.checks;
-  attacks      = pos.attacks;
+  white          = pos.white;
+  black          = pos.black;
+  pawn           = pos.pawn;
+  knight         = pos.knight;
+  bishop         = pos.bishop;
+  rook           = pos.rook;
+  queen          = pos.queen;
+  king           = pos.king;
+  active         = pos.active;
+  castle         = pos.castle;
+  en_passant     = pos.en_passant;
+  halfmove       = pos.halfmove;
+  fullmove       = pos.fullmove;
+  hash           = pos.hash;
+  pawn_king_hash = pos.pawn_king_hash;
+  checkers       = pos.checkers;
+  checks         = pos.checks;
+  attacks        = pos.attacks;
 }
 
 let[@inline] inactive pos = Piece.Color.opposite pos.active
@@ -286,9 +285,12 @@ module Hash = struct
       | Black -> M.return ()
     end 0L
 
-  let of_pawns pos = Monad.State.exec begin
+  let of_pawn_king pos = Monad.State.exec begin
+      let open M.Syntax in
       collect_kind pos Pawn |> M.List.iter ~f:(fun (sq, c) ->
-          M.update @@ Update.piece c Pawn sq)
+          M.update @@ Update.piece c Pawn sq) >>= fun () ->
+      collect_kind pos King |> M.List.iter ~f:(fun (sq, c) ->
+          M.update @@ Update.piece c King sq)
     end 0L
 end
 
@@ -1089,11 +1091,11 @@ module Fen = struct
         let checkers = lazy Bb.empty in
         let checks = lazy empty_checks in
         let attacks = lazy [||] in
-        Fields.create ~hash:0L ~pawn_hash:0L ~checkers ~checks ~attacks
-          ~white ~black ~pawn ~knight ~bishop ~rook ~queen ~king
-          ~active ~castle ~en_passant ~halfmove ~fullmove in
+        Fields.create ~hash:0L ~pawn_king_hash:0L ~checkers ~checks
+          ~attacks ~white ~black ~pawn ~knight ~bishop ~rook ~queen
+          ~king ~active ~castle ~en_passant ~halfmove ~fullmove in
       set_hash pos @@ Hash.of_position pos;
-      set_pawn_hash pos @@ Hash.of_pawns pos;
+      set_pawn_king_hash pos @@ Hash.of_pawn_king pos;
       calculate_checkers pos;
       Analysis.calculate_checks pos;
       Attacks.calculate pos;
@@ -1152,8 +1154,8 @@ module Makemove = struct
 
   let[@inline] update_hash pos ~f = set_hash pos @@ f pos.hash
 
-  let[@inline] update_pawn_hash sq c pos =
-    set_pawn_hash pos @@ Hash.Update.piece c Pawn sq pos.pawn_hash
+  let[@inline] update_pawn_king_hash sq c k pos =
+    set_pawn_king_hash pos @@ Hash.Update.piece c k sq pos.pawn_king_hash
 
   let[@inline] map_color c pos ~f = match c with
     | Piece.White -> set_white pos @@ f @@ white pos
@@ -1173,7 +1175,10 @@ module Makemove = struct
     map_color c pos ~f;
     map_kind k pos ~f;
     update_hash pos ~f:(Hash.Update.piece c k sq);
-    if Piece.Kind.(k = Pawn) then update_pawn_hash sq c pos;
+    begin match k with
+      | Piece.Pawn | Piece.King -> update_pawn_king_hash sq c k pos
+      | _ -> ()
+    end;
     k
 
   let set = Fn.flip Bb.set

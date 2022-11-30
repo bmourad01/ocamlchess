@@ -39,7 +39,7 @@ module Bits = struct
     let to_char  =
       let ranks = "12345678" in
       fun rank -> if rank land nmask <> 0 then
-          failwithf "Rank index %d is invalid" rank ()
+          invalid_argf "Rank index %d is invalid" rank ()
         else ranks.[rank]
   end
 
@@ -60,8 +60,19 @@ module Bits = struct
     let to_char =
       let files = "abcdefgh" in
       fun file -> if file land nmask <> 0 then
-          failwithf "File index %d is invalid" file ()
+          invalid_argf "File index %d is invalid" file ()
         else files.[file]
+
+    let mirror = [|0; 1; 2; 3; 3; 2; 1; 0|]
+
+    let mirror_exn file =
+      if file land nmask <> 0 then
+        invalid_argf "File index %d is invalid" file ()
+      else Array.unsafe_get mirror file
+
+    let mirror file =
+      if file land nmask <> 0 then None
+      else Some (Array.unsafe_get mirror file)
   end
 
   let a1 = 0b000_000

@@ -75,14 +75,28 @@ val file_h : t
 (** [edges] is the union of [file_a], [file_h], [rank_1], and [rank_8]. *)
 val edges : t
 
-(** [center] is the sixteen center squares: c3-f3, c4-f4, c5-f5, and c6-f6. *)
+(** [bigcenter] is the sixteen center squares: c3-f3, c4-f4, c5-f5, and c6-f6. *)
+val bigcenter : t
+
+(** [center] is the four center squares: d4-e4, d5-e5. *)
 val center : t
+
+(** [longdiag] is the long diagonal squares that reach the center. *)
+val longdiag : t
 
 (** [black] is the set of black squares. *)
 val black : t
 
 (** [white] is the set of white squares. *)
 val white : t
+
+(** [queenside] is the set of files that are on the queen's side of the
+    board. *)
+val queenside : t
+
+(** [kingside] is the set of files that are on the king's side of the
+    board. *)
+val kingside : t
 
 (** [rank_exn i] the rank at index [i] if [i \in \[0,7\]]. Otherwise, an
     exception is raised. *)
@@ -92,13 +106,21 @@ val rank_exn : int -> t
     exception is raised. *)
 val file_exn : int -> t
 
+(** [neighbor_files_exn i] the adjacent files at index [i] if [i \in \[0,7\]].
+    Otherwise, an exception is raised. *)
+val neighbor_files_exn : int -> t
+
 (** [rank i] the rank at index [i] if [i \in \[0,7\]]. Otherwise, [None] is
-    returned *)
+    returned. *)
 val rank : int -> t option
 
 (** [file i] the file at index [i] if [i \in \[0,7\]]. Otherwise, [None] is
-    returned *)
+    returned. *)
 val file : int -> t option
+
+(** [neighbor_files i] the adjacent files at index [i] if [i \in \[0,7\]].
+    Otherwise, [None] is returned. *)
+val neighbor_files : int -> t option
 
 (** [inter x y] is the intersection of bitboards [x] and [y]. *)
 val inter : t -> t -> t
@@ -136,6 +158,9 @@ val clear : t -> Square.t -> t
 
 (** [mem b sq] tests if the square [sq] is occupied in [b]. *)
 val mem : t -> Square.t -> bool
+
+(** [several b] returns [true] if [b] has more than one square set. *)
+val several : t -> bool
 
 (** [fold b ~init ~f] accumulates a result over each occupied square in
     [b], starting from square a1. *)

@@ -35,6 +35,9 @@ module Limits : sig
   (** The moves that will be exclusively searched (if any). *)
   val moves : t -> Move.t list
 
+  (** The number of lines to search. *)
+  val multipv : t -> int
+
   (** The default depth to search to. *)
   val default_depth : int
 
@@ -65,6 +68,7 @@ module Limits : sig
 
       - [active]: the active player, used for calculating the time limit
       - [stop]: a promise to stop the search at an arbitrary point in time
+      - [multipv]: the number of lines to search (default is [1])
   *)
   val create :
     ?nodes:int option ->
@@ -78,6 +82,7 @@ module Limits : sig
     ?binc:int option ->
     ?infinite:bool ->
     ?moves:Move.t list ->
+    ?multipv:int ->
     active:Piece.color ->
     stop:unit Bap_future.Std.future ->
     unit ->
@@ -205,16 +210,11 @@ type result = Result.t
     An optional future [ponder] can be provided. If it is [None] (default),
     then the search will run normally. Otherwise, it will run in ponder mode
     until this future is decided.
-
-    For searching multiple lines, [multi_pv] can be provided. By default, it
-    is [1], and if a value less than [1] is provided then the default is
-    used.
 *)
 val go :
   ?iter:(result -> unit) ->
   ?currmove:(Position.child -> n:int -> depth:int -> unit) ->
   ?ponder:unit Bap_future.Std.future option ->
-  ?multi_pv:int ->
   ?histogram:Position.histogram ->
   root:Position.t ->
   limits:limits ->

@@ -5,7 +5,6 @@ open Bap_future.Std
 module Bb = Bitboard
 module Pre = Precalculated
 module Child = Position.Child
-module Threats = Position.Threats
 module See = Position.See
 
 module Oa = struct
@@ -46,6 +45,7 @@ module Limits = struct
     max_time : int option;
     stop     : unit future;
     moves    : Move.t list;
+    multipv  : int;
   } [@@deriving fields]
 
   let stopped limits = Future.is_decided @@ stop limits
@@ -67,6 +67,10 @@ module Limits = struct
     | (Some n) as movetime when n >= 1 -> movetime
     | Some n ->
       invalid_argf "Invalid movetime %d, must be greater than 0" n ()
+
+  let check_multipv n =
+    if n < 1 then
+      invalid_argf "Invalid multipv %d, must be greater than 0" n ()
 
   let manage_time
       ?(movestogo = None)
@@ -115,11 +119,13 @@ module Limits = struct
       ?(binc = None)
       ?(infinite = false)
       ?(moves = [])
+      ?(multipv = 1)
       ~active
       ~stop
       () =
     check_nodes nodes;
     check_depth depth;
+    check_multipv multipv;
     let movetime = check_movetime movetime in
     let max_time = match wtime, btime with
       | None, None -> None
@@ -140,7 +146,17 @@ module Limits = struct
     && Option.is_none max_time
     && List.is_empty moves
     then invalid_arg "Limits were explicitly unspecified"
-    else {infinite; nodes; mate; depth; movetime; max_time; stop; moves}
+    else {
+      infinite;
+      nodes;
+      mate;
+      depth;
+      movetime;
+      max_time;
+      stop;
+      moves;
+      multipv
+    }
 end
 
 type limits = Limits.t
@@ -389,7 +405,7 @@ module State = struct
     mutable nodes              : int;
     mutable root_depth         : int;
     mutable pv_index           : int;
-    multi_pv                   : int;
+    multipv                    : int;
     iter                       : Result.t -> unit;
     currmove                   : Child.t -> n:int -> depth:int -> unit;
     ponder                     : unit future option;
@@ -410,7 +426,6 @@ module State = struct
 
   let create
       moves
-      ~multi_pv
       ~limits
       ~root
       ~histogram
@@ -442,7 +457,7 @@ module State = struct
       nodes = 0;
       root_depth = 1;
       pv_index = 0;
-      multi_pv = min multi_pv @@ Array.length root_moves;
+      multipv = min limits.multipv @@ Array.length root_moves;
       iter;
       currmove;
       ponder;
@@ -574,7 +589,7 @@ module State = struct
 
   let extract_lines st =
     Array.foldi st.root_moves ~init:[] ~f:(fun i acc rm ->
-        if i < st.multi_pv then
+        if i < st.multipv then
           let score, updated = Root_move.real_score rm in
           if st.root_depth > 1 || updated || i = 0 then
             let bound = rm.bound in
@@ -945,10 +960,11 @@ module Quiescence = struct
      evaluation is significantly lower than alpha.
   *)
   let delta =
-    let margin = Eval.Material.queen_mg in
+    let margin = 900 in
     fun pos eval alpha ->
-      eval + margin < alpha &&
-      not (Eval.Phase.is_endgame pos)
+      let active = Position.active pos in
+      Position.has_non_pawn_material pos active &&
+      eval + margin < alpha
 
   let static_eval st pos ~ply ~(ttentry : Tt.entry option) = match ttentry with
     | None when ply <= 0 -> Eval.go pos
@@ -1150,19 +1166,17 @@ module Main = struct
     | Some score ->
       razor st pos moves ~score ~alpha ~ply ~depth >>? fun () ->
       rfp ~depth ~score ~beta ~improving >>? fun () ->
-      nmp st pos ~score ~beta ~ply ~depth >>? fun () ->
+      nmp st pos ~score ~beta ~ply ~depth ~ttentry >>? fun () ->
       probcut st pos moves ~depth ~ply ~beta ~ttentry ~improving
 
   (* Search a child of the current node. *)
   and child st t pos ~beta ~depth ~ply ~check ~pv
       ~improving ~ttentry = fun i (m, order) ->
     let open Continue_or_stop in
-    if no_root_move st m ~ply
-    then Continue (i + 1)
-    else begin
-      if ply = 0 && State.elapsed st > update_time then
-        st.currmove m ~n:(i + 1) ~depth;
-      if should_skip st t m ~i ~beta ~depth ~ply ~order then Continue (i + 1)
+    let[@inline] next () = Continue (i + 1) in
+    if no_root_move st m ~ply then next () else begin
+      emit_update st m ~i ~ply ~depth;
+      if should_skip st t m ~i ~beta ~depth ~ply ~order then next()
       else match semc st pos m ~depth ~ply ~beta ~check ~ttentry with
         | First score -> Stop score
         | Second _ when st.stopped -> Stop t.score
@@ -1177,8 +1191,12 @@ module Main = struct
           if ply = 0 then Ply.update_root_move st t i m score;
           if Ply.cutoff st t m ~score ~beta ~ply ~depth ~pv then Stop t.score
           else if st.stopped then Stop t.score
-          else Continue (i + 1)
+          else next ()
     end
+
+  and emit_update st m ~i ~ply ~depth =
+    if ply = 0 && State.elapsed st >= update_time then
+      st.currmove m ~n:(i + 1) ~depth
 
   and should_skip st t m ~i ~beta ~depth ~ply ~order =
     State.is_excluded st ply m || begin
@@ -1192,7 +1210,7 @@ module Main = struct
      PV index. *)
   and no_root_move (st : state) m ~ply =
     ply = 0
-    && st.multi_pv > 1
+    && st.multipv > 1
     && Option.is_none (State.find_root_move st m ~pos:st.pv_index)
 
   (* Futility pruning.
@@ -1213,7 +1231,7 @@ module Main = struct
       && eval + futile_margin depth < t.alpha
 
   and futile_margin depth =
-    let m = Eval.Material.pawn_mg in
+    let m = 100 in
     m + m * depth
 
   and futile_max_depth = 6
@@ -1255,14 +1273,15 @@ module Main = struct
 
      This should not be called when the position is in check.
   *)
-  and nmp st pos ~score ~beta ~ply ~depth =
+  and nmp st pos ~score ~beta ~ply ~depth ~ttentry =
+    let active = Position.active pos in
     if not (State.is_null_move st (ply - 1))
+    && not (State.has_excluded st ply)
     && score >= beta
     && score >= State.lookup_eval_unsafe st ply
     && depth >= nmp_min_depth
-    && not (State.has_excluded st ply)
-    && not (Eval.Phase.is_endgame pos)
-    && Threats.(count @@ get pos @@ Position.inactive pos) <= 0 then
+    && Position.has_non_pawn_material pos active
+    && nmp_check_ttentry beta ttentry then
       let r = if depth <= 6 then 2 else 3 in
       State.null_move st ply;
       let score =
@@ -1274,6 +1293,12 @@ module Main = struct
           ~pv:false |> Int.neg in
       Option.some_if (score >= beta) score
     else None
+
+  (* If the TT entry is available, its contents may suggest that the
+     search would fail immediately. *)
+  and nmp_check_ttentry beta = function
+    | Some Tt.Entry.{bound = Upper; score; _} -> score >= beta
+    | Some _ | None -> true
 
   and nmp_min_depth = 3
 
@@ -1293,8 +1318,8 @@ module Main = struct
   and razor_max_depth = 7
 
   and razor_margin =
-    let p = Eval.Material.pawn_mg in
-    let n = Eval.Material.knight_mg in
+    let p = 100 in
+    let n = 300 in
     let base = n + (p / 2) in
     let mult = n - (p / 2) in
     fun depth -> base + mult * depth * depth
@@ -1365,8 +1390,8 @@ module Main = struct
     | None -> true
 
   and probcut_margin improving =
-    let p = Eval.Material.pawn_mg in
-    let n = Eval.Material.knight_mg in
+    let p = 100 in
+    let n = 300 in
     (n / 2) - ((p / 2) * b2i improving)
 
   and probcut_min_depth = 5
@@ -1501,7 +1526,7 @@ module Aspiration = struct
     rm.bound <- bound
 
   let update (st : state) =
-    if st.multi_pv = 1 then
+    if st.multipv = 1 then
       let time = State.elapsed st in
       if time > update_time then ignore @@ result st ~time
 
@@ -1543,7 +1568,7 @@ module Aspiration = struct
 end
 
 let rec iterdeep (st : state) moves =
-  if st.pv_index < st.multi_pv then
+  if st.pv_index < st.multipv then
     let rm = State.current_root_move st in
     State.new_line st;
     Aspiration.go st moves st.root_depth rm.avg_score;
@@ -1633,7 +1658,6 @@ let go
     ?(iter = ignore)
     ?(currmove = fun _ ~n:_ ~depth:_ -> ())
     ?(ponder = None)
-    ?(multi_pv = 1)
     ?(histogram = Position.Histogram.empty)
     ~root
     ~limits
@@ -1643,8 +1667,7 @@ let go
   | [] -> no_moves root iter
   | _ when mate_in_zero limits -> no_moves root iter ~mzero:true
   | moves ->
-    let multi_pv = max multi_pv 1 in
     let st =
-      State.create moves ~multi_pv ~root ~limits
-        ~histogram ~tt ~iter ~currmove ~ponder in
+      State.create moves ~root ~limits ~histogram
+        ~tt ~iter ~currmove ~ponder in
     iterdeep st moves

@@ -6,6 +6,9 @@ module Cr = Castling_rights
 let clz = Ocaml_intrinsics.Int64.count_leading_zeros
 let ctz = Ocaml_intrinsics.Int64.count_trailing_zeros
 
+let msb x = Square.last - clz x
+let lsb = ctz
+
 (* Magic shift constants. *)
 
 module Shift = struct
@@ -150,7 +153,6 @@ end
 (* Masks for various movement directions. *)
 
 module Mask = struct
-
   (* Direction to move in when starting from a particular square. *)
   let dir =
     let n = (Square.count lsr 3) - 1 in
@@ -205,9 +207,8 @@ module Sliding = struct
           match to_int64 (ray & occupied) with
           | 0L -> acc
           | ray' -> acc - tbl.(f ray')) in
-    let l b = Square.last - clz b and r = ctz in
-    Mask.Tbl.(gen [(neast, r); (nwest, r); (seast, l); (swest, l)],
-              gen [(east,  r); (west,  l); (north, r); (south, l)])
+    Mask.Tbl.(gen [(neast, lsb); (nwest, lsb); (seast, msb); (swest, msb)],
+              gen [(east,  lsb); (west,  msb); (north, lsb); (south, msb)])
 
   (* Generate the occupied squares for a particular mask and index. *)
   let blockers idx mask =
@@ -383,3 +384,181 @@ let[@inline] mvv_lva victim attacker =
   let i = Piece.Kind.to_int victim in
   let j = Piece.Kind.to_int attacker in
   Array.unsafe_get mvv_lva_tbl (i + j * Piece.Kind.count)
+
+let king_area_tbl =
+  let tbl = Array.create ~len:(Piece.Color.count * Square.count) Bb.empty in
+  for c = 0 to Piece.Color.count - 1 do
+    for s = 0 to Square.last do
+      let open Bb.Syntax in
+      let sq = Square.of_int_exn s in
+      let att = king sq in
+      let up = match Piece.Color.of_int_exn c with
+        | Piece.White -> att << 8
+        | Piece.Black -> att >> 8 in
+      let m = (att + up) ++ sq in
+      let m = match Square.file sq with
+        | 0 -> m + (m << 1)
+        | 7 -> m + (m >> 1)
+        | _ -> m in
+      let i = Int.((c * Square.count) + s) in
+      tbl.(i) <- m
+    done;
+  done;
+  tbl
+
+let[@inline] king_area sq c =
+  let s = Square.to_int sq in
+  let c = Piece.Color.to_int c in
+  let i = (c * Square.count) + s in
+  Array.unsafe_get king_area_tbl i
+
+let passed_pawns_tbl =
+  let idx c sq = (c * Square.count) + sq in
+  let tbl =
+    let len = Piece.Color.count * Square.count in
+    Array.create ~len Bb.empty in
+  for i = 0 to Square.count - 1 do
+    let open Bb in
+    let sq = Square.of_int_exn i in
+    let n = Mask.north sq in
+    let s = Mask.south sq in
+    let a, h = file_a, file_h in
+    let w = n + ((n << 1) - a) + ((n >> 1) - h) in
+    let b = s + ((s >> 1) - h) + ((s << 1) - a) in
+    tbl.(idx Piece.Color.white i) <- w;
+    tbl.(idx Piece.Color.black i) <- b;
+  done;
+  tbl
+
+let[@inline] passed_pawns sq c =
+  let s = Square.to_int sq in
+  let c = Piece.Color.to_int c in
+  let i = (c * Square.count) + s in
+  Array.unsafe_get passed_pawns_tbl i
+
+let forward_ranks_idx c r = (c * Square.Rank.count) + r
+
+let forward_ranks_tbl =
+  let len = Square.Rank.count * Piece.Color.count in
+  let t = Array.create ~len Bb.empty in
+  for r = 0 to Square.Rank.count - 1 do
+    let i = forward_ranks_idx Piece.Color.black r in
+    let j = forward_ranks_idx Piece.Color.white r in
+    for i = r to Square.Rank.count - 1 do
+      t.(j) <- Bb.(t.(j) + rank_exn i);
+    done;
+    t.(i) <- Bb.(~~(t.(j)) + rank_exn r);
+  done;
+  t
+
+let[@inline] forward_ranks sq c =
+  let c = Piece.Color.to_int c in
+  Array.unsafe_get forward_ranks_tbl @@
+  forward_ranks_idx c @@
+  Square.rank sq
+
+let forward_files_idx c sq = (c * Square.count) + sq
+
+let forward_files_tbl =
+  let len = Square.count * Piece.Color.count in
+  let t = Array.create ~len Bb.empty in
+  for c = 0 to Piece.Color.count - 1 do
+    for s = 0 to Square.count - 1 do
+      let sq = Square.of_int_exn s in
+      let r = Square.rank sq in
+      let ri = forward_ranks_idx c r in
+      let f = Bb.file_exn @@ Square.file sq in
+      t.(forward_files_idx c s) <- Bb.(f & forward_ranks_tbl.(ri));
+    done;
+  done;
+  t
+
+let[@inline] forward_files sq c =
+  let c = Piece.Color.to_int c in
+  let s = Square.to_int sq in
+  Array.unsafe_get forward_files_tbl @@
+  forward_files_idx c s
+
+let outpost_ranks_tbl = Bb.[|
+    rank_4 + rank_5 + rank_6;
+    rank_3 + rank_4 + rank_5;
+  |]
+
+let[@inline] outpost_ranks c =
+  Array.unsafe_get outpost_ranks_tbl @@ Piece.Color.to_int c
+
+let outpost_squares_idx sq c = (c * Square.count) + sq
+
+let outpost_squares_tbl =
+  let len = Square.count * Piece.Color.count in
+  let tbl = Array.create Bb.empty ~len in
+  for c = 0 to Piece.Color.count - 1 do
+    for s = 0 to Square.last do
+      let sq = Square.of_int_exn s in
+      let p = passed_pawns sq @@ Piece.Color.of_int_exn c in
+      let f = Bb.file_exn @@ Square.file sq in
+      tbl.(outpost_squares_idx s c) <- Bb.(p - f);
+    done;
+  done;
+  tbl
+
+let[@inline] outpost_squares sq c =
+  let s = Square.to_int sq in
+  let c = Piece.Color.to_int c in
+  Array.unsafe_get outpost_squares_tbl @@
+  outpost_squares_idx s c
+
+let connected_pawns_idx sq c = (c * Square.count) + sq
+
+let connected_pawns_tbl =
+  let len = Square.count * Piece.Color.count in
+  let tbl = Array.create Bb.empty ~len in
+  for i = 8 to (Square.count - 8) - 1 do
+    let wc = pawn_capture (Square.of_int_exn i) Piece.White in
+    let wf = pawn_capture (Square.of_int_exn (i + 8)) Piece.White in
+    let bc = pawn_capture (Square.of_int_exn i) Piece.Black in
+    let bf = pawn_capture (Square.of_int_exn (i - 8)) Piece.Black in
+    tbl.(connected_pawns_idx i Piece.Color.white) <- Bb.(bc + bf);
+    tbl.(connected_pawns_idx i Piece.Color.black) <- Bb.(wc + wf);
+  done;
+  tbl
+
+let[@inline] connected_pawns sq c =
+  let sq = Square.to_int sq in
+  let c = Piece.Color.to_int c in
+  Array.unsafe_get connected_pawns_tbl @@
+  connected_pawns_idx sq c
+
+let king_pawn_file_distance_idx f m =
+  let m = Int64.to_int_trunc m in
+  m + (f * (1 lsl Square.File.count))
+
+let king_pawn_file_distance_tbl =
+  let fc = Square.File.count in
+  let fc' = fc - 1 in
+  let len = fc * (1 lsl fc) in
+  let t = Array.create ~len 0 in
+  for m = 0 to 0xFF do
+    for f = 0 to fc' do
+      let open Int64 in
+      let m = of_int m in
+      let sh = Int.(fc - f - 1) in
+      let l = (0xFFL land (m lsl sh)) lsr sh in
+      let r = (m lsr f) lsl f in
+      let ldist = if l = 0L then fc' else Int.(f - msb l) in
+      let rdist = if r = 0L then fc' else Int.(lsb r - f) in
+      let dist = if (l lor r) = 0L then 0 else Int.min ldist rdist in
+      t.(king_pawn_file_distance_idx f m) <- dist;
+    done;
+  done;
+  t
+
+let[@inline] king_pawn_file_distance sq pawn =
+  let open Int64 in
+  let f = Square.file sq in
+  let p = Bb.to_int64 pawn in
+  let p = p lor (p lsr 8) in
+  let p = p lor (p lsr 16) in
+  let p = p lor (p lsr 32) in
+  let i = king_pawn_file_distance_idx f (p land 0xFFL) in
+  Array.unsafe_get king_pawn_file_distance_tbl i

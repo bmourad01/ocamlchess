@@ -19,31 +19,46 @@ let full = Int64.bit_not empty
 
 (* Chess-specific constants. *)
 
-let rank_1 = 0x00000000000000FFL
-let rank_2 = 0x000000000000FF00L
-let rank_3 = 0x0000000000FF0000L
-let rank_4 = 0x00000000FF000000L
-let rank_5 = 0x000000FF00000000L
-let rank_6 = 0x0000FF0000000000L
-let rank_7 = 0x00FF000000000000L
-let rank_8 = 0xFF00000000000000L
-let file_a = 0x0101010101010101L
-let file_b = 0x0202020202020202L
-let file_c = 0x0404040404040404L
-let file_d = 0x0808080808080808L
-let file_e = 0x1010101010101010L
-let file_f = 0x2020202020202020L
-let file_g = 0x4040404040404040L
-let file_h = 0x8080808080808080L
-let edges  = 0xFF818181818181FFL
-let center = 0x00003C3C3C3C0000L
-let black  = 0xAA55AA55AA55AA55L
-let white  = 0x55AA55AA55AA55AAL
+let rank_1    = 0x00000000000000FFL
+let rank_2    = 0x000000000000FF00L
+let rank_3    = 0x0000000000FF0000L
+let rank_4    = 0x00000000FF000000L
+let rank_5    = 0x000000FF00000000L
+let rank_6    = 0x0000FF0000000000L
+let rank_7    = 0x00FF000000000000L
+let rank_8    = 0xFF00000000000000L
+let file_a    = 0x0101010101010101L
+let file_b    = 0x0202020202020202L
+let file_c    = 0x0404040404040404L
+let file_d    = 0x0808080808080808L
+let file_e    = 0x1010101010101010L
+let file_f    = 0x2020202020202020L
+let file_g    = 0x4040404040404040L
+let file_h    = 0x8080808080808080L
+let edges     = 0xFF818181818181FFL
+let bigcenter = 0x00003C3C3C3C0000L
+let center    = 0x0000018180000000L
+let longdiag  = 0x8142241818244281L
+let black     = 0xAA55AA55AA55AA55L
+let white     = 0x55AA55AA55AA55AAL
+let queenside = Int64.(file_a lor file_b lor file_c lor file_d)
+let kingside  = Int64.(file_e lor file_f lor file_g lor file_h)
 
 (* Helpers to access rank/file by index. *)
 
 let ranks = [|rank_1; rank_2; rank_3; rank_4; rank_5; rank_6; rank_7; rank_8|]
 let files = [|file_a; file_b; file_c; file_d; file_e; file_f; file_g; file_h|]
+
+let neighbor_files = Int64.[|
+    file_b;
+    file_a + file_c;
+    file_b + file_d;
+    file_c + file_e;
+    file_d + file_f;
+    file_e + file_g;
+    file_f + file_h;
+    file_g;
+  |]
 
 let rank_exn i =
   if Int.(i land Square.Rank.nmask <> 0)
@@ -55,6 +70,11 @@ let file_exn i =
   then invalid_argf "Integer %d is not a valid file" i ()
   else Array.unsafe_get files i
 
+let neighbor_files_exn i =
+  if Int.(i land Square.File.nmask <> 0)
+  then invalid_argf "Integer %d is not a valid file" i ()
+  else Array.unsafe_get neighbor_files i
+
 let rank i =
   if Int.(i land Square.Rank.nmask <> 0) then None
   else Some (Array.unsafe_get ranks i)
@@ -62,6 +82,10 @@ let rank i =
 let file i =
   if Int.(i land Square.File.nmask <> 0) then None
   else Some (Array.unsafe_get files i)
+
+let neighbor_files i =
+  if Int.(i land Square.File.nmask <> 0) then None
+  else Some (Array.unsafe_get neighbor_files i)
 
 (* Bitwise operators. *)
 
@@ -93,6 +117,7 @@ let[@inline] next_square_rev b = Square.(of_int_unsafe (last lxor clz b))
 
 (* Quick way to pop the LSB from the board. *)
 let[@inline] clear_fast_fwd b = Int64.(b land pred b)
+let[@inline] several b = clear_fast_fwd b <> empty
 
 (* Higher-order functions. *)
 
