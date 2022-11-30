@@ -201,7 +201,7 @@ let first_set_exn b =
 
 let first_set_rev_exn b =
   if b = empty then invalid_arg "Find first set on an empty bitboard"
-  else next_square b
+  else next_square_rev b
 
 let first_set b =
   if b = empty then None 
