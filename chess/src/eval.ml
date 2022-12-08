@@ -1538,6 +1538,8 @@ module Complexity = struct
   let pawn_endgame = 0 $ 76
   let adjustment = 0 $ -157
 
+  let[@inline] isign2 x = Bool.to_int (x > 0) - Bool.to_int (x < 0)
+
   let[@inline] go pos eval =
     let open Bb in
     let pawn = Position.pawn pos in
@@ -1552,7 +1554,8 @@ module Complexity = struct
       (pawn_endgame ** Bool.to_int (not (npw || npb))) +$
       adjustment in
     let eg = Score.eg eval in
-    0 $ Int.(isign eg * imax (Score.eg complexity) (-(iabs eg)))
+    let lowerbound = -(iabs eg) in
+    0 $ Int.(isign2 eg * imax (Score.eg complexity) lowerbound)
 end
 
 module Scale = struct
