@@ -16,32 +16,29 @@ module Pre = Precalculated
    sign extension when we try to extract them. Such operations aren't
    as common as simple arithmetic on the evaluations, which can be done
    with the normal integer operations.
+
+   Note that since we need 32 bits of precision, we will use the Int63
+   type since it is unboxed on a 64-bit machine.
 *)
 
 module Score = struct
-  type t = int
-
-  (* XXX: use Int63? *)
-  let () =
-    let s = Caml.Sys.int_size in
-    if s < 32 then
-      failwithf "Integer size must be at least 32 bits (got %d)" s ()
+  type t = Int63.t
 
   let bits = 16
-  let mask = (1 lsl bits) - 1
-  let smask = 1 lsl (bits - 1)
+  let mask = Int63.of_int ((1 lsl bits) - 1)
+  let smask = Int63.of_int (1 lsl (bits - 1))
 
-  let[@inline] sext x = (x lxor smask) - smask
-  let[@inline] make mg eg = (eg lsl bits) + mg
-  let[@inline] mg s = sext (s land mask)
-  let[@inline] eg s = sext (((s + smask) lsr bits) land mask)
+  let[@inline] sext x = Int63.((x lxor smask) - smask)
+  let[@inline] make mg eg = Int63.((of_int eg lsl bits) + of_int mg)
+  let[@inline] mg s = Int63.(to_int_exn (sext (s land mask)))
+  let[@inline] eg s = Int63.(to_int_exn (sext (((s + smask) lsr bits) land mask)))
 
   module Syntax = struct
-    (* Convenience. *)
     let ($) = make
-
-    (* Avoid conflicts with the bitboard operators. *)
-    let (+$) = Int.(+)
+    let (+$) = Int63.(+)
+    let (-$) = Int63.(-)
+    let ( *$ ) = Int63.( * )
+    let ( ** ) x y = Int63.(x * of_int y)
   end
 end
 
@@ -213,7 +210,7 @@ module Info = struct
     if Bb.(a <> empty) then begin
       info.num_king_attacks <- info.num_king_attacks + Bb.count a;
       info.num_king_attackers <- info.num_king_attackers + 1;
-      info.king_attackers <- info.king_attackers + w;
+      info.king_attackers <- info.king_attackers +$ w;
     end
 
   type t = {
@@ -236,7 +233,7 @@ module Info = struct
     | Piece.Black -> t.black
 
   let pawn_king_eval t =
-    t.white.pawn_king_eval - t.black.pawn_king_eval
+    t.white.pawn_king_eval -$ t.black.pawn_king_eval
 
   let save_pkentry t = match t.pkentry with
     | Some _ -> ()
@@ -681,7 +678,7 @@ module Bishop = struct
         let acc =
           let m = if sq @ white then white else black in
           let c = count (our_info.rammed_pawns & m) in
-          acc +$ (rammed_pawn * c) in
+          acc +$ (rammed_pawn ** c) in
         (* Bishop outpost. *)
         let acc =
           let osq = Pre.outpost_squares sq c in
@@ -1211,13 +1208,13 @@ module King = struct
       (* Safety. *)
       let base = our_info.king_attackers +$ our_info.pawn_king_safety in
       let scale =
-        (Safety.attack_value      * scaled_attacks) +$
-        (Safety.weak_squares      * count (weak & our_info.king_area)) +$
-        (Safety.no_enemy_queens   * Bool.to_int (their_queens = empty)) +$
-        (Safety.safe_queen_check  * count qchecks) +$
-        (Safety.safe_rook_check   * count rchecks) +$
-        (Safety.safe_bishop_check * count bchecks) +$
-        (Safety.safe_knight_check * count nchecks) in
+        (Safety.attack_value      ** scaled_attacks) +$
+        (Safety.weak_squares      ** count (weak & our_info.king_area)) +$
+        (Safety.no_enemy_queens   ** Bool.to_int (their_queens = empty)) +$
+        (Safety.safe_queen_check  ** count qchecks) +$
+        (Safety.safe_rook_check   ** count rchecks) +$
+        (Safety.safe_bishop_check ** count bchecks) +$
+        (Safety.safe_knight_check ** count nchecks) in
       eval +$ finalize (base +$ scale +$ Safety.adjustment)
     else eval
 end
@@ -1406,16 +1403,16 @@ module Threat = struct
       let l, r = pawn_captures b c in
       (l + r) - m in
     (* Combine the features. *)
-    (weak_pawn       * count (pawn & us & np' & poorly_defended))      +$
-    (pawn_minor      * count (our_minors & pawn_att))                  +$
-    (minor_minor     * count (our_minors & minor_att))                 +$
-    (major_minor     * count (weak_minors & major_att))                +$
-    (pawn_minor_rook * count (rook & us & (pawn_att + minor_att)))     +$
-    (king_minor      * count (weak_minors & king_att))                 +$
-    (king_rook       * count (rook & us & poorly_defended & king_att)) +$
-    (any_queen       * count (queen & us & their_info.attacks))        +$
-    (overload        * count overloaded)                               +$
-    (pawn_push       * count push_threat)
+    (weak_pawn       ** count (pawn & us & np' & poorly_defended))      +$
+    (pawn_minor      ** count (our_minors & pawn_att))                  +$
+    (minor_minor     ** count (our_minors & minor_att))                 +$
+    (major_minor     ** count (weak_minors & major_att))                +$
+    (pawn_minor_rook ** count (rook & us & (pawn_att + minor_att)))     +$
+    (king_minor      ** count (weak_minors & king_att))                 +$
+    (king_rook       ** count (rook & us & poorly_defended & king_att)) +$
+    (any_queen       ** count (queen & us & their_info.attacks))        +$
+    (overload        ** count overloaded)                               +$
+    (pawn_push       ** count push_threat)
 end
 
 module Space = struct
@@ -1437,9 +1434,9 @@ module Space = struct
       our_info.attacks2 -
       Info.attacked_by our_info Pawn in
     (* Occupied squares. *)
-    let acc = acc +$ (restrict_occupied * count (uncontrolled & all)) in
+    let acc = acc +$ (restrict_occupied ** count (uncontrolled & all)) in
     (* Empty squares. *)
-    let acc = acc +$ (restrict_empty * count (uncontrolled - all)) in
+    let acc = acc +$ (restrict_empty ** count (uncontrolled - all)) in
     (* Uncontested central squares. *)
     let acc =
       let knight = Position.knight info.pos in
@@ -1450,7 +1447,7 @@ module Space = struct
       let major = count (rook + queen) in
       if Int.((minor + 2 * major) > 12) then
         let b = ~~(their_info.attacks) & (our_info.attacks + us) & bigcenter in
-        acc +$ (center_control * count b)
+        acc +$ (center_control ** count b)
       else acc in
     acc
 end
@@ -1508,14 +1505,14 @@ module Closedness = struct
       let wn = count (knight & w) in
       let bn = count (knight & b) in
       let weight = uget knights closedness in
-      acc +$ (weight * Int.(wn - bn)) in
+      acc +$ (weight ** Int.(wn - bn)) in
     (* Rooks. *)
     let acc =
       let rook = Position.rook info.pos in
       let wr = count (rook & w) in
       let br = count (rook & b) in
       let weight = uget rooks closedness in
-      acc +$ (weight * Int.(wr - br)) in
+      acc +$ (weight ** Int.(wr - br)) in
     acc
 end
 
@@ -1534,9 +1531,9 @@ module Complexity = struct
     let npw = Position.has_non_pawn_material pos White in
     let npb = Position.has_non_pawn_material pos Black in
     let complexity =
-      (total_pawns * count pawn) +$
-      (pawn_flanks * Bool.to_int both_flanks) +$
-      (pawn_endgame * Bool.to_int (not (npw || npb))) +$
+      (total_pawns  ** count pawn)                     +$
+      (pawn_flanks  ** Bool.to_int both_flanks)        +$
+      (pawn_endgame ** Bool.to_int (not (npw || npb))) +$
       adjustment in
     let eg = Score.eg eval in
     let s = Sign.to_int @@ Int.sign eg in
@@ -1625,12 +1622,23 @@ module Scale = struct
 end
 
 module Material = struct
-  let pawn = 82 $ 114
-  let knight = 427 $ 475
-  let bishop = 441 $ 510
-  let rook = 627 $ 803
-  let queen = 1292 $ 1623
-  let king = 0 $ 0
+  module White = struct
+    let pawn = 82 $ 114
+    let knight = 427 $ 475
+    let bishop = 441 $ 510
+    let rook = 627 $ 803
+    let queen = 1292 $ 1623
+    let king = 0 $ 0
+  end
+
+  module Black = struct
+    let pawn = -82 $ -114
+    let knight = -427 $ -475
+    let bishop = -441 $ -510
+    let rook = -627 $ -803
+    let queen = -1292 $ -1623
+    let king = 0 $ 0
+  end
 end
 
 module Psqt = struct
@@ -2100,19 +2108,19 @@ module Psqt = struct
     for i = 0 to Square.last do
       let sq = Square.of_int_exn i in
       let wsq = relative_square sq White in
-      t.(idx white_pawn   sq) <- +Material.pawn   + pawn.(wsq);
-      t.(idx white_knight sq) <- +Material.knight + knight.(wsq);
-      t.(idx white_bishop sq) <- +Material.bishop + bishop.(wsq);
-      t.(idx white_rook   sq) <- +Material.rook   + rook.(wsq);
-      t.(idx white_queen  sq) <- +Material.queen  + queen.(wsq);
-      t.(idx white_king   sq) <- +Material.king   + king.(wsq);
+      t.(idx white_pawn   sq) <- Material.White.pawn   +$ pawn.(wsq);
+      t.(idx white_knight sq) <- Material.White.knight +$ knight.(wsq);
+      t.(idx white_bishop sq) <- Material.White.bishop +$ bishop.(wsq);
+      t.(idx white_rook   sq) <- Material.White.rook   +$ rook.(wsq);
+      t.(idx white_queen  sq) <- Material.White.queen  +$ queen.(wsq);
+      t.(idx white_king   sq) <- Material.White.king   +$ king.(wsq);
       let bsq = relative_square sq Black in
-      t.(idx black_pawn   sq) <- -Material.pawn   - pawn.(bsq);
-      t.(idx black_knight sq) <- -Material.knight - knight.(bsq);
-      t.(idx black_bishop sq) <- -Material.bishop - bishop.(bsq);
-      t.(idx black_rook   sq) <- -Material.rook   - rook.(bsq);
-      t.(idx black_queen  sq) <- -Material.queen  - queen.(bsq);
-      t.(idx black_king   sq) <- -Material.king   - king.(bsq);
+      t.(idx black_pawn   sq) <- Material.Black.pawn   -$ pawn.(bsq);
+      t.(idx black_knight sq) <- Material.Black.knight -$ knight.(bsq);
+      t.(idx black_bishop sq) <- Material.Black.bishop -$ bishop.(bsq);
+      t.(idx black_rook   sq) <- Material.Black.rook   -$ rook.(bsq);
+      t.(idx black_queen  sq) <- Material.Black.queen  -$ queen.(bsq);
+      t.(idx black_king   sq) <- Material.Black.king   -$ king.(bsq);
     done;
     t
 
@@ -2169,18 +2177,18 @@ let go pos =
     Pawn_king.go info White;
     Pawn_king.go info Black;
   end;
-  let eval = eval + (Knight.go info White - Knight.go info Black) in
-  let eval = eval + (Bishop.go info White - Bishop.go info Black) in
-  let eval = eval + (Rook.go   info White - Rook.go   info Black) in
-  let eval = eval + (Queen.go  info White - Queen.go  info Black) in
-  let eval = eval + (King.go   info White - King.go   info Black) in
-  let eval = eval + (Passed.go info White - Passed.go info Black) in
-  let eval = eval + (Threat.go info White - Threat.go info Black) in
-  let eval = eval + (Space.go  info White - Space.go  info Black) in
-  let eval = eval + Info.pawn_king_eval info in
-  let eval = eval + Psqt.go pos in
-  let eval = eval + Closedness.go info in
-  let eval = eval + Complexity.go pos eval in
+  let eval = eval +$ (Knight.go info White -$ Knight.go info Black) in
+  let eval = eval +$ (Bishop.go info White -$ Bishop.go info Black) in
+  let eval = eval +$ (  Rook.go info White -$   Rook.go info Black) in
+  let eval = eval +$ ( Queen.go info White -$  Queen.go info Black) in
+  let eval = eval +$ (  King.go info White -$   King.go info Black) in
+  let eval = eval +$ (Passed.go info White -$ Passed.go info Black) in
+  let eval = eval +$ (Threat.go info White -$ Threat.go info Black) in
+  let eval = eval +$ ( Space.go info White -$  Space.go info Black) in
+  let eval = eval +$ Info.pawn_king_eval info in
+  let eval = eval +$ Psqt.go pos in
+  let eval = eval +$ Closedness.go info in
+  let eval = eval +$ Complexity.go pos eval in
   Info.save_pkentry info;
   let score = Phase.interpolate pos eval in
   tempo + match Position.active pos with
