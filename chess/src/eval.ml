@@ -104,11 +104,17 @@ module Pawn_king_cache = struct
     bpassed : Bb.t;
   }
 
-  let len = 1 lsl 16
-  let mask = Int64.of_int (len - 1)
+  let len = 1 lsl 18
   let table = Option_array.create ~len
   let same e k = Zobrist.equal_key e.key k
-  let slot k = Int64.(to_int_trunc (k land mask))
+
+  external mul_hi64 :
+    (int64[@unboxed]) ->
+    (int64[@unboxed]) ->
+    (int [@untagged]) =
+    "ocamlchess_mul_hi64" "ocamlchess_mul_hi64_unboxed" [@@noalloc]
+
+  let slot k = mul_hi64 k @@ Int64.of_int len
 
   let find pos =
     let k = Position.pawn_king_hash pos in
