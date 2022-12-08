@@ -28,10 +28,10 @@ module Score = struct
   let mask = Int63.of_int ((1 lsl bits) - 1)
   let smask = Int63.of_int (1 lsl (bits - 1))
 
-  let[@inline] sext x = Int63.((x lxor smask) - smask)
+  let[@inline] signext x = Int63.((x lxor smask) - smask)
   let[@inline] make mg eg = Int63.((of_int eg lsl bits) + of_int mg)
-  let[@inline] mg s = Int63.(to_int_exn (sext (s land mask)))
-  let[@inline] eg s = Int63.(to_int_exn (sext (((s + smask) lsr bits) land mask)))
+  let[@inline] mg s = Int63.(to_int_exn (signext (s land mask)))
+  let[@inline] eg s = Int63.(to_int_exn (signext (((s + smask) lsr bits) land mask)))
 
   module Syntax = struct
     let ($) = make
@@ -45,6 +45,22 @@ end
 type score = Score.t
 
 open Score.Syntax
+
+(* Branchless integer comparisons. *)
+
+let[@inline] isign x = x asr (Caml.Sys.int_size - 1)
+
+let[@inline] imax x y =
+  let m = x - y in
+  x - (m land (isign m))
+
+let[@inline] imin x y =
+  let m = x - y in
+  y + (m land (isign m))
+
+let[@inline] iabs x =
+  let m = isign x in
+  (x lxor m) + (m land 1)
 
 (* Helpers. *)
 
@@ -603,7 +619,7 @@ module Knight = struct
         let acc =
           let ours = Square.chebyshev sq our_info.king_square in
           let theirs = Square.chebyshev sq their_info.king_square in
-          let d = Int.(min ours theirs - 4) in
+          let d = Int.(imin ours theirs - 4) in
           if Int.(d < 0) then acc else acc +$ uget king_distance d in
         (* Mobility. *)
         let acc =
@@ -1094,8 +1110,8 @@ module Pawn_king = struct
   end
 
   let surrounding_files f =
-    let fa = Int.(max 0 (f - 1)) in
-    let fb = Int.(min (Square.File.count - 1) (f + 1)) in
+    let fa = Int.(imax 0 (f - 1)) in
+    let fb = Int.(imin (Square.File.count - 1) (f + 1)) in
     Sequence.range fa fb ~stop:`inclusive
 
   let[@inline] go (info : info) c =
@@ -1125,8 +1141,8 @@ module Pawn_king = struct
         (* Rank-wise distance between these pawns and our king. If the pawns
            are missing then a distance of 7 is used, since if there were a
            pawn it would be strictly less than 7. *)
-        let od = if ours   <> empty then abs Int.(kr - bmost ours)   else 7 in
-        let td = if theirs <> empty then abs Int.(kr - bmost theirs) else 7 in
+        let od = if ours   <> empty then iabs Int.(kr - bmost ours)   else 7 in
+        let td = if theirs <> empty then iabs Int.(kr - bmost theirs) else 7 in
         (* Shelter. *)
         let same_file = Int.(f = kf) in
         let eval = eval +$ Shelter.get same_file f od in
@@ -1159,7 +1175,7 @@ module King = struct
 
   let finalize s =
     let mg = Score.mg s and eg = Score.eg s in
-    (-mg * max 0 mg / 720) $ (-(max 0 eg) / 20)
+    (-mg * imax 0 mg / 720) $ (-(imax 0 eg) / 20)
 
   let[@inline] go (info : info) c =
     let open Bb in
@@ -1498,7 +1514,7 @@ module Closedness = struct
         1 * count pawn +
         3 * count info.white.rammed_pawns -
         4 * open_files pawn in
-      max 0 (min 8 (n / 3)) in
+      imax 0 (imin 8 (n / 3)) in
     (* Knights. *)
     let acc =
       let knight = Position.knight info.pos in
@@ -1536,8 +1552,7 @@ module Complexity = struct
       (pawn_endgame ** Bool.to_int (not (npw || npb))) +$
       adjustment in
     let eg = Score.eg eval in
-    let s = Sign.to_int @@ Int.sign eg in
-    0 $ Int.(s * max (Score.eg complexity) (-(abs eg)))
+    0 $ Int.(isign eg * imax (Score.eg complexity) (-(iabs eg)))
 end
 
 module Scale = struct
@@ -1618,7 +1633,7 @@ module Scale = struct
     Lone_queen.go knight bishop rook queen weak >>? fun () ->
     Lone_minor.go knight bishop strong >>? fun () ->
     Lone_vs_pawns.go w b pawn knight bishop rook queen weak strong >>? fun () ->
-    min normal (96 + Bb.(count (pawn & strong)) * 8)
+    imin normal (96 + Bb.(count (pawn & strong)) * 8)
 end
 
 module Material = struct
