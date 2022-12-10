@@ -49,6 +49,7 @@ open Score.Syntax
 (* Branchless integer comparisons. *)
 
 let[@inline] isign x = x asr (Caml.Sys.int_size - 1)
+let[@inline] isign2 x = Bool.to_int (x > 0) - Bool.to_int (x < 0)
 
 let[@inline] imax x y =
   let m = x - y in
@@ -1224,13 +1225,13 @@ module King = struct
       (* Safety. *)
       let base = our_info.king_attackers +$ our_info.pawn_king_safety in
       let scale =
-        (Safety.attack_value      ** scaled_attacks) +$
-        (Safety.weak_squares      ** count (weak & our_info.king_area)) +$
+        (Safety.attack_value      ** scaled_attacks)                     +$
+        (Safety.weak_squares      ** count (weak & our_info.king_area))  +$
         (Safety.no_enemy_queens   ** Bool.to_int (their_queens = empty)) +$
-        (Safety.safe_queen_check  ** count qchecks) +$
-        (Safety.safe_rook_check   ** count rchecks) +$
-        (Safety.safe_bishop_check ** count bchecks) +$
-        (Safety.safe_knight_check ** count nchecks) in
+        (Safety.safe_queen_check  ** count qchecks)                      +$
+        (Safety.safe_rook_check   ** count rchecks)                      +$
+        (Safety.safe_bishop_check ** count bchecks)                      +$
+        (Safety.safe_knight_check ** count nchecks)                      in
       eval +$ finalize (base +$ scale +$ Safety.adjustment)
     else eval
 end
@@ -1538,7 +1539,12 @@ module Complexity = struct
   let pawn_endgame = 0 $ 76
   let adjustment = 0 $ -157
 
-  let[@inline] isign2 x = Bool.to_int (x > 0) - Bool.to_int (x < 0)
+  let[@inline] calculate eval complexity =
+    let ceg = Score.eg complexity in
+    let eg = Score.eg eval in
+    let lb = -(iabs eg) in
+    let s = isign2 eg in
+    0 $ s * imax ceg lb
 
   let[@inline] go pos eval =
     let open Bb in
@@ -1548,14 +1554,11 @@ module Complexity = struct
       (pawn & (file_e + file_f + file_g + file_h)) <> empty in
     let npw = Position.has_non_pawn_material pos White in
     let npb = Position.has_non_pawn_material pos Black in
-    let complexity =
+    let base =
       (total_pawns  ** count pawn)                     +$
       (pawn_flanks  ** Bool.to_int both_flanks)        +$
-      (pawn_endgame ** Bool.to_int (not (npw || npb))) +$
-      adjustment in
-    let eg = Score.eg eval in
-    let lowerbound = -(iabs eg) in
-    0 $ Int.(isign2 eg * imax (Score.eg complexity) lowerbound)
+      (pawn_endgame ** Bool.to_int (not (npw || npb))) in
+    calculate eval (base +$ adjustment)
 end
 
 module Scale = struct
@@ -2184,31 +2187,39 @@ end
 
 (* The evaluation function. *)
 
-let tempo = 20
+module Main = struct
+  let tempo = 20
+
+  let[@inline] pawn_and_king info =
+    if Option.is_none info.Info.pkentry then begin
+      Pawn.go info White;
+      Pawn.go info Black;
+      Pawn_king.go info White;
+      Pawn_king.go info Black;
+    end
+
+  let[@inline] terms ?(init = 0 $ 0) info =
+    let eval = init +$ (Knight.go info White -$ Knight.go info Black) in
+    let eval = eval +$ (Bishop.go info White -$ Bishop.go info Black) in
+    let eval = eval +$ (  Rook.go info White -$   Rook.go info Black) in
+    let eval = eval +$ ( Queen.go info White -$  Queen.go info Black) in
+    let eval = eval +$ (  King.go info White -$   King.go info Black) in
+    let eval = eval +$ (Passed.go info White -$ Passed.go info Black) in
+    let eval = eval +$ (Threat.go info White -$ Threat.go info Black) in
+    let eval = eval +$ ( Space.go info White -$  Space.go info Black) in
+    let eval = eval +$ Info.pawn_king_eval info in
+    let eval = eval +$ Psqt.go info.pos in
+    let eval = eval +$ Closedness.go info in
+    let eval = eval +$ Complexity.go info.pos eval in
+    eval
+end
 
 let go pos =
-  let eval = 0 $ 0 in
   let info = Info.create pos in
-  if Option.is_none info.pkentry then begin
-    Pawn.go info White;
-    Pawn.go info Black;
-    Pawn_king.go info White;
-    Pawn_king.go info Black;
-  end;
-  let eval = eval +$ (Knight.go info White -$ Knight.go info Black) in
-  let eval = eval +$ (Bishop.go info White -$ Bishop.go info Black) in
-  let eval = eval +$ (  Rook.go info White -$   Rook.go info Black) in
-  let eval = eval +$ ( Queen.go info White -$  Queen.go info Black) in
-  let eval = eval +$ (  King.go info White -$   King.go info Black) in
-  let eval = eval +$ (Passed.go info White -$ Passed.go info Black) in
-  let eval = eval +$ (Threat.go info White -$ Threat.go info Black) in
-  let eval = eval +$ ( Space.go info White -$  Space.go info Black) in
-  let eval = eval +$ Info.pawn_king_eval info in
-  let eval = eval +$ Psqt.go pos in
-  let eval = eval +$ Closedness.go info in
-  let eval = eval +$ Complexity.go pos eval in
+  Main.pawn_and_king info;
+  let eval = Main.terms info in
   Info.save_pkentry info;
   let score = Phase.interpolate pos eval in
-  tempo + match Position.active pos with
+  Main.tempo + match Position.active pos with
   | Piece.White -> score
   | Piece.Black -> -score
