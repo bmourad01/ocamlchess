@@ -121,12 +121,9 @@ module Kind = struct
     | Bishop | Rook | Queen -> true
     | _ -> false
 
-  let value = function
-    | Pawn -> 1
-    | Knight | Bishop -> 3
-    | Rook -> 5
-    | Queen -> 9
-    | King -> 0
+  let value =
+    let tbl = [|1; 3; 3; 5; 9; 0|] in
+    fun k -> Array.unsafe_get tbl @@ to_int k
 end
 
 module T = struct
