@@ -121,9 +121,9 @@ module Kind = struct
     | Bishop | Rook | Queen -> true
     | _ -> false
 
-  let value =
-    let tbl = [|1; 3; 3; 5; 9; 0|] in
-    fun k -> Array.unsafe_get tbl @@ to_int k
+  let value_tbl = [|1; 3; 3; 5; 9; 0|]
+
+  let[@inline] value k = Array.unsafe_get value_tbl @@ to_int k
 end
 
 module T = struct
