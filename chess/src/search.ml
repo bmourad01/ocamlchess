@@ -1682,9 +1682,11 @@ let mate_in_zero limits = match Limits.mate limits with
   | Some n -> n = 0
   | None -> false
 
+let default_currmove _ ~n:_ ~depth:_ = ()
+
 let go
     ?(iter = ignore)
-    ?(currmove = fun _ ~n:_ ~depth:_ -> ())
+    ?(currmove = default_currmove)
     ?(ponder = None)
     ?(histogram = Position.Histogram.empty)
     ~root
