@@ -165,6 +165,7 @@ type limits = Limits.t
 let inf = 65535
 let mate_score = inf / 2
 let max_ply = 64
+let max_moves = 256
 let update_time = 3000
 
 let ply_to_moves ply = (ply + (ply land 1)) / 2
@@ -1456,7 +1457,7 @@ module Main = struct
     && i >= lmr_min_index
     && depth >= lmr_min_depth
     && order < Order.promote_offset then
-      let r = ref @@ Array.unsafe_get lmr_table (depth * max_ply + i) in
+      let r = ref @@ Array.unsafe_get lmr_table (depth * max_moves + i) in
       if Child.gives_check m then decr r;
       if Bb.(Child.new_threats m <> empty) then decr r;
       if lmr_is_passed_push m ~order then decr r;
@@ -1471,13 +1472,13 @@ module Main = struct
   and lmr_min_index = 2
 
   and lmr_table =
-    let t = Array.create ~len:(max_ply * max_ply) 0 in
+    let t = Array.create ~len:(max_ply * max_moves) 0 in
     for depth = 1 to max_ply - 1 do
-      for i = 1 to max_ply - 1 do
+      for i = 1 to max_moves - 1 do
         let fd = Float.of_int depth in
         let fi = Float.of_int i in
         let f = 0.75 +. log fd *. log fi  /. 2.25 in
-        t.(depth * max_ply + i) <- Float.to_int f
+        t.(depth * max_moves + i) <- Float.to_int f
       done
     done;
     t
