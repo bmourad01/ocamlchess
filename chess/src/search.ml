@@ -1481,16 +1481,17 @@ module Main = struct
     t
 
   and lmr_is_passed_push m ~order =
+    let open Bb in
     let move = Child.move m in
-    let parent = Child.parent m in
-    let pawn = Position.pawn parent in
-    let active = Position.active parent in
-    let them = Position.inactive_board parent in
-    let p = Position.piece_at_square_exn parent @@ Move.src move in
+    let pos = Child.parent m in
+    let pawn = Position.pawn pos in
+    let active = Position.active pos in
+    let all = Position.all_board pos in
+    let us = Position.board_of_color pos active in
     let mask = Pre.passed_pawns (Move.dst move) active in
-    Piece.is_pawn p &&
-    order > Order.bad_capture_offset &&
-    Bb.((pawn & them & mask) = empty)
+    Move.src move @ (pawn & us) &&
+    Int.(order > Order.bad_capture_offset) &&
+    Bb.((pawn & (all - us) & mask) = empty)
 
   and lmr_is_active_player (st : state) m =
     let active = Position.active st.root in
