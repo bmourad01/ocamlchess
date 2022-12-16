@@ -1457,7 +1457,7 @@ module Main = struct
       let r = ref @@ Array.unsafe_get lmr_table (depth * max_ply + i) in
       if Child.gives_check m then decr r;
       if Bb.(equal empty @@ Child.new_threats m) then decr r;
-      if lmr_is_passed_push m then decr r;
+      if lmr_is_passed_push m ~order then decr r;
       if improving then decr r;
       if not pv then incr r;
       if is_quiet m then incr r;
@@ -1480,7 +1480,7 @@ module Main = struct
     done;
     t
 
-  and lmr_is_passed_push m =
+  and lmr_is_passed_push m ~order =
     let move = Child.move m in
     let parent = Child.parent m in
     let pawn = Position.pawn parent in
@@ -1488,7 +1488,9 @@ module Main = struct
     let them = Position.inactive_board parent in
     let p = Position.piece_at_square_exn parent @@ Move.src move in
     let mask = Pre.passed_pawns (Move.dst move) active in
-    Piece.is_pawn p && Bb.((pawn & them & mask) = empty)
+    Piece.is_pawn p &&
+    order > Order.bad_capture_offset &&
+    Bb.((pawn & them & mask) = empty)
 
   and lmr_is_active_player (st : state) m =
     let active = Position.active st.root in
