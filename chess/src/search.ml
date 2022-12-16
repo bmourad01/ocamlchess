@@ -1456,7 +1456,7 @@ module Main = struct
     && order < Order.promote_offset then
       let r = ref @@ Array.unsafe_get lmr_table (depth * max_ply + i) in
       if Child.gives_check m then decr r;
-      if Bb.(equal empty @@ Child.new_threats m) then decr r;
+      if Bb.(Child.new_threats m <> empty) then decr r;
       if lmr_is_passed_push m ~order then decr r;
       if improving then decr r;
       if not pv then incr r;
