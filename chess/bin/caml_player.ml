@@ -22,7 +22,12 @@ let pp_score ppf : Uci.Send.Info.score -> unit = function
   | Cp (cp, Lower) -> Format.fprintf ppf "%d (lower-bound)%!" cp
   | Cp (cp, Upper) -> Format.fprintf ppf "%d (upper-bound)%!" cp
 
-let print_res res =
+let currmove child ~n ~depth ~len =
+  Format.printf "Searching %a (%d of %d) at depth %d\n%!"
+    Position.San.pp child n len depth;
+  if n = len then Format.printf "\n%!"
+
+let iter res =
   let line = Search.Result.pv_exn res in
   Format.printf "Time taken: %dms\n%!" @@ Search.Result.time res;
   Format.printf "Principal variation: %a\n%!" pp_pv @@ Line.pv line;
@@ -53,7 +58,8 @@ let choice (histogram, tt, in_book) moves =
   | Some (m, histogram) -> m, (histogram, tt, true)
   | None ->
     let limits = Option.value_exn !limits in
-    let res = Search.go ~root ~limits ~histogram ~tt ~iter:print_res () in
+    let currmove = currmove ~len:(List.length moves) in
+    let res = Search.go ~root ~limits ~histogram ~tt ~iter ~currmove () in
     let m = Search.Result.best_exn res in
     let new_pos = Position.Child.self m in
     let histogram = Histogram.incr histogram new_pos in
