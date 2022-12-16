@@ -1935,7 +1935,8 @@ module See = struct
     let src = Move.src m in
     let dst = Move.dst m in
     let st = init is_en_passant src dst pos victim in
-    let swap = Array.create ~len:Square.count @@ Piece.Kind.value victim in
+    let value = Option.value_map victim ~default:0 ~f:Piece.Kind.value in
+    let swap = Array.create value ~len:Square.count in
     let all = all_board pos in
     let order = lva_order pos in
     let[@inline] rec loop () =
@@ -1958,24 +1959,22 @@ module See = struct
     evaluate swap st.depth
 
   let go (child : child) =
-    if Uopt.is_some child.capture then
-      let victim = Uopt.unsafe_value child.capture in
-      let m = Child.move child in
-      let pos = Child.parent child in
-      let is_en_passant = Child.is_en_passant child in
-      Some (see m pos is_en_passant victim)
-    else None
+    let victim = Uopt.to_option child.capture in
+    let m = Child.move child in
+    let pos = Child.parent child in
+    let is_en_passant = Child.is_en_passant child in
+    see m pos is_en_passant victim
 
   let go_unsafe pos m =
     let dst = Move.dst m in
     let them = inactive_board pos in
     let is_en_passant = Unsafe.is_en_passant pos m in
-    if is_en_passant || Bb.(dst @ them) then
-      let victim =
-        if is_en_passant then Piece.Pawn
-        else Piece.kind @@ piece_at_square_exn pos dst in
-      Some (see m pos is_en_passant victim)
-    else None
+    let victim =
+      if is_en_passant || Bb.(dst @ them) then
+        if is_en_passant then Some Piece.Pawn
+        else Some (Piece.kind @@ piece_at_square_exn pos dst)
+      else None in
+    see m pos is_en_passant victim
 end
 
 module Comparable = struct

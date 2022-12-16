@@ -193,8 +193,8 @@ let print_new_pos new_pos prev moves =
     Move.pp m Position.San.pp mv Position.pp new_pos;
   Format.printf "Hash: %016LX\n%!" @@ assert_hash new_pos;
   Format.printf "Pawn-king hash: %016LX\n%!" @@ assert_pawn_king_hash new_pos;
-  Position.See.go mv |> Option.iter ~f:(fun see ->
-      Format.printf "Static Exchange Evaluation: %d\n%!" see);
+  if Child.is_capture mv then
+    Format.printf "Static Exchange Evaluation: %d\n%!" @@ Position.See.go mv;
   Format.printf "%d legal moves\n%!" @@ List.length moves;
   Format.printf "Gives check: %b\n%!" @@ Position.gives_check (Child.parent mv) m;
   Format.printf "\n%!"

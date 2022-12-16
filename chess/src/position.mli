@@ -536,14 +536,16 @@ end
 *)
 module See : sig
   (** [go m] runs the SEE evaluation for a legal move [m] and returns
-      the score. If [m] is not a capture move, then [None] is returned.
-      If the capture results in an exchange that is winning for the
+      the score.
+
+      If the move results in an exchange that is winning for the
       active player, then a positive score is returned. Likewise,
       a negative score is returned if this player ends up at a
       disadvantage. If no advantage is gained by either side, then
-      the score is 0. *)
-  val go : child -> int option
+      the score is 0.
+  *)
+  val go : child -> int
 
   (** Same as [go], but for unchecked moves. *)
-  val go_unsafe : t -> Move.t -> int option
+  val go_unsafe : t -> Move.t -> int
 end

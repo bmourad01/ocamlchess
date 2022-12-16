@@ -846,18 +846,19 @@ module Order = struct
         Int.of_float_unchecked (Int.to_float m /. maxf) + history_offset in
     score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
-        else match See.go m with
-          | Some see when see >= 0 -> good_capture_offset + see
-          | Some see -> bad_capture_offset + see
-          | None ->
-            let promote = promote m in
-            if promote <> 0 then promote
-            else
-              let refute = refutation m in
-              if refute <> 0 then refute
-              else match Child.castle_side m with
-                | Some _ -> castle_offset
-                | None -> move_history m)
+        else if Child.is_capture m then
+          let see = See.go m in
+          if see >= 0 then good_capture_offset + see
+          else bad_capture_offset + see
+        else
+          let promote = promote m in
+          if promote <> 0 then promote
+          else
+            let refute = refutation m in
+            if refute <> 0 then refute
+            else match Child.castle_side m with
+              | Some _ -> castle_offset
+              | None -> move_history m)
 
   (* Score the moves for quiescence search. *)
   let qscore moves ~ttentry ~check =
@@ -867,10 +868,11 @@ module Order = struct
     | [] -> None
     | moves -> Some (score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
-        else match See.go m with
-          | Some see when see >= 0 -> good_capture_offset + see
-          | Some see -> bad_capture_offset + see
-          | None -> promote m))
+        else if Child.is_capture m then
+          let see = See.go m in
+          if see >= 0 then good_capture_offset + see
+          else bad_capture_offset + see
+        else promote m))
 
   (* Score the moves for quiescence search when we generate
      quiet check evasions. *)
@@ -885,7 +887,7 @@ module Order = struct
     | [] -> None
     | moves -> Some (score_aux moves ~f:(fun m ->
         if is_hash m then hash_offset
-        else Option.value_exn (See.go m)))
+        else See.go m))
 end
 
 (* Helpers for the search. *)
