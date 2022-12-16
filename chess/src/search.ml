@@ -1462,7 +1462,7 @@ module Main = struct
       if lmr_is_passed_push m ~order then decr r;
       if improving then decr r;
       if not pv then incr r;
-      if is_quiet m then incr r;
+      if order > Order.bad_capture_offset && See.go m < 0 then incr r;
       if lmr_is_active_player st m then incr r;
       max 0 !r
     else 0
