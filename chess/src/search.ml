@@ -1181,7 +1181,7 @@ module Main = struct
         | First score -> Stop score
         | Second _ when st.stopped -> Stop t.score
         | Second ext ->
-          let r = lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving in
+          let r = lmr st m ~i ~order ~ply ~depth ~check ~pv ~improving in
           let pos = Child.self m in
           State.set_move st ply m;
           State.inc_nodes st;
@@ -1441,36 +1441,59 @@ module Main = struct
 
   (* Late move reduction.
 
-     For moves that are ordered later in the list, try reducing the depth
-     of the search. We should avoid doing this for the first couple of
-     moves, or if the depth is too low.
+     For quiet moves that are ordered later in the list, try reducing the
+     depth of the search. We should avoid doing this for the first couple
+     of moves, or if the depth is too low.
 
      Note that singular extensions will only happen for TT moves, which
      are always ordered first, so we don't need to worry about it interacting
      with the results of LMR.
-
-     Additionally, we want to avoid reducing on moves that are typically
-     forcing (or forced), which includes:
-
-     - Any time we're in check
-     - Good captures
-     - Promotions
-     - Killer moves
-     - Countermoves
-     - Giving check
   *)
-  and lmr st m ~i ~order ~beta ~ply ~depth ~check ~pv ~improving =
+  and lmr st m ~i ~order ~ply ~depth ~check ~pv ~improving =
     if not check
     && i >= lmr_min_index
     && depth >= lmr_min_depth
-    && order < Order.countermove_offset
-    && not (Child.gives_check m) then
-      let t = Bb.count @@ Child.new_threats m in
-      1 + b2in improving - t
+    && order < Order.promote_offset then
+      let r = ref @@ Array.unsafe_get lmr_table (depth * max_ply + i) in
+      if Child.gives_check m then decr r;
+      if Bb.(equal empty @@ Child.new_threats m) then decr r;
+      if lmr_is_passed_push m then decr r;
+      if improving then decr r;
+      if not pv then incr r;
+      if is_quiet m then incr r;
+      if lmr_is_active_player st m then incr r;
+      max 0 !r
     else 0
 
   and lmr_min_depth = 3
   and lmr_min_index = 2
+
+  and lmr_table =
+    let t = Array.create ~len:(max_ply * max_ply) 0 in
+    for depth = 1 to max_ply - 1 do
+      for i = 1 to max_ply - 1 do
+        let fd = Float.of_int depth in
+        let fi = Float.of_int i in
+        let f = 0.75 +. log fd *. log fi  /. 2.25 in
+        t.(depth * max_ply + i) <- Float.to_int f
+      done
+    done;
+    t
+
+  and lmr_is_passed_push m =
+    let move = Child.move m in
+    let parent = Child.parent m in
+    let pawn = Position.pawn parent in
+    let active = Position.active parent in
+    let them = Position.inactive_board parent in
+    let p = Position.piece_at_square_exn parent @@ Move.src move in
+    let mask = Pre.passed_pawns (Move.dst move) active in
+    Piece.is_pawn p && Bb.((pawn & them & mask) = empty)
+
+  and lmr_is_active_player (st : state) m =
+    let active = Position.active st.root in
+    let current = Position.active @@ Child.parent m in
+    Piece.Color.equal active current
 
   (* Principal variation search.
 
