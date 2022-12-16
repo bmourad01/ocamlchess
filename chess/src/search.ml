@@ -1491,7 +1491,7 @@ module Main = struct
     let mask = Pre.passed_pawns (Move.dst move) active in
     Move.src move @ (pawn & us) &&
     Int.(order > Order.bad_capture_offset) &&
-    Bb.((pawn & (all - us) & mask) = empty)
+    (pawn & (all - us) & mask) = empty
 
   and lmr_is_active_player (st : state) m =
     let active = Position.active st.root in
