@@ -415,8 +415,8 @@ module Child : sig
       threatened as a result of the move. Does not include checks. *)
   val new_threats : child -> Bitboard.t
 
-  (** Returns [true] if the move pushes a passed pawn. *)
-  val is_passed_push : child -> bool
+  (** Returns [true] if the move pushes or creates a passed pawn. *)
+  val is_passed_pawn : child -> bool
 
   type t = child
 end

@@ -1471,7 +1471,7 @@ module Main = struct
       if improving then decr r;
       if not pv then incr r;
       if order > Order.bad_capture_offset then begin
-        if Child.is_passed_push m then decr r;
+        if Child.is_passed_pawn m then decr r;
         if See.go m < 0 then incr r;
         r := !r - min 2 (State.move_history st m / 5000);
       end;

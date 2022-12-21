@@ -1404,7 +1404,7 @@ module Child = struct
       | Rook   -> Bb.((Pre.rook dst all - p) & them & pos.queen)
       | Queen  -> Bb.empty
 
-  let is_passed_push {move; parent; capture; _} =
+  let is_passed_pawn {move; parent; _} =
     let open Bb in
     let src = Move.src move in
     let dst = Move.dst move in
@@ -1412,9 +1412,7 @@ module Child = struct
     let mask = Pre.passed_pawns dst parent.active in
     let our_pawns = parent.pawn & us in
     let their_pawns = parent.pawn - our_pawns in
-    Uopt.is_none capture &&
-    src @ our_pawns &&
-    (their_pawns & mask) = empty
+    src @ our_pawns && (their_pawns & mask) = empty
 end
 
 type child = Child.t
