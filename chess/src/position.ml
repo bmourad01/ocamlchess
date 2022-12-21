@@ -1403,6 +1403,19 @@ module Child = struct
       | Bishop -> Bb.((Pre.bishop dst all - p) & them & major)
       | Rook   -> Bb.((Pre.rook dst all - p) & them & pos.queen)
       | Queen  -> Bb.empty
+
+  let is_passed_push {move; parent; _} =
+    let open Bb in
+    let src = Move.src move in
+    let dst = Move.dst move in
+    let pawn = parent.pawn in
+    let active = parent.active in
+    let all = all_board parent in
+    let us = board_of_color parent active in
+    let mask = Pre.passed_pawns dst active in
+    let our_pawns = pawn & us in
+    let their_pawns = pawn & (all - us) in
+    src @ our_pawns && (their_pawns & mask) = empty
 end
 
 type child = Child.t

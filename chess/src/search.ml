@@ -489,6 +489,14 @@ module State = struct
   (* Increment the number of nodes we've evaluated. *)
   let inc_nodes st = st.nodes <- st.nodes + 1
 
+  (* Return true if the move was played by the active player of the
+     root node. *)
+  let is_maximizing_player st child =
+    let active = Position.active st.root in
+    let parent = Child.parent child in
+    let current = Position.active parent in
+    Piece.Color.equal active current
+
   (* Get the first killer move. *)
   let killer1 st ply = Oa.get st.killer1 ply
 
@@ -1460,11 +1468,14 @@ module Main = struct
       let r = ref @@ Array.unsafe_get lmr_table (depth * max_moves + i) in
       if Child.gives_check m then decr r;
       if Bb.(Child.new_threats m <> empty) then decr r;
-      if lmr_is_passed_push m ~order then decr r;
       if improving then decr r;
       if not pv then incr r;
-      if order > Order.bad_capture_offset && See.go m < 0 then incr r;
-      if lmr_is_active_player st m then incr r;
+      if order > Order.bad_capture_offset then begin
+        if Child.is_passed_push m then decr r;
+        if See.go m < 0 then incr r;
+        r := !r - min 2 (State.move_history st m / 5000);
+      end;
+      if State.is_maximizing_player st m then incr r;
       max 0 !r
     else 0
 
@@ -1482,24 +1493,6 @@ module Main = struct
       done
     done;
     t
-
-  and lmr_is_passed_push m ~order =
-    let open Bb in
-    let move = Child.move m in
-    let pos = Child.parent m in
-    let pawn = Position.pawn pos in
-    let active = Position.active pos in
-    let all = Position.all_board pos in
-    let us = Position.board_of_color pos active in
-    let mask = Pre.passed_pawns (Move.dst move) active in
-    Move.src move @ (pawn & us) &&
-    Int.(order > Order.bad_capture_offset) &&
-    (pawn & (all - us) & mask) = empty
-
-  and lmr_is_active_player (st : state) m =
-    let active = Position.active st.root in
-    let current = Position.active @@ Child.parent m in
-    Piece.Color.equal active current
 
   (* Principal variation search.
 
