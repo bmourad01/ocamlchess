@@ -886,6 +886,15 @@ end
 (* FEN parsing/unparsing *)
 
 module Fen = struct
+  (* This is based on the string:
+
+     pppppppp/pppppppp/pppppppp/pppppppp/pppppppp/pppppppp/pppppppp/pppppppp w KQkq e3 9223372036854775807 9223372036854775807
+
+     where 9223372036854775807 is (2^63)-1, the largest possible
+     unsigned value for OCaml integers.
+  *)
+  let max_len = 121
+
   module Error = struct
     type t =
       | Invalid_number_of_ranks of int
@@ -900,6 +909,7 @@ module Fen = struct
       | Invalid_fullmove of string
       | Invalid_position of Valid.error
       | Invalid_number_of_sections of int
+      | String_too_long of int
 
     let pp ppf = function
       | Invalid_number_of_ranks n ->
@@ -929,6 +939,8 @@ module Fen = struct
         Format.fprintf ppf "Invalid position; %a%!" Valid.Error.pp e
       | Invalid_number_of_sections n ->
         Format.fprintf ppf "Invalid number of sections %d%!" n
+      | String_too_long n ->
+        Format.fprintf ppf "String is too long (%d), maximum is %d" n max_len
 
     let to_string t = Format.asprintf "%a%!" pp t
   end
@@ -1071,36 +1083,39 @@ module Fen = struct
       Result.map_error ~f:(fun e -> Invalid_position e)) >>= fun () ->
     E.return pos
 
-  let of_string ?(validate = true) s = match String.split s ~on:' ' with
-    | [placement; active; castle; en_passant; halfmove; fullmove] ->
-      parse_placement placement >>= fun (color_tbl, kind_tbl) ->
-      let white  = color_tbl.(Piece.Color.white) in
-      let black  = color_tbl.(Piece.Color.black) in
-      let pawn   =  kind_tbl.(Piece.Kind.pawn)   in
-      let knight =  kind_tbl.(Piece.Kind.knight) in
-      let bishop =  kind_tbl.(Piece.Kind.bishop) in
-      let rook   =  kind_tbl.(Piece.Kind.rook)   in
-      let queen  =  kind_tbl.(Piece.Kind.queen)  in
-      let king   =  kind_tbl.(Piece.Kind.king)   in
-      parse_active active >>= fun active ->
-      parse_castle castle >>= fun castle ->
-      parse_en_passant en_passant >>= fun en_passant ->
-      parse_halfmove halfmove >>= fun halfmove ->
-      parse_fullmove fullmove >>= fun fullmove ->
-      let pos =
-        let checkers = lazy Bb.empty in
-        let checks = lazy empty_checks in
-        let attacks = lazy [||] in
-        Fields.create ~hash:0L ~pawn_king_hash:0L ~checkers ~checks
-          ~attacks ~white ~black ~pawn ~knight ~bishop ~rook ~queen
-          ~king ~active ~castle ~en_passant ~halfmove ~fullmove in
-      set_hash pos @@ Hash.of_position pos;
-      set_pawn_king_hash pos @@ Hash.of_pawn_king pos;
-      calculate_checkers pos;
-      Analysis.calculate_checks pos;
-      Attacks.calculate pos;
-      if validate then validate_and_map pos else E.return pos
-    | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
+  let of_string ?(validate = true) s =
+    let len = String.length s in
+    if len <= max_len then match String.split s ~on:' ' with
+      | [placement; active; castle; en_passant; halfmove; fullmove] ->
+        parse_placement placement >>= fun (color_tbl, kind_tbl) ->
+        let white  = color_tbl.(Piece.Color.white) in
+        let black  = color_tbl.(Piece.Color.black) in
+        let pawn   =  kind_tbl.(Piece.Kind.pawn)   in
+        let knight =  kind_tbl.(Piece.Kind.knight) in
+        let bishop =  kind_tbl.(Piece.Kind.bishop) in
+        let rook   =  kind_tbl.(Piece.Kind.rook)   in
+        let queen  =  kind_tbl.(Piece.Kind.queen)  in
+        let king   =  kind_tbl.(Piece.Kind.king)   in
+        parse_active active >>= fun active ->
+        parse_castle castle >>= fun castle ->
+        parse_en_passant en_passant >>= fun en_passant ->
+        parse_halfmove halfmove >>= fun halfmove ->
+        parse_fullmove fullmove >>= fun fullmove ->
+        let pos =
+          let checkers = lazy Bb.empty in
+          let checks = lazy empty_checks in
+          let attacks = lazy [||] in
+          Fields.create ~hash:0L ~pawn_king_hash:0L ~checkers ~checks
+            ~attacks ~white ~black ~pawn ~knight ~bishop ~rook ~queen
+            ~king ~active ~castle ~en_passant ~halfmove ~fullmove in
+        set_hash pos @@ Hash.of_position pos;
+        set_pawn_king_hash pos @@ Hash.of_pawn_king pos;
+        calculate_checkers pos;
+        Analysis.calculate_checks pos;
+        Attacks.calculate pos;
+        if validate then validate_and_map pos else E.return pos
+      | sections -> E.fail @@ Invalid_number_of_sections (List.length sections)
+    else E.fail @@ String_too_long len
 
   let of_string_exn ?(validate = true) s =
     of_string s ~validate |> Result.map_error ~f:Error.to_string |> function

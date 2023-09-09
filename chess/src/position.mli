@@ -234,6 +234,7 @@ module Fen : sig
       | Invalid_fullmove of string
       | Invalid_position of Valid.error
       | Invalid_number_of_sections of int
+      | String_too_long of int
 
     (** [pp ppf err] pretty-prints [err] to formatter [ppf]. *)
     val pp : Format.formatter -> t -> unit
