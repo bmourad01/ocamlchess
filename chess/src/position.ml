@@ -1964,7 +1964,8 @@ module See = struct
     let swap = Array.create value ~len:Square.count in
     let all = all_board pos in
     let order = lva_order pos in
-    let[@inline] rec loop () =
+    let continue = ref true in
+    while !continue do
       (* Remove the attacker from the board. *)
       st.attackers <- Bb.(st.attackers -- st.from);
       st.occupation <- Bb.(st.occupation -- st.from);
@@ -1978,8 +1979,8 @@ module See = struct
       st.depth <- st.depth + 1;
       let v = st.target_val - Array.unsafe_get swap (st.depth - 1) in
       Array.unsafe_set swap st.depth v;
-      if lva pos all order st then loop () in
-    loop ();
+      continue := lva pos all order st
+    done;
     (* Evaluate the material gains/losses. *)
     evaluate swap st.depth
 

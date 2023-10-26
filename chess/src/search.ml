@@ -697,7 +697,7 @@ module State = struct
   (* Will playing this position likely lead to a repetition draw? *)
   let check_repetition st pos =
     Position.hash pos |> Hashtbl.find st.histogram |>
-    Option.value_map ~default:false ~f:(fun n -> n > 2)
+    Option.value_map ~default:false ~f:(fun n -> n >= 2)
 
   (* Will the position lead to a draw? *)
   let drawn st pos =
@@ -758,16 +758,13 @@ module Iterator = struct
       Uopt.some result
     else Uopt.none
 
-  let fold_until =
+  let[@specialise] rec fold_until it ~init ~finish ~f =
     let open Continue_or_stop in
-    let[@specialise] rec aux acc it ~f ~finish =
-      let x = next it in
-      if Uopt.is_some x then
-        match f acc @@ Uopt.unsafe_value x with
-        | Continue y -> aux y it ~f ~finish
-        | Stop z -> z
-      else finish acc in
-    fun it ~init -> aux init it
+    let x = next it in
+    if Uopt.is_some x then match f init @@ Uopt.unsafe_value x with
+      | Continue init -> fold_until it ~init ~finish ~f
+      | Stop z -> z
+    else finish init
 end
 
 (* Move ordering is critical for optimizing the performance of alpha-beta
