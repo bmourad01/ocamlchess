@@ -1,3 +1,27 @@
-(lang dune 2.9)
-(name chess)
+(lang dune 3.7)
+(name ocamlchess)
+(version 0.1)
+
+(generate_opam_files true)
 (use_standard_c_and_cxx_flags false)
+
+(source (github bmourad01/ocamlchess))
+(license "GPL-3.0")
+(authors "Benjamin Mourad")
+(maintainers "Benjamin_Mourad@student.uml.edu")
+
+(package
+ (name ocamlchess)
+ (synopsis "Chess library and engine")
+ (description "An efficient library and UCI-compatible chess engine for OCaml")
+ (depends
+  (cmdliner (>= 1.1.0))
+  (core_kernel (= v0.15))
+  (dune (>= 3.7))
+  (monads (>= 2.4.0))
+  ocaml_intrinsics
+  ounit2
+  ppx_compare
+  ppx_fields_conv
+  ppx_hash
+  ppx_sexp_conv))

@@ -1,7 +1,8 @@
+(include_subdirs qualified)
+
 (library
  (name chess)
  (public_name ocamlchess)
- (flags -w -58)
  (libraries
    bap-future
    core_kernel

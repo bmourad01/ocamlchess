@@ -11,5 +11,4 @@
    test_threats
    test_check)
  (libraries ounit2 chess)
- (flags -w -58)
  (ocamlopt_flags -O3))

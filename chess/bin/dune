@@ -1,7 +1,6 @@
 (executable
  (name ocamlchess)
  (public_name ocamlchess)
- (flags -w -58)
  (libraries
    cmdliner
    core_kernel
