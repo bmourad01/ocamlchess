@@ -3,18 +3,11 @@
 (library
  (name chess)
  (public_name ocamlchess)
- (libraries
-   bap-future
-   core_kernel
-   core_kernel.uopt
-   monads
-   ocaml_intrinsics)
+ (libraries bap-future core_kernel core_kernel.uopt monads ocaml_intrinsics)
  (foreign_stubs
   (language c)
   (names int64_stubs)
   (flags -march=native))
  (ocamlopt_flags -O3)
- (preprocess (pps ppx_compare
-                  ppx_fields_conv
-                  ppx_hash
-                  ppx_sexp_conv)))
+ (preprocess
+  (pps ppx_compare ppx_fields_conv ppx_hash ppx_sexp_conv)))

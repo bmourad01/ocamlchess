@@ -1,15 +1,10 @@
 (executable
  (name ocamlchess)
  (public_name ocamlchess)
- (libraries
-   cmdliner
-   core_kernel
-   chess
-   bap-future
-   monads
-   threads)
+ (libraries cmdliner core_kernel chess bap-future monads threads)
  (ocamlopt_flags -O3)
- (preprocess (pps ppx_fields_conv))
+ (preprocess
+  (pps ppx_fields_conv))
  (foreign_stubs
   (language c)
   (names gui_stubs))

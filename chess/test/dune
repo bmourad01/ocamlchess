@@ -1,14 +1,14 @@
 (tests
  (names
-   test_fen
-   test_bitboard
-   test_move
-   test_precalculated
-   test_perft
-   test_zobrist
-   test_uci
-   test_see
-   test_threats
-   test_check)
+  test_fen
+  test_bitboard
+  test_move
+  test_precalculated
+  test_perft
+  test_zobrist
+  test_uci
+  test_see
+  test_threats
+  test_check)
  (libraries ounit2 chess)
  (ocamlopt_flags -O3))
