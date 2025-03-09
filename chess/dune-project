@@ -16,7 +16,8 @@
  (description "An efficient library and UCI-compatible chess engine for OCaml")
  (depends
   (cmdliner (>= 1.1.0))
-  (core_kernel (= v0.15))
+  (ocaml (>= 5.1.0))
+  (core_kernel (>= v0.17))
   (dune (>= 3.7))
   (monads (>= 2.4.0))
   ocaml_intrinsics

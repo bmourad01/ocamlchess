@@ -13,7 +13,7 @@ type score = Score.t
 
 (* Branchless integer comparisons. *)
 
-let[@inline] isign x = x asr (Caml.Sys.int_size - 1)
+let[@inline] isign x = x asr (Stdlib.Sys.int_size - 1)
 let[@inline] isign2 x = Bool.to_int (x > 0) - Bool.to_int (x < 0)
 
 let[@inline] imax x y =

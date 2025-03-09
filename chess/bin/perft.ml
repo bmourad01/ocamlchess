@@ -12,7 +12,7 @@ let rec perft child depth =
         Int64.(acc + perft child depth))
 
 let run depth pos =
-  let t = Time.now () in
+  let t = Time_float.now () in
   let roots = Position.children pos in
   let n =
     let depth = depth - 1 in
@@ -20,8 +20,8 @@ let run depth pos =
         let n = perft child depth in
         Format.printf "%a: %Lu\n%!" Move.pp (Child.move child) n;
         Int64.(acc + n)) in
-  let t' = Time.now () in
-  let sec = Time.(Span.to_sec @@ diff t' t) in
+  let t' = Time_float.now () in
+  let sec = Time_float.(Span.to_sec @@ diff t' t) in
   let nps = Float.(to_int64 (of_int64 n / (sec + epsilon_float))) in
   Format.printf "\n%!";
   Format.printf "Time taken: %fs\n%!" sec;

@@ -17,11 +17,11 @@ let b2in = Fn.compose b2i not
 
 let[@inline] max x y =
   let m = x - y in
-  x - (m land (m asr (Caml.Sys.int_size - 1)))
+  x - (m land (m asr (Stdlib.Sys.int_size - 1)))
 
 let[@inline] min x y =
   let m = x - y in
-  y + (m land (m asr (Caml.Sys.int_size - 1)))
+  y + (m land (m asr (Stdlib.Sys.int_size - 1)))
 
 (* Constants. *)
 let inf = 65535

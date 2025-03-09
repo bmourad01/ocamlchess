@@ -257,7 +257,7 @@ let window_size = 640
 external init_fonts : string -> string -> unit = "ocamlchess_init_fonts"
 external init_named_values : unit -> unit = "ocamlchess_init_named_values"
 
-let assets = Caml.Sys.getenv "HOME" ^ "/.local/share/ocamlchess/assets/"
+let assets = Stdlib.Sys.getenv "HOME" ^ "/.local/share/ocamlchess/assets/"
 let piece_font = assets ^ "FreeSerif.ttf"
 let text_font = assets ^ "FreeSans.ttf"
 
@@ -278,7 +278,7 @@ let run pos ~white ~black ~delay =
   let game = Game.create ()
       ~event:(Some "ocamlchess")
       ~site:(Some "gui")
-      ~date:(Some (Date.today ~zone:Time.Zone.utc))
+      ~date:(Some (Date.today ~zone:Time_float.Zone.utc))
       ~round:(Some 1)
       ~white:(Some white_name)
       ~black:(Some black_name)

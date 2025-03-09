@@ -16,7 +16,7 @@ type t = {
   check                      : bool;
   histogram                  : (Zobrist.key, int) Hashtbl.t;
   tt                         : Tt.t;
-  start_time                 : Time.t;
+  start_time                 : Time_float.t;
   evals                      : int Oa.t;
   excluded                   : Move.t Oa.t;
   pv                         : Child.t Oa.t array;
@@ -68,7 +68,7 @@ let create
     check = Position.in_check root;
     histogram;
     tt;
-    start_time = Time.now ();
+    start_time = Time_float.now ();
     evals = Oa.create ~len:max_ply;
     excluded = Oa.create ~len:max_ply;
     pv = Array.init pv_size ~f:(fun _ -> Oa.create ~len:pv_size);
@@ -91,7 +91,7 @@ let create
   }
 
 let elapsed st =
-  int_of_float @@ Time.(Span.to_ms @@ diff (now ()) st.start_time)
+  int_of_float @@ Time_float.(Span.to_ms @@ diff (now ()) st.start_time)
 
 (* Start a new iteration. *)
 let new_iter st =

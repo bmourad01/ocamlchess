@@ -20,7 +20,7 @@ module Entry = struct
 
   (* There is some extra space being used for heap-allocated values,
      but we will ignore it. *)
-  let size = 6 * (Caml.Sys.word_size / 8)
+  let size = 6 * (Stdlib.Sys.word_size / 8)
 end
 
 type entry = Entry.t
