@@ -121,4 +121,9 @@ let go
     let st =
       State.create moves ~root ~limits ~histogram
         ~tt ~iter ~currmove ~ponder in
-    iterdeep st moves
+    let result = iterdeep st moves in
+    (* Until further notice, we have to manually tell the GC to do
+       a compaction on OCaml 5, because the search probably just
+       did a ton of allocations and we don't need any of it anymore. *)
+    Gc.compact ();
+    result
