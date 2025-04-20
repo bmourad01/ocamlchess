@@ -3,7 +3,13 @@
 (library
  (name chess)
  (public_name ocamlchess)
- (libraries bap-future core_kernel core_kernel.uopt monads ocaml_intrinsics)
+ (libraries
+  bap-future
+  core_kernel
+  core_kernel.uopt
+  monads
+  ocaml_intrinsics
+  dynamic_gc)
  (foreign_stubs
   (language c)
   (names int64_stubs)

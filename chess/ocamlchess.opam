@@ -10,6 +10,7 @@ homepage: "https://github.com/bmourad01/ocamlchess"
 bug-reports: "https://github.com/bmourad01/ocamlchess/issues"
 depends: [
   "cmdliner" {>= "1.1.0"}
+  "dynamic_gc"
   "ocaml" {>= "5.1.0"}
   "core_kernel" {>= "v0.17"}
   "dune" {>= "3.7" & >= "3.7"}

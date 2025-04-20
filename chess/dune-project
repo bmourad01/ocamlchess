@@ -16,6 +16,7 @@
  (description "An efficient library and UCI-compatible chess engine for OCaml")
  (depends
   (cmdliner (>= 1.1.0))
+  dynamic_gc
   (ocaml (>= 5.1.0))
   (core_kernel (>= v0.17))
   (dune (>= 3.7))

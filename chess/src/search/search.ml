@@ -105,6 +105,13 @@ let mate_in_zero limits = match Limits.mate limits with
 
 let default_currmove _ ~n:_ ~depth:_ = ()
 
+let gc_config : DynamicGc.config = {
+  min_space_overhead = 20;
+  max_space_overhead = 40;
+  heap_start_worrying_mb = 1_024;
+  heap_really_worry_mb = 2_048;
+}
+
 let go
     ?(iter = ignore)
     ?(currmove = default_currmove)
@@ -118,12 +125,13 @@ let go
   | [] -> no_moves root iter
   | _ when mate_in_zero limits -> no_moves root iter ~mzero:true
   | moves ->
-    let st =
-      State.create moves ~root ~limits ~histogram
-        ~tt ~iter ~currmove ~ponder in
-    let result = iterdeep st moves in
-    (* Until further notice, we have to manually tell the GC to do
-       a compaction on OCaml 5, because the search probably just
-       did a ton of allocations and we don't need any of it anymore. *)
-    Gc.compact ();
-    result
+    (* I think it would be tricky to know when is the right time to
+       compact the GC. We'll take a page from this article instead:
+
+       https://semgrep.dev/blog/2025/upgrading-semgrep-from-ocaml-4-to-ocaml-5/
+    *)
+    DynamicGc.setup_dynamic_tuning gc_config;
+    Exn.protect ~finally:DynamicGc.stop_dynamic_tuning ~f:(fun () ->
+        let st = State.create moves ~root ~limits ~histogram
+            ~tt ~iter ~currmove ~ponder in
+        iterdeep st moves)
